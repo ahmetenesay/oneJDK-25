@@ -1,0 +1,171 @@
+# oneJDK-25 — TBB-integrated OpenJDK 25 Build Pipeline
+# Builds JDK 25 with Intel oneAPI TBB integration on 5 platforms.
+#
+# Platforms:
+#   - Ubuntu x64 (ubuntu-24.04)
+#   - Ubuntu ARM64 (ubuntu-24.04-arm)
+#   - Windows x64 (windows-latest)
+#   - macOS x64 (macos-13)
+#   - macOS ARM64 (macos-14)
+#
+# Strategy:
+#   1. Install Intel oneAPI TBB system-wide
+#   2. Apply TBB patches to HotSpot source (from oneJDK-25 fork)
+#   3. Build JDK 25 with TBB linked to libjvm
+#   4. Upload artifacts for JingZero integration
+#
+# Note: OpenJDK configure does NOT support custom --with-tbb-* options.
+# TBB is integrated via patches to HotSpot Makefiles and source code.
+
+name: Build oneJDK-25 with TBB
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-jdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # === Linux x64 ===
+          - os: ubuntu-24.04
+            platform: linux-x64
+            artifact_name: onejdk-25-linux-x64
+          # === Linux ARM64 ===
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            artifact_name: onejdk-25-linux-arm64
+          # === Windows x64 ===
+          - os: windows-latest
+            platform: windows-x64
+            artifact_name: onejdk-25-windows-x64
+          # === macOS x64 (Intel) ===
+          - os: macos-13
+            platform: macos-x64
+            artifact_name: onejdk-25-macos-x64
+          # === macOS ARM64 (Apple Silicon) ===
+          - os: macos-14
+            platform: macos-arm64
+            artifact_name: onejdk-25-macos-arm64
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout oneJDK-25
+        uses: actions/checkout@v4
+        with:
+          repository: ahmetenesay/oneJDK-25
+          path: jdk
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential zlib1g-dev libx11-dev libxext-dev \
+            libxrender-dev libxrandr-dev libxtst-dev libxt-dev \
+            ccache fonts-dejavu-core libfreetype6-dev libasound2-dev \
+            libpng-dev libjpeg-dev libtbb-dev
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ccache freetype onetbb
+
+      - name: Install build dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ccache -y
+          # Install Intel oneAPI TBB via conda-forge (fastest method on Windows)
+          # OneTBB is the open-source version of Intel TBB, maintained by UXL Foundation
+          if (!(Test-Path "$env:CONDA\Scripts\conda.exe")) {
+            Write-Host "Installing Miniconda..."
+            $condaUrl = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
+            $condaInstaller = "$env:TEMP\Miniconda3-latest-Windows-x86_64.exe"
+            Invoke-WebRequest -Uri $condaUrl -OutFile $condaInstaller
+            Start-Process -FilePath $condaInstaller -ArgumentList "/InstallationType=JustMe","/RegisterPython=0","/S","/D=$env:CONDA" -NoNewWindow -Wait
+          }
+          $env:PATH = "$env:CONDA;$env:CONDA\Scripts;$env:CONDA\Library\bin;" + $env:PATH
+          conda install -y -c conda-forge tbb-devel
+        shell: pwsh
+
+      - name: Verify TBB installation (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          dpkg -l | grep libtbb
+          pkg-config --modversion tbb || echo "TBB version check skipped"
+
+      - name: Verify TBB installation (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew list onetbb
+          ls $(brew --prefix onetbb)/include/oneapi/tbb/
+
+      - name: Verify TBB installation (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $env:PATH = "$env:CONDA;$env:CONDA\Scripts;$env:CONDA\Library\bin;" + $env:PATH
+          conda list tbb
+          if (Test-Path "$env:CONDA\Library\include\oneapi\tbb\parallel_for.h") {
+            Write-Host "TBB headers found successfully"
+          } else {
+            Write-Host "Warning: TBB headers not found at expected path"
+            Get-ChildItem -Path "$env:CONDA\Library\include" -Recurse -Filter "parallel_for.h" | Select-Object FullName
+          }
+        shell: pwsh
+
+      - name: Configure JDK (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd jdk
+          ./configure \
+            --with-debug-level=release \
+            --with-num-cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
+            --with-memory-size=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo 4096) \
+            --with-native-debug-symbols=zip \
+            --with-jvm-variants=server \
+            --disable-warnings-as-errors
+
+      - name: Configure JDK (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd jdk
+          .\configure `
+            --with-debug-level=release `
+            --with-num-cores=$env:NUMBER_OF_PROCESSORS `
+            --with-jvm-variants=server `
+            --disable-warnings-as-errors
+        shell: pwsh
+
+      - name: Build JDK
+        run: |
+          cd jdk
+          make images JOB_COUNT=$(nproc 2>/dev/null || sysctl -n hw.ncpu || echo $env:NUMBER_OF_PROCESSORS)
+        shell: bash
+
+      - name: Upload JDK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: jdk/build/*/images/
+          retention-days: 30
+
+      - name: Verify build
+        run: |
+          cd jdk
+          BUILD_DIR=$(ls -d build/*/images 2>/dev/null | head -1)
+          if [ -d "$BUILD_DIR" ]; then
+            "$BUILD_DIR/bin/java" --version
+            echo "Build verified successfully!"
+          else
+            echo "Error: Build images not found"
+            exit 1
+          fi
+        shell: bash
