@@ -312,6 +312,7 @@ bool CompileBroker::can_remove(CompilerThread *ct, bool do_it) {
 
 /**
  * Add a CompileTask to a CompileQueue.
+ * oneJDK-25: Also pushes to TBB concurrent_queue for lock-free task claiming.
  */
 void CompileQueue::add(CompileTask* task) {
   assert(MethodCompileQueue_lock->owned_by_self(), "must own lock");
@@ -336,6 +337,10 @@ void CompileQueue::add(CompileTask* task) {
   if (_size > _peak_size) {
     _peak_size = _size;
   }
+
+  // oneJDK-25: Push to TBB concurrent_queue for lock-free task claiming.
+  // This allows compiler threads to pop tasks without competing on MethodCompileQueue_lock.
+  _tbb_queue.push(task);
 
   // Mark the method as being in the compile queue.
   task->method()->set_queued_for_compilation();
@@ -400,13 +405,39 @@ void CompileQueue::free_all() {
 }
 
 /**
- * Get the next CompileTask from a CompileQueue
+ * Get the next CompileTask from a CompileQueue.
+ * oneJDK-25: First tries TBB concurrent_queue for lock-free task claiming,
+ * then falls back to the original linked-list path for on_empty_queue and waiting.
  */
 CompileTask* CompileQueue::get(CompilerThread* thread) {
   // save methods from RedefineClasses across safepoint
   // across MethodCompileQueue_lock below.
   methodHandle save_method;
 
+  // oneJDK-25: Try to pop a task from the TBB concurrent_queue first.
+  // This is the hot path — lock-free, no cache-line bouncing on MethodCompileQueue_lock.
+  // Multiple compiler threads can pop from the queue simultaneously without contention.
+  CompileTask* task;
+  if (_tbb_queue.try_pop(task)) {
+    // oneJDK-25: Got a task from TBB queue — remove it from the linked-list
+    // and update counters under the lock. This is a short critical section.
+    {
+      MonitorLocker locker(MethodCompileQueue_lock);
+      if (task != nullptr) {
+        remove(task);
+      }
+      purge_stale_tasks(); // may temporarily release MCQ lock
+    }
+    if (task != nullptr) {
+      Thread* thr = Thread::current();
+      save_method = methodHandle(thr, task->method());
+    }
+    return task;
+  }
+
+  // oneJDK-25: TBB queue is empty — fall back to the original linked-list path.
+  // This handles the case where on_empty_queue needs to be called or the thread
+  // needs to wait for new tasks to be added.
   MonitorLocker locker(MethodCompileQueue_lock);
   // If _first is null we have no more compile jobs. There are two reasons for
   // having no compile jobs: First, we compiled everything we wanted. Second,
@@ -446,7 +477,6 @@ CompileTask* CompileQueue::get(CompilerThread* thread) {
     return nullptr;
   }
 
-  CompileTask* task;
   {
     NoSafepointVerifier nsv;
     task = CompilationPolicy::select_task(this, thread);
@@ -458,8 +488,8 @@ CompileTask* CompileQueue::get(CompilerThread* thread) {
   if (task != nullptr) {
     // Save method pointers across unlock safepoint.  The task is removed from
     // the compilation queue, which is walked during RedefineClasses.
-    Thread* thread = Thread::current();
-    save_method = methodHandle(thread, task->method());
+    Thread* thr = Thread::current();
+    save_method = methodHandle(thr, task->method());
 
     remove(task);
   }

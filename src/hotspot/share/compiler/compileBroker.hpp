@@ -37,6 +37,11 @@
 #include "jvmci/jvmciCompiler.hpp"
 #endif
 
+// oneJDK-25: TBB concurrent_queue for CompileQueue — replaces Atomic::cmpxchg contention
+// with lock-free work-stealing queue. Each compiler thread pops tasks from the queue instead
+// of competing on a single monitor, eliminating cache-line bouncing on MethodCompileQueue_lock.
+#include <oneapi/tbb/concurrent_queue.h>
+
 class nmethod;
 
 #if defined(ASSERT) && COMPILER2_OR_JVMCI
@@ -94,9 +99,17 @@ class CompilerCounters : public CHeapObj<mtCompiler> {
 // CompileQueue
 //
 // A list of CompileTasks.
+// oneJDK-25: Uses TBB concurrent_queue for lock-free task claiming — eliminates
+// cache-line bouncing on MethodCompileQueue_lock when multiple compiler threads
+// compete for tasks. The linked-list (_first/_last) is kept for cold paths such
+// as policy selection, stale task purging, and debugging.
 class CompileQueue : public CHeapObj<mtCompiler> {
  private:
   const char* _name;
+
+  // oneJDK-25: TBB lock-free queue for task claiming — replaces the linked-list
+  // on the hot path. Populated in add(), consumed in get() via try_pop().
+  oneapi::tbb::concurrent_queue<CompileTask*> _tbb_queue;
 
   CompileTask* _first;
   CompileTask* _last;
