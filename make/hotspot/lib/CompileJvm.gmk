@@ -62,6 +62,17 @@ JVM_LIBS += \
     $(JVM_LIBS_FEATURES) \
     #
 
+# oneJDK-25: Link Intel oneAPI TBB for GC worker thread pool
+# TBB provides work-stealing scheduler that replaces semaphore-based WorkerTaskDispatcher
+ifeq ($(call isTargetOs, windows), true)
+  JVM_LIBS += tbb.lib
+else
+  JVM_LIBS += -ltbb
+endif
+
+# TBB header include path (from oneJDK-25/include/oneapi/tbb/)
+JVM_CFLAGS += -I$(TOPDIR)/include
+
 # These files and directories are always excluded
 JVM_EXCLUDE_FILES += args.cc
 JVM_EXCLUDES += adlc

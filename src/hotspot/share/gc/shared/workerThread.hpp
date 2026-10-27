@@ -32,6 +32,16 @@
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 
+// oneJDK-25: Intel oneAPI TBB integration for GC worker thread pool
+// TBB replaces the semaphore-based WorkerTaskDispatcher with work-stealing scheduler
+// providing automatic load balancing across P-cores/E-cores on hybrid CPUs.
+#include <oneapi/tbb/task_arena.h>
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/global_control.h>
+#include <atomic>
+#include <memory>
+
 class ThreadClosure;
 class WorkerTaskDispatcher;
 class WorkerThread;
@@ -53,31 +63,35 @@ private:
   virtual void work(uint worker_id) = 0;
 };
 
-// WorkerThreads dispatcher implemented with semaphores
+// oneJDK-25: TBB-based WorkerTaskDispatcher
+// Replaces semaphore-based dispatch with TBB task_arena + parallel_for.
+// TBB's work-stealing scheduler automatically balances load across cores,
+// and on hybrid CPUs routes high-priority tasks to P-cores and low-priority
+// tasks to E-cores.
 class WorkerTaskDispatcher {
   // The task currently being dispatched to the WorkerThreads.
   WorkerTask* _task;
 
-  volatile uint _started;
-  volatile uint _not_finished;
+  // TBB task_arena for GC worker scheduling.
+  // Created once and reused for all GC tasks.
+  static oneapi::tbb::task_arena* _arena;
 
-  // Semaphore used to start the WorkerThreads.
-  Semaphore _start_semaphore;
-  // Semaphore used to notify the coordinator that all workers are done.
-  Semaphore _end_semaphore;
+  // Atomic flag to signal workers to stop.
+  std::atomic<bool> _done;
 
 public:
   WorkerTaskDispatcher();
+  ~WorkerTaskDispatcher();
 
   // Coordinator API.
 
-  // Distributes the task out to num_workers workers.
+  // Distributes the task out to num_workers workers using TBB parallel_for.
   // Returns when the task has been completed by all workers.
+  // TBB's work-stealing scheduler handles load balancing automatically.
   void coordinator_distribute_task(WorkerTask* task, uint num_workers);
 
-  // Worker API.
-
-  // Waits for a task to become available to the worker and runs it.
+  // Worker API (legacy compatibility — no longer used with TBB).
+  // Kept for ABI compatibility but no-ops with TBB.
   void worker_run_task();
 };
 

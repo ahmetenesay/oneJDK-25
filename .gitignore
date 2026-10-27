@@ -23,3 +23,6 @@ NashornProfile.txt
 /.gdbinit
 /.lldbinit
 **/core.[0-9]*
+
+# TBB headers — manually added, not from OpenJDK upstream
+/include/
