@@ -121,7 +121,9 @@ jobs:
               -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(nproc)
             cd ../..
-            cp tbb-src/build/lib/libtbb*.a jdk/tbb-static/lib/
+            # TBB outputs to platform-specific dirs like gnu_*_cxx11_64_release/
+            # Find all .a files recursively and copy them
+            find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
           fi
           
           # Verify static libraries exist
@@ -162,7 +164,9 @@ jobs:
               -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(sysctl -n hw.ncpu)
             cd ../..
-            cp tbb-src/build/lib/libtbb*.a jdk/tbb-static/lib/
+            # TBB outputs to platform-specific dirs like gnu_*_cxx11_64_release/
+            # Find all .a files recursively and copy them
+            find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
           fi
           
           # Verify static libraries exist
@@ -180,35 +184,27 @@ jobs:
       - name: Install TBB (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install tbb -y
+          # Chocolatey TBB package is broken (403 Forbidden), skip it
+          # choco install tbb -y
           
           Set-Location jdk
           New-Item -ItemType Directory -Path "tbb-static\lib" -Force | Out-Null
           
-          # Copy system TBB static libraries
-          $TBB_LIB_DIR = "C:\Program Files\Intel\oneAPI\tbb\latest\lib\intel64\vc14"
-          if (-not (Test-Path $TBB_LIB_DIR)) {
-            $TBB_LIB_DIR = "C:\Program Files (x86)\Intel\oneAPI\tbb\latest\lib\intel64\vc14"
-          }
-          
-          if (Test-Path $TBB_LIB_DIR) {
-            Copy-Item "$TBB_LIB_DIR\tbb*.lib" "tbb-static\lib\" -Force
-          }
-          
-          # If static libs are not available, build from source
-          if (-not (Test-Path "tbb-static\lib\tbb.lib")) {
-            Write-Host "Static TBB libs not found, building from source..."
-            Set-Location ..
-            git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
-            Set-Location tbb-src
-            mkdir build; Set-Location build
-            # GCC 13 has a known bug: -Werror=stringop-overflow false positive in oneTBB v2021.12.0
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF `
-              -DCMAKE_CXX_FLAGS="/wd4996"
-            cmake --build . --config Release
-            Set-Location ..\..
-            Copy-Item "tbb-src\build\Release\tbb*.lib" "jdk\tbb-static\lib\" -Force
-          }
+          # Build from source (Chocolatey package is broken)
+          Write-Host "Building TBB from source..."
+          Set-Location ..
+          git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
+          Set-Location tbb-src
+          mkdir build; Set-Location build
+          # MSVC may have warnings about std::tuple specialization in doctest.h
+          # Disable warning as error for this specific issue
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF `
+            -DCMAKE_CXX_FLAGS="/wd4996 /W3"
+          cmake --build . --config Release
+          Set-Location ..\..
+          # TBB outputs to platform-specific dirs like msvc_*_cxx_64_md_release/
+          # Find all .lib files recursively and copy them
+          Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbb*.lib" | Copy-Item -Destination "jdk\tbb-static\lib\" -Force
           
           # Verify static libraries exist
           if ((Test-Path "tbb-static\lib\tbb.lib") -and (Test-Path "tbb-static\lib\tbbmalloc.lib")) {
