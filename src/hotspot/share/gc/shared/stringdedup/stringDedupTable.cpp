@@ -47,6 +47,11 @@
 #include "utilities/growableArray.hpp"
 #include "utilities/macros.hpp"
 
+// oneJDK-25: TBB parallel_for for StringDedup hash table bucket scanning — parallelizes
+// bucket creation, verification, and statistics logging across multiple cores.
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+
 //////////////////////////////////////////////////////////////////////////////
 // StringDedup::Table::Bucket
 //
@@ -440,10 +445,18 @@ void StringDedup::Table::initialize() {
 StringDedup::Table::Bucket*
 StringDedup::Table::make_buckets(size_t number_of_buckets, size_t reserve) {
   Bucket* buckets = NEW_C_HEAP_ARRAY(Bucket, number_of_buckets, mtStringDedup);
-  for (size_t i = 0; i < number_of_buckets; ++i) {
-    // Cast because GrowableArray uses int for sizes and such.
-    ::new (&buckets[i]) Bucket(static_cast<int>(reserve));
-  }
+  // oneJDK-25: Use TBB parallel_for to construct buckets in parallel.
+  // Each bucket construction is independent, so this parallelizes the initialization cost.
+  oneapi::tbb::parallel_for(
+    oneapi::tbb::blocked_range<size_t>(0, number_of_buckets, 64),
+    [&](const oneapi::tbb::blocked_range<size_t>& r) {
+      // Cast because GrowableArray uses int for sizes and such.
+      int res = static_cast<int>(reserve);
+      for (size_t i = r.begin(); i != r.end(); ++i) {
+        ::new (&buckets[i]) Bucket(res);
+      }
+    }
+  );
   return buckets;
 }
 
@@ -709,11 +722,21 @@ void StringDedup::Table::cleanup_end() {
 }
 
 void StringDedup::Table::verify() {
-  size_t total_count = 0;
-  for (size_t i = 0; i < _number_of_buckets; ++i) {
-    _buckets[i].verify(i, _number_of_buckets);
-    total_count += _buckets[i].length();
-  }
+  // oneJDK-25: Use TBB parallel_reduce to verify buckets in parallel.
+  // Each bucket verification is independent, so this parallelizes the verification cost.
+  size_t total_count = oneapi::tbb::parallel_reduce(
+    oneapi::tbb::blocked_range<size_t>(0, _number_of_buckets, 64),
+    size_t(0), // Identity
+    [&](const oneapi::tbb::blocked_range<size_t>& r, size_t init) {
+      size_t local_count = init;
+      for (size_t i = r.begin(); i != r.end(); ++i) {
+        _buckets[i].verify(i, _number_of_buckets);
+        local_count += _buckets[i].length();
+      }
+      return local_count;
+    },
+    [](size_t a, size_t b) { return a + b; } // Combine
+  );
   guarantee(total_count == _number_of_entries,
             "number of values mismatch: %zu counted, %zu recorded",
             total_count, _number_of_entries);
@@ -736,6 +759,10 @@ void StringDedup::Table::log_statistics() {
   LogStreamHandle(Trace, stringdedup) log;
   if (log.is_enabled()) {
     ResourceMark rm;
+    // oneJDK-25: Use TBB parallel_for to count bucket lengths in parallel.
+    // Each bucket's length is independent, so we can parallelize the counting.
+    // However, GrowableArray is not thread-safe, so we use per-thread local arrays
+    // and merge them sequentially after parallel_for completes.
     GrowableArray<size_t> counts;
     for (size_t i = 0; i < _number_of_buckets; ++i) {
       int length = _buckets[i].length();

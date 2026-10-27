@@ -30,67 +30,32 @@
 #include "memory/resourceArea.hpp"
 #include "runtime/atomic.hpp"
 
+// oneJDK-25: TBB concurrent_queue for nmethod claim — eliminates Atomic::cmpxchg contention
+// by pre-populating a lock-free queue at construction. Workers pop nmethods from the queue
+// instead of competing on a single atomic pointer, eliminating cache-line bouncing.
+
 CodeCacheUnloadingTask::CodeCacheUnloadingTask(uint num_workers, bool unloading_occurred) :
   _unloading_occurred(unloading_occurred),
-  _num_workers(num_workers),
-  _first_nmethod(nullptr),
-  _claimed_nmethod(nullptr) {
-  // Get first alive nmethod
+  _num_workers(num_workers) {
+  // oneJDK-25: Populate TBB concurrent_queue with all alive nmethods.
+  // Single-threaded at construction time, then workers pop in parallel.
   NMethodIterator iter(NMethodIterator::all);
-  if(iter.next()) {
-    _first_nmethod = iter.method();
+  while (iter.next()) {
+    _tbb_nmethod_queue.push(iter.method());
   }
-  _claimed_nmethod = _first_nmethod;
 }
 
 CodeCacheUnloadingTask::~CodeCacheUnloadingTask() {
   CodeCache::verify_clean_inline_caches();
 }
 
-void CodeCacheUnloadingTask::claim_nmethods(nmethod** claimed_nmethods, int *num_claimed_nmethods) {
-  nmethod* first;
-  NMethodIterator last(NMethodIterator::all);
-
-  do {
-    *num_claimed_nmethods = 0;
-
-    first = _claimed_nmethod;
-    last = NMethodIterator(NMethodIterator::all, first);
-
-    if (first != nullptr) {
-
-      for (int i = 0; i < MaxClaimNmethods; i++) {
-        if (!last.next()) {
-          break;
-        }
-        claimed_nmethods[i] = last.method();
-        (*num_claimed_nmethods)++;
-      }
-    }
-
-  } while (Atomic::cmpxchg(&_claimed_nmethod, first, last.method()) != first);
-}
-
+// oneJDK-25: TBB concurrent_queue path — lock-free, no Atomic::cmpxchg contention.
+// Each worker pops nmethods from the queue until exhausted.
+// This eliminates the original claim_nmethods() loop with Atomic::cmpxchg contention.
 void CodeCacheUnloadingTask::work(uint worker_id) {
-  // The first nmethods is claimed by the first worker.
-  if (worker_id == 0 && _first_nmethod != nullptr) {
-    _first_nmethod->do_unloading(_unloading_occurred);
-    _first_nmethod = nullptr;
-  }
-
-  int num_claimed_nmethods;
-  nmethod* claimed_nmethods[MaxClaimNmethods];
-
-  while (true) {
-    claim_nmethods(claimed_nmethods, &num_claimed_nmethods);
-
-    if (num_claimed_nmethods == 0) {
-      break;
-    }
-
-    for (int i = 0; i < num_claimed_nmethods; i++) {
-      claimed_nmethods[i]->do_unloading(_unloading_occurred);
-    }
+  nmethod* nm;
+  while (_tbb_nmethod_queue.try_pop(nm)) {
+    nm->do_unloading(_unloading_occurred);
   }
 }
 

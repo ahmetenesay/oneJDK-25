@@ -30,25 +30,26 @@
 #include "gc/shared/oopStorageParState.hpp"
 #include "gc/shared/workerThread.hpp"
 
+// oneJDK-25: TBB concurrent_queue for nmethod claim — replaces Atomic::cmpxchg contention
+// with lock-free work-stealing queue. Each worker pops nmethods from the queue instead
+// of competing on a single atomic pointer, eliminating cache-line bouncing.
+#include <oneapi/tbb/concurrent_queue.h>
+
 class CodeCacheUnloadingTask {
 
   const bool                _unloading_occurred;
   const uint                _num_workers;
 
-  // Variables used to claim nmethods.
-  nmethod* _first_nmethod;
-  nmethod* volatile _claimed_nmethod;
+  // oneJDK-25: TBB lock-free queue for nmethod claim — replaces Atomic::cmpxchg contention
+  // Populated once at construction, then workers pop from it in parallel.
+  oneapi::tbb::concurrent_queue<nmethod*> _tbb_nmethod_queue;
 
 public:
   CodeCacheUnloadingTask(uint num_workers, bool unloading_occurred);
   ~CodeCacheUnloadingTask();
 
-private:
-  static const int MaxClaimNmethods = 16;
-  void claim_nmethods(nmethod** claimed_nmethods, int *num_claimed_nmethods);
-
 public:
-  // Cleaning and unloading of nmethods.
+  // Cleaning and unloading of nmethods — oneJDK-25: Uses TBB concurrent_queue (lock-free, no Atomic::cmpxchg contention)
   void work(uint worker_id);
 };
 
