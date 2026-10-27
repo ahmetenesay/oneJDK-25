@@ -62,16 +62,17 @@ JVM_LIBS += \
     $(JVM_LIBS_FEATURES) \
     #
 
-# oneJDK-25: Link Intel oneAPI TBB for GC worker thread pool
+# oneJDK-25: Link Intel oneAPI TBB for GC worker thread pool and tbbmalloc
 # TBB provides work-stealing scheduler that replaces semaphore-based WorkerTaskDispatcher
+# tbbmalloc provides scalable, lock-free memory allocation for all HotSpot internal allocations
 # TBB is installed system-wide via package manager in GitHub Actions:
 #   - Linux: libtbb-dev (apt) → /usr/include/oneapi/tbb/
 #   - macOS: onetbb (brew) → $(brew --prefix onetbb)/include/oneapi/tbb/
 #   - Windows: tbb-devel (conda-forge) → $(CONDA)\Library\include\oneapi\tbb/
 ifeq ($(call isTargetOs, windows), true)
-  JVM_LIBS += tbb.lib
+  JVM_LIBS += tbb.lib tbbmalloc.lib
 else
-  JVM_LIBS += -ltbb
+  JVM_LIBS += -ltbb -ltbbmalloc
 endif
 
 # These files and directories are always excluded

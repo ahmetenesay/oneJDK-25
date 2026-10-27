@@ -34,6 +34,14 @@
 #include "permitForbiddenFunctions_posix.hpp"
 #endif
 
+// oneJDK-25: Replace std::malloc with tbbmalloc for scalable, lock-free allocation.
+// tbbmalloc provides thread-local caching, reducing false sharing and improving
+// scalability on multi-core systems. This affects all HotSpot internal allocations,
+// including GC (Shenandoah), JIT compiler, Metaspace, CodeCache, and runtime.
+// NMT (Native Memory Tracking) remains compatible because tbbmalloc supports the
+// standard malloc/free/realloc API, and os::malloc() handles NMT overhead tracking.
+#include <oneapi/tbb/tbbmalloc.h>
+
 // Provide wrappers for some functions otherwise forbidden from use in HotSpot.
 //
 // There may be special circumstances where an otherwise forbidden function
@@ -60,10 +68,14 @@ inline int vsnprintf(char* str, size_t size, const char* format, va_list ap) {
   return ::vsnprintf(str, size, format, ap);
 }
 
-inline void* malloc(size_t size) { return ::malloc(size); }
-inline void free(void* ptr) { return ::free(ptr); }
-inline void* calloc(size_t nmemb, size_t size) { return ::calloc(nmemb, size); }
-inline void* realloc(void* ptr, size_t size) { return ::realloc(ptr, size); }
+// oneJDK-25: Use tbbmalloc for scalable, lock-free allocation.
+// tbbmalloc provides thread-local caching, reducing false sharing and improving
+// scalability on multi-core systems. All HotSpot internal allocations (GC, JIT,
+// Metaspace, CodeCache, runtime) now use tbbmalloc.
+inline void* malloc(size_t size) { return scalable_malloc(size); }
+inline void free(void* ptr) { scalable_free(ptr); }
+inline void* calloc(size_t nmemb, size_t size) { return scalable_calloc(nmemb, size); }
+inline void* realloc(void* ptr, size_t size) { return scalable_realloc(ptr, size); }
 
 inline char* strdup(const char* s) { return ::strdup(s); }
 
