@@ -41,10 +41,22 @@ oneapi::tbb::task_arena* WorkerTaskDispatcher::_arena = nullptr;
 WorkerTaskDispatcher::WorkerTaskDispatcher() :
     _task(nullptr),
     _done(false) {
-  // Initialize TBB task_arena on first use
-  // Automatic concurrency lets TBB detect CPU topology (hybrid P/E cores, homogeneous)
+  // Initialize TBB task_arena on first use.
+  // Automatic concurrency lets TBB detect CPU topology (hybrid P/E cores, homogeneous).
+  //
+  // SMT/HyperThreading optimization: On CPUs with SMT/HT enabled, TBB by default may
+  // schedule 2 threads per physical core (one per logical thread). For GC and JIT workloads,
+  // which are computation-heavy and benefit from exclusive core access, this causes L1/L2
+  // cache contention and execution unit contention, reducing IPC (Instructions Per Cycle).
+  //
+  // By setting max_threads_per_core = 1, we ensure each physical core runs at most one
+  // TBB worker thread, eliminating cache contention while still utilizing all physical cores.
+  // On non-SMT CPUs, this constraint has no effect — TBB already uses 1 thread per core.
+  // On hybrid CPUs, this preserves P-core/E-core routing while preventing SMT contention.
   if (!_arena) {
-    _arena = new oneapi::tbb::task_arena(oneapi::tbb::task_arena::automatic);
+    oneapi::tbb::task_arena::constraints constraints;
+    constraints.max_threads_per_core = 1;  // One thread per physical core to avoid SMT cache contention
+    _arena = new oneapi::tbb::task_arena(constraints);
     _arena->initialize();
   }
 }
