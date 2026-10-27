@@ -92,27 +92,34 @@ jobs:
           choco install ccache -y
         shell: pwsh
 
-      - name: Download TBB static libraries (Linux)
+      - name: Install TBB (Linux)
         if: runner.os == 'Linux'
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libtbb-dev
+          
           cd jdk
-          TBB_VERSION="${{ matrix.tbb_version }}"
-          PLATFORM="lin"
-          ARCH="intel64"
+          mkdir -p tbb-static/lib
           
-          # Download oneTBB from GitHub releases
-          TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-          echo "Downloading TBB from: $TBB_URL"
-          curl -L -o tbb.tar.gz "$TBB_URL" || {
-            # Fallback: Try older version
-            TBB_VERSION="2021.12.0"
-            TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-            echo "Fallback: Downloading TBB $TBB_VERSION from: $TBB_URL"
-            curl -L -o tbb.tar.gz "$TBB_URL"
-          }
+          # Copy system TBB static libraries to our tbb-static directory
+          # libtbb-dev package provides shared libs, we need static libs
+          # Check if static libs are available in the system
+          if [ -f /usr/lib/x86_64-linux-gnu/libtbb.a ] || [ -f /usr/lib/libtbb.a ]; then
+            cp /usr/lib*/libtbb*.a tbb-static/lib/ 2>/dev/null || true
+          fi
           
-          mkdir -p tbb-static
-          tar -xzf tbb.tar.gz -C tbb-static --strip-components=1
+          # If static libs are not available, build from source
+          if [ ! -f "tbb-static/lib/libtbb.a" ]; then
+            echo "Static TBB libs not found in system, building from source..."
+            cd ..
+            git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
+            cd tbb-src
+            mkdir build && cd build
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+            make -j$(nproc)
+            cd ../..
+            cp tbb-src/build/lib/libtbb*.a jdk/tbb-static/lib/
+          fi
           
           # Verify static libraries exist
           if [ -f "tbb-static/lib/libtbb.a" ] && [ -f "tbb-static/lib/libtbbmalloc.a" ]; then
@@ -126,32 +133,32 @@ jobs:
           
           echo "TBB_STATIC_LIB_DIR=$(pwd)/tbb-static/lib" >> $GITHUB_ENV
 
-      - name: Download TBB static libraries (macOS)
+      - name: Install TBB (macOS)
         if: runner.os == 'macOS'
         run: |
-          cd jdk
-          TBB_VERSION="${{ matrix.tbb_version }}"
-          PLATFORM="mac"
+          brew install onetbb
           
-          # Detect architecture
-          if [ "$(uname -m)" = "arm64" ]; then
-            ARCH="arm"
-          else
-            ARCH="intel64"
+          cd jdk
+          mkdir -p tbb-static/lib
+          
+          # Copy system TBB static libraries
+          TBB_PREFIX=$(brew --prefix onetbb)
+          if [ -d "$TBB_PREFIX/lib" ]; then
+            cp $TBB_PREFIX/lib/libtbb*.a tbb-static/lib/ 2>/dev/null || true
           fi
           
-          TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-          echo "Downloading TBB from: $TBB_URL"
-          curl -L -o tbb.tar.gz "$TBB_URL" || {
-            # Fallback: Try older version
-            TBB_VERSION="2021.12.0"
-            TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-            echo "Fallback: Downloading TBB $TBB_VERSION from: $TBB_URL"
-            curl -L -o tbb.tar.gz "$TBB_URL"
-          }
-          
-          mkdir -p tbb-static
-          tar -xzf tbb.tar.gz -C tbb-static --strip-components=1
+          # If static libs are not available, build from source
+          if [ ! -f "tbb-static/lib/libtbb.a" ]; then
+            echo "Static TBB libs not found, building from source..."
+            cd ..
+            git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
+            cd tbb-src
+            mkdir build && cd build
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+            make -j$(sysctl -n hw.ncpu)
+            cd ../..
+            cp tbb-src/build/lib/libtbb*.a jdk/tbb-static/lib/
+          fi
           
           # Verify static libraries exist
           if [ -f "tbb-static/lib/libtbb.a" ] && [ -f "tbb-static/lib/libtbbmalloc.a" ]; then
@@ -165,39 +172,39 @@ jobs:
           
           echo "TBB_STATIC_LIB_DIR=$(pwd)/tbb-static/lib" >> $GITHUB_ENV
 
-      - name: Download TBB static libraries (Windows)
+      - name: Install TBB (Windows)
         if: runner.os == 'Windows'
         run: |
+          choco install tbb -y
+          
           Set-Location jdk
-          $TBB_VERSION = "${{ matrix.tbb_version }}"
-          $PLATFORM = "win"
-          $ARCH = "intel64"
+          New-Item -ItemType Directory -Path "tbb-static\lib" -Force | Out-Null
           
-          $TBB_URL = "https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.zip"
-          Write-Host "Downloading TBB from: $TBB_URL"
-          
-          try {
-            Invoke-WebRequest -Uri $TBB_URL -OutFile "tbb.zip"
-          } catch {
-            # Fallback: Try older version
-            $TBB_VERSION = "2021.12.0"
-            $TBB_URL = "https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.zip"
-            Write-Host "Fallback: Downloading TBB $TBB_VERSION from: $TBB_URL"
-            Invoke-WebRequest -Uri $TBB_URL -OutFile "tbb.zip"
+          # Copy system TBB static libraries
+          $TBB_LIB_DIR = "C:\Program Files\Intel\oneAPI\tbb\latest\lib\intel64\vc14"
+          if (-not (Test-Path $TBB_LIB_DIR)) {
+            $TBB_LIB_DIR = "C:\Program Files (x86)\Intel\oneAPI\tbb\latest\lib\intel64\vc14"
           }
           
-          New-Item -ItemType Directory -Path "tbb-static" -Force | Out-Null
-          Expand-Archive -Path "tbb.zip" -DestinationPath "tbb-static" -Force
+          if (Test-Path $TBB_LIB_DIR) {
+            Copy-Item "$TBB_LIB_DIR\tbb*.lib" "tbb-static\lib\" -Force
+          }
           
-          # Find the extracted directory (might have version in name)
-          $ExtractedDir = Get-ChildItem -Path "tbb-static" -Directory | Select-Object -First 1
-          if ($ExtractedDir) {
-            Move-Item -Path "$($ExtractedDir.FullName)\*" -Destination "tbb-static\" -Force
-            Remove-Item -Path $ExtractedDir.FullName -Recurse -Force
+          # If static libs are not available, build from source
+          if (-not (Test-Path "tbb-static\lib\tbb.lib")) {
+            Write-Host "Static TBB libs not found, building from source..."
+            Set-Location ..
+            git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
+            Set-Location tbb-src
+            mkdir build; Set-Location build
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+            cmake --build . --config Release
+            Set-Location ..\..
+            Copy-Item "tbb-src\build\Release\tbb*.lib" "jdk\tbb-static\lib\" -Force
           }
           
           # Verify static libraries exist
-          if (Test-Path "tbb-static\lib\tbb.lib") -and (Test-Path "tbb-static\lib\tbbmalloc.lib") {
+          if ((Test-Path "tbb-static\lib\tbb.lib") -and (Test-Path "tbb-static\lib\tbbmalloc.lib")) {
             Write-Host "✅ TBB static libraries found:"
             Get-ChildItem -Path "tbb-static\lib\tbb*.lib" | Select-Object Name, Length
           } else {
