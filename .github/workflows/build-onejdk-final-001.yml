@@ -98,125 +98,105 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libtbb-dev
           
-          cd jdk
-          mkdir -p tbb-static/lib
+          mkdir -p jdk/tbb-static/lib
           
-          # Copy system TBB static libraries to our tbb-static directory
-          # libtbb-dev package provides shared libs, we need static libs
-          # Check if static libs are available in the system
+          # Copy system TBB static libraries to our tbb-static directory if available
           if [ -f /usr/lib/x86_64-linux-gnu/libtbb.a ] || [ -f /usr/lib/libtbb.a ]; then
-            cp /usr/lib*/libtbb*.a tbb-static/lib/ 2>/dev/null || true
+            cp /usr/lib*/libtbb*.a jdk/tbb-static/lib/ 2>/dev/null || true
           fi
           
           # If static libs are not available, build from source
-          if [ ! -f "tbb-static/lib/libtbb.a" ]; then
+          if [ ! -f "jdk/tbb-static/lib/libtbb.a" ]; then
             echo "Static TBB libs not found in system, building from source..."
-            cd ..
             git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
             cd tbb-src
             mkdir build && cd build
-            # GCC 13 has a known bug: -Werror=stringop-overflow false positive in oneTBB v2021.12.0
-            # Disable this specific warning to allow build to succeed
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            # Disable test suite (-DTBB_TEST=OFF) for faster build and avoid doctest/gcc13 warnings
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
               -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(nproc)
             cd ../..
             # TBB outputs to platform-specific dirs like gnu_*_cxx11_64_release/
-            # Find all .a files recursively and copy them
             find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
           fi
           
           # Verify static libraries exist
-          if [ -f "tbb-static/lib/libtbb.a" ] && [ -f "tbb-static/lib/libtbbmalloc.a" ]; then
+          if [ -f "jdk/tbb-static/lib/libtbb.a" ] && [ -f "jdk/tbb-static/lib/libtbbmalloc.a" ]; then
             echo "✅ TBB static libraries found:"
-            ls -la tbb-static/lib/libtbb*.a
+            ls -la jdk/tbb-static/lib/libtbb*.a
           else
             echo "❌ TBB static libraries not found!"
-            ls -la tbb-static/lib/
+            ls -la jdk/tbb-static/lib/
             exit 1
           fi
           
-          echo "TBB_STATIC_LIB_DIR=$(pwd)/tbb-static/lib" >> $GITHUB_ENV
+          echo "TBB_STATIC_LIB_DIR=$(pwd)/jdk/tbb-static/lib" >> $GITHUB_ENV
 
       - name: Install TBB (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install onetbb
           
-          cd jdk
-          mkdir -p tbb-static/lib
+          mkdir -p jdk/tbb-static/lib
           
           # Copy system TBB static libraries
           TBB_PREFIX=$(brew --prefix onetbb)
           if [ -d "$TBB_PREFIX/lib" ]; then
-            cp $TBB_PREFIX/lib/libtbb*.a tbb-static/lib/ 2>/dev/null || true
+            cp $TBB_PREFIX/lib/libtbb*.a jdk/tbb-static/lib/ 2>/dev/null || true
           fi
           
           # If static libs are not available, build from source
-          if [ ! -f "tbb-static/lib/libtbb.a" ]; then
+          if [ ! -f "jdk/tbb-static/lib/libtbb.a" ]; then
             echo "Static TBB libs not found, building from source..."
-            cd ..
             git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
             cd tbb-src
             mkdir build && cd build
-            # GCC 13 has a known bug: -Werror=stringop-overflow false positive in oneTBB v2021.12.0
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
               -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(sysctl -n hw.ncpu)
             cd ../..
-            # TBB outputs to platform-specific dirs like gnu_*_cxx11_64_release/
-            # Find all .a files recursively and copy them
             find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
           fi
           
           # Verify static libraries exist
-          if [ -f "tbb-static/lib/libtbb.a" ] && [ -f "tbb-static/lib/libtbbmalloc.a" ]; then
+          if [ -f "jdk/tbb-static/lib/libtbb.a" ] && [ -f "jdk/tbb-static/lib/libtbbmalloc.a" ]; then
             echo "✅ TBB static libraries found:"
-            ls -la tbb-static/lib/libtbb*.a
+            ls -la jdk/tbb-static/lib/libtbb*.a
           else
             echo "❌ TBB static libraries not found!"
-            ls -la tbb-static/lib/
+            ls -la jdk/tbb-static/lib/
             exit 1
           fi
           
-          echo "TBB_STATIC_LIB_DIR=$(pwd)/tbb-static/lib" >> $GITHUB_ENV
+          echo "TBB_STATIC_LIB_DIR=$(pwd)/jdk/tbb-static/lib" >> $GITHUB_ENV
 
       - name: Install TBB (Windows)
         if: runner.os == 'Windows'
         run: |
-          # Chocolatey TBB package is broken (403 Forbidden), skip it
-          # choco install tbb -y
+          New-Item -ItemType Directory -Path "jdk\tbb-static\lib" -Force | Out-Null
           
-          Set-Location jdk
-          New-Item -ItemType Directory -Path "tbb-static\lib" -Force | Out-Null
-          
-          # Build from source (Chocolatey package is broken)
           Write-Host "Building TBB from source..."
-          Set-Location ..
           git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
           Set-Location tbb-src
           mkdir build; Set-Location build
-          # MSVC may have warnings about std::tuple specialization in doctest.h
-          # Disable warning as error for this specific issue
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF `
+          # Disable TBB tests to prevent doctest.h / MSVC C5285 errors and speed up build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF `
             -DCMAKE_CXX_FLAGS="/wd4996 /W3"
           cmake --build . --config Release
           Set-Location ..\..
-          # TBB outputs to platform-specific dirs like msvc_*_cxx_64_md_release/
-          # Find all .lib files recursively and copy them
           Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbb*.lib" | Copy-Item -Destination "jdk\tbb-static\lib\" -Force
           
           # Verify static libraries exist
-          if ((Test-Path "tbb-static\lib\tbb.lib") -and (Test-Path "tbb-static\lib\tbbmalloc.lib")) {
+          if ((Test-Path "jdk\tbb-static\lib\tbb.lib") -and (Test-Path "jdk\tbb-static\lib\tbbmalloc.lib")) {
             Write-Host "✅ TBB static libraries found:"
-            Get-ChildItem -Path "tbb-static\lib\tbb*.lib" | Select-Object Name, Length
+            Get-ChildItem -Path "jdk\tbb-static\lib\tbb*.lib" | Select-Object Name, Length
           } else {
             Write-Host "❌ TBB static libraries not found!"
-            Get-ChildItem -Path "tbb-static\lib\" -ErrorAction SilentlyContinue
+            Get-ChildItem -Path "jdk\tbb-static\lib\" -ErrorAction SilentlyContinue
             exit 1
           }
           
-          $env:TBB_STATIC_LIB_DIR = (Resolve-Path "tbb-static\lib").Path
+          $env:TBB_STATIC_LIB_DIR = (Resolve-Path "jdk\tbb-static\lib").Path
           echo "TBB_STATIC_LIB_DIR=$env:TBB_STATIC_LIB_DIR" >> $env:GITHUB_ENV
         shell: pwsh
 
