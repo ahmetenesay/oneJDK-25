@@ -185,6 +185,10 @@ jobs:
           cmake --build . --config Release
           Set-Location ..\..
           Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbb*.lib" | Copy-Item -Destination "jdk\tbb-static\lib\" -Force
+          # If tbb12.lib was generated instead of tbb.lib, create a copy as tbb.lib
+          if ((Test-Path "jdk\tbb-static\lib\tbb12.lib") -and (-not (Test-Path "jdk\tbb-static\lib\tbb.lib"))) {
+            Copy-Item "jdk\tbb-static\lib\tbb12.lib" "jdk\tbb-static\lib\tbb.lib" -Force
+          }
           
           # Verify static libraries exist
           if ((Test-Path "jdk\tbb-static\lib\tbb.lib") -and (Test-Path "jdk\tbb-static\lib\tbbmalloc.lib")) {
@@ -204,7 +208,8 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd jdk
-          ./configure \
+          chmod +x configure make/autoconf/build-aux/* 2>/dev/null || true
+          bash ./configure \
             --with-debug-level=release \
             --with-num-cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
             --with-memory-size=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo 4096) \
