@@ -64,14 +64,15 @@ JVM_LIBS += \
 
 # oneJDK-25: Link Intel oneAPI TBB for GC worker thread pool
 # TBB provides work-stealing scheduler that replaces semaphore-based WorkerTaskDispatcher
+# TBB is installed system-wide via package manager in GitHub Actions:
+#   - Linux: libtbb-dev (apt) → /usr/include/oneapi/tbb/
+#   - macOS: onetbb (brew) → $(brew --prefix onetbb)/include/oneapi/tbb/
+#   - Windows: tbb-devel (conda-forge) → $(CONDA)\Library\include\oneapi\tbb/
 ifeq ($(call isTargetOs, windows), true)
   JVM_LIBS += tbb.lib
 else
   JVM_LIBS += -ltbb
 endif
-
-# TBB header include path (from oneJDK-25/include/oneapi/tbb/)
-JVM_CFLAGS += -I$(TOPDIR)/include
 
 # These files and directories are always excluded
 JVM_EXCLUDE_FILES += args.cc
