@@ -196,39 +196,6 @@ CompilerStatistics CompileBroker::_stats_per_level[CompLevel_full_optimization];
 CompileQueue* CompileBroker::_c2_compile_queue     = nullptr;
 CompileQueue* CompileBroker::_c1_compile_queue     = nullptr;
 
-// oneJDK-25: TBB task_arena for JIT compiler priority scheduling
-// C2 uses high-priority arena (P-cores), C1 uses low-priority arena (E-cores)
-oneapi::tbb::task_arena* CompileBroker::_c2_arena = nullptr;
-oneapi::tbb::task_arena* CompileBroker::_c1_arena = nullptr;
-
-// oneJDK-25: Initialize TBB task arenas for JIT compiler priority scheduling
-// C2 arena: high priority — critical compilations run on P-cores (hybrid CPUs)
-// C1 arena: low priority — standard compilations run on E-cores (hybrid CPUs)
-// On homogeneous CPUs, TBB automatically uses all cores with priority-based scheduling.
-void CompileBroker::init_tbb_arenas() {
-  // oneJDK-25: Create TBB task arenas with automatic concurrency.
-  // TBB will detect the CPU topology and schedule tasks accordingly:
-  // - Hybrid CPUs: C2 tasks on P-cores, C1 tasks on E-cores
-  // - Homogeneous CPUs: All cores used, priority-based scheduling
-  _c2_arena = new oneapi::tbb::task_arena(1);  // Minimum concurrency, TBB auto-scales
-  _c2_arena->initialize(oneapi::tbb::task_arena::automatic, 1, oneapi::tbb::priority::high);
-
-  _c1_arena = new oneapi::tbb::task_arena(1);  // Minimum concurrency, TBB auto-scales
-  _c1_arena->initialize(oneapi::tbb::task_arena::automatic, 1, oneapi::tbb::priority::low);
-
-  if (PrintCompilation) {
-    tty->print_cr("oneJDK-25: TBB JIT compiler arenas initialized — C2 (high priority), C1 (low priority)");
-  }
-}
-
-// oneJDK-25: Shutdown TBB task arenas
-void CompileBroker::shutdown_tbb_arenas() {
-  delete _c2_arena;
-  delete _c1_arena;
-  _c2_arena = nullptr;
-  _c1_arena = nullptr;
-}
-
 bool compileBroker_init() {
   if (LogEvents) {
     CompilationLog::init();
@@ -749,8 +716,6 @@ void CompileBroker::compilation_init(JavaThread* THREAD) {
   }
 
   // Start the compiler thread(s)
-  // oneJDK-25: Initialize TBB task arenas for priority-based JIT scheduling
-  init_tbb_arenas();
   init_compiler_threads();
   // totalTime performance counter is always created as it is required
   // by the implementation of java.lang.management.CompilationMXBean.
@@ -2042,16 +2007,16 @@ void CompileBroker::compiler_thread_loop() {
           // task to the TBB arena to signal the scheduler about the priority, ensuring that
           // on hybrid CPUs, C2 compilations are favored on P-cores and C1 on E-cores.
           int comp_level = task->comp_level();
-          if (is_c2_compile(comp_level) && _c2_arena != nullptr) {
-            // oneJDK-25: Signal high-priority arena — TBB scheduler will favor P-cores
-            _c2_arena->execute([]() {
-              // Lightweight task to signal priority to TBB scheduler
-            });
-          } else if (is_c1_compile(comp_level) && _c1_arena != nullptr) {
-            // oneJDK-25: Signal low-priority arena — TBB scheduler will favor E-cores
-            _c1_arena->execute([]() {
-              // Lightweight task to signal priority to TBB scheduler
-            });
+          // oneJDK-25: Set OS thread priority for P-core/E-core scheduling.
+          // C2 compilations get high priority (favored on P-cores on hybrid CPUs),
+          // C1 compilations get normal priority (may run on E-cores on hybrid CPUs).
+          // On homogeneous CPUs, OS scheduler uses all cores with priority-based scheduling.
+          // This is more effective than empty TBB arena execute() calls because it
+          // directly affects the CompilerThread's OS scheduling priority.
+          if (is_c2_compile(comp_level)) {
+            os::set_priority(thread, NearMaxPriority);  // C2 → high priority → P-cores
+          } else {
+            os::set_priority(thread, NormPriority);  // C1 → normal priority → E-cores
           }
           // Compilation runs on the CompilerThread — cannot be moved to TBB worker
           invoke_compiler_on_method(task);

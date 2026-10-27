@@ -42,13 +42,6 @@
 // of competing on a single monitor, eliminating cache-line bouncing on MethodCompileQueue_lock.
 #include <oneapi/tbb/concurrent_queue.h>
 
-// oneJDK-25: TBB task_arena for JIT compiler priority scheduling — C2 compiler tasks run in
-// a high-priority arena (P-cores on hybrid CPUs), C1 compiler tasks run in a low-priority
-// arena (E-cores on hybrid CPUs). This ensures critical C2 compilations get scheduled on
-// performance cores while less critical C1 compilations run on efficiency cores.
-#include <oneapi/tbb/task_arena.h>
-#include <oneapi/tbb/global_control.h>
-
 class nmethod;
 
 #if defined(ASSERT) && COMPILER2_OR_JVMCI
@@ -222,14 +215,6 @@ class CompileBroker: AllStatic {
 
   static CompileQueue* _c2_compile_queue;
   static CompileQueue* _c1_compile_queue;
-
-  // oneJDK-25: TBB task_arena for JIT compiler priority scheduling
-  // C2 uses high-priority arena (P-cores), C1 uses low-priority arena (E-cores)
-  static oneapi::tbb::task_arena* _c2_arena;  // High priority — critical compilations
-  static oneapi::tbb::task_arena* _c1_arena;  // Low priority — standard compilations
-
-  static void init_tbb_arenas();  // oneJDK-25: Initialize TBB task arenas
-  static void shutdown_tbb_arenas();  // oneJDK-25: Shutdown TBB task arenas
 
   // performance counters
   static PerfCounter* _perf_total_compilation;
