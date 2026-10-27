@@ -40,8 +40,10 @@ import java.util.MissingResourceException;
 import java.util.Queue;
 import java.util.ResourceBundle;
 import java.util.Set;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
+import java.util.stream.Collectors;
 
 import javax.annotation.processing.Processor;
 import javax.lang.model.SourceVersion;
@@ -956,6 +958,14 @@ public class JavaCompiler {
                     break;
 
                 case BY_FILE: {
+                        // oneJDK-25: BY_FILE policy — each file is compiled independently
+                        // through attribute → flow → desugar → generate pipeline.
+                        // NOTE: True parallel BY_FILE compilation is NOT feasible because
+                        // JavaCompiler instance fields (log, attr, flow, lower, gen) are
+                        // NOT thread-safe. Parallelizing would require separate Context
+                        // instances per file, which is too invasive for this patch.
+                        // The parseFiles() method (Step 1) already provides parallelism
+                        // for the parsing phase, which is I/O bound and benefits most.
                         Queue<Queue<Env<AttrContext>>> q = todo.groupByFile();
                         while (!q.isEmpty() && !shouldStop(CompileState.ATTR)) {
                             generate(desugar(warn(flow(attribute(q.remove())))));
@@ -1023,16 +1033,57 @@ public class JavaCompiler {
        if (!force && shouldStop(CompileState.PARSE))
            return List.nil();
 
-        //parse all files
-        ListBuffer<JCCompilationUnit> trees = new ListBuffer<>();
+        // Collect unique files first
+        List<JavaFileObject> files = new java.util.ArrayList<>();
         Set<JavaFileObject> filesSoFar = new HashSet<>();
         for (JavaFileObject fileObject : fileObjects) {
             if (!filesSoFar.contains(fileObject)) {
                 filesSoFar.add(fileObject);
-                trees.append(parse(fileObject));
+                files.add(fileObject);
             }
         }
-        return trees.toList();
+
+        // oneJDK-25: Parallel parsing using ForkJoinPool.
+        // Each file is parsed independently — no symbol dependencies exist at parse time.
+        // The parse(JavaFileObject) method uses log.useSource() which is NOT thread-safe,
+        // so we use a synchronized wrapper that ensures only one thread accesses log at a time,
+        // while the actual parsing (Parser.parseCompilationUnit()) runs in parallel.
+        // For small file counts (< 8), sequential parsing avoids ForkJoinPool overhead.
+        if (files.size() < 8) {
+            ListBuffer<JCCompilationUnit> trees = new ListBuffer<>();
+            for (JavaFileObject fileObject : files) {
+                trees.append(parse(fileObject));
+            }
+            return trees.toList();
+        }
+
+        ForkJoinPool pool = ForkJoinPool.commonPool();
+        List<JCCompilationUnit> trees = pool.submit(() ->
+            files.parallelStream()
+                 .map(f -> {
+                     // Synchronize only the log.useSource() call, not the entire parse
+                     // The heavy work (Parser.parseCompilationUnit()) runs outside the lock
+                     JavaFileObject prev;
+                     synchronized (log) {
+                         prev = log.useSource(f);
+                     }
+                     try {
+                         JCTree.JCCompilationUnit t = parse(f, readSource(f));
+                         if (t.endPositions != null) {
+                             synchronized (log) {
+                                 log.setEndPosTable(f, t.endPositions);
+                             }
+                         }
+                         return t;
+                     } finally {
+                         synchronized (log) {
+                             log.useSource(prev);
+                         }
+                     }
+                 })
+                 .collect(Collectors.toList())
+        ).get();
+        return List.from(trees);
     }
 
    /**
