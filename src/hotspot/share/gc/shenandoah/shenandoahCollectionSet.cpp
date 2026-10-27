@@ -36,6 +36,9 @@
 #include "runtime/atomic.hpp"
 #include "utilities/copy.hpp"
 
+// oneJDK-25: TBB concurrent_queue for claim_next() — eliminates Atomic::cmpxchg contention
+// by pre-populating a lock-free queue at the start of each GC cycle.
+
 ShenandoahCollectionSet::ShenandoahCollectionSet(ShenandoahHeap* heap, ReservedSpace space, char* heap_base) :
   _map_size(heap->num_regions()),
   _region_size_bytes_shift(ShenandoahHeapRegion::region_size_bytes_shift()),
@@ -50,7 +53,8 @@ ShenandoahCollectionSet::ShenandoahCollectionSet(ShenandoahHeap* heap, ReservedS
   _region_count(0),
   _old_garbage(0),
   _preselected_regions(nullptr),
-  _current_index(0) {
+  _current_index(0),
+  _tbb_queue_populated(false) {
 
   // The collection set map is reserved to cover the entire heap *and* zero addresses.
   // This is needed to accept in-cset checks for both heap oops and nulls, freeing
@@ -142,13 +146,47 @@ void ShenandoahCollectionSet::clear() {
   _young_available_bytes_collected = 0;
 
   _has_old_regions = false;
+
+  // oneJDK-25: Reset TBB queue flag — queue will be repopulated before next GC cycle
+  _tbb_queue_populated = false;
+}
+
+// oneJDK-25: Populate TBB concurrent_queue from cset map.
+// Called once before parallel evacuation starts. Scans the cset_map sequentially
+// (single-threaded at safepoint), then workers pop from the lock-free queue in parallel.
+// This eliminates Atomic::cmpxchg contention on _current_index — each worker
+// gets its regions via try_pop() with O(1) amortized cost and no cache-line bouncing.
+void ShenandoahCollectionSet::populate_tbb_queue() {
+  // Clear any leftover regions from previous GC cycle
+  ShenandoahHeapRegion* dummy;
+  while (_tbb_region_queue.try_pop(dummy)) {
+    // Drain
+  }
+
+  // Scan cset_map and push all cset regions into the queue
+  size_t max = _heap->num_regions();
+  for (size_t index = 0; index < max; index++) {
+    if (is_in(index)) {
+      _tbb_region_queue.push(_heap->get_region(index));
+    }
+  }
+  _tbb_queue_populated = true;
 }
 
 ShenandoahHeapRegion* ShenandoahCollectionSet::claim_next() {
-  // This code is optimized for the case when collection set contains only
-  // a few regions. In this case, it is more constructive to check for is_in
-  // before hitting the (potentially contended) atomic index.
+  // oneJDK-25: TBB concurrent_queue path — lock-free, no Atomic::cmpxchg contention.
+  // If the queue was populated, use it. Otherwise, fall back to the original
+  // Atomic::cmpxchg path for safety (e.g., if populate_tbb_queue() was not called).
+  if (_tbb_queue_populated) {
+    ShenandoahHeapRegion* r;
+    if (_tbb_region_queue.try_pop(r)) {
+      return r;
+    }
+    return nullptr; // Queue exhausted
+  }
 
+  // Fallback: original Atomic::cmpxchg path — kept for ABI compatibility
+  // and for cases where populate_tbb_queue() was not called.
   size_t max = _heap->num_regions();
   size_t old = Atomic::load(&_current_index);
 

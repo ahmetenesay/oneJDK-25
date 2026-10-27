@@ -1283,6 +1283,11 @@ private:
 };
 
 void ShenandoahHeap::evacuate_collection_set(bool concurrent) {
+  // oneJDK-25: Populate TBB concurrent_queue before parallel evacuation.
+  // This eliminates Atomic::cmpxchg contention on _current_index — workers
+  // pop regions from a lock-free queue instead of competing on a single atomic.
+  _collection_set->populate_tbb_queue();
+
   ShenandoahEvacuationTask task(this, _collection_set, concurrent);
   workers()->run_task(&task);
 }

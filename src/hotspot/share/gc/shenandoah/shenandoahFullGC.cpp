@@ -67,6 +67,11 @@
 #include "utilities/events.hpp"
 #include "utilities/growableArray.hpp"
 
+// oneJDK-25: TBB parallel_reduce for distribute_slices() — parallelizes total_live calculation
+// and region iteration in Full GC compaction slice distribution.
+#include <oneapi/tbb/parallel_reduce.h>
+#include <oneapi/tbb/blocked_range.h>
+
 ShenandoahFullGC::ShenandoahFullGC() :
   _gc_timer(ShenandoahHeap::heap()->gc_timer()),
   _preserved_marks(new PreservedMarksSet(true)) {}
@@ -614,13 +619,24 @@ void ShenandoahFullGC::distribute_slices(ShenandoahHeapRegionSet** worker_slices
 
   // Compute how much live data is there. This would approximate the size of dense prefix
   // we target to create.
-  size_t total_live = 0;
-  for (size_t idx = 0; idx < n_regions; idx++) {
-    ShenandoahHeapRegion *r = heap->get_region(idx);
-    if (ShenandoahPrepareForCompactionTask::is_candidate_region(r)) {
-      total_live += r->get_live_data_words();
-    }
-  }
+  // oneJDK-25: Use TBB parallel_reduce to calculate total_live in parallel.
+  // Each thread calculates live data for its range of regions independently,
+  // then TBB reduces (sums) the results. This eliminates the sequential scan bottleneck.
+  size_t total_live = oneapi::tbb::parallel_reduce(
+    oneapi::tbb::blocked_range<size_t>(0, n_regions, 64),
+    size_t(0), // Identity
+    [&](const oneapi::tbb::blocked_range<size_t>& r, size_t init) {
+      size_t local_live = init;
+      for (size_t idx = r.begin(); idx != r.end(); idx++) {
+        ShenandoahHeapRegion *r2 = heap->get_region(idx);
+        if (ShenandoahPrepareForCompactionTask::is_candidate_region(r2)) {
+          local_live += r2->get_live_data_words();
+        }
+      }
+      return local_live;
+    },
+    [](size_t a, size_t b) { return a + b; } // Combine
+  );
 
   // Estimate the size for the dense prefix. Note that we specifically count only the
   // "full" regions, so there would be some non-full regions in the slice tail.

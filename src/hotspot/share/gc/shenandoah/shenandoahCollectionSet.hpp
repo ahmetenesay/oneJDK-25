@@ -33,6 +33,11 @@
 #include "memory/reservedSpace.hpp"
 #include "memory/virtualspace.hpp"
 
+// oneJDK-25: TBB concurrent_queue for claim_next() — replaces Atomic::cmpxchg contention
+// with lock-free work-stealing queue. Each worker pops regions from the queue instead
+// of competing on a single atomic index, eliminating cache-line bouncing.
+#include <oneapi/tbb/concurrent_queue.h>
+
 class ShenandoahCollectionSet : public CHeapObj<mtGC> {
   friend class ShenandoahHeap;
   friend class ShenandoahCollectionSetPreselector;
@@ -79,13 +84,21 @@ private:
   volatile size_t       _current_index;
   shenandoah_padding(1);
 
+  // oneJDK-25: TBB lock-free queue for claim_next() — replaces Atomic::cmpxchg contention
+  // Populated once at the start of GC, then workers pop from it in parallel.
+  oneapi::tbb::concurrent_queue<ShenandoahHeapRegion*> _tbb_region_queue;
+  bool _tbb_queue_populated;
+
 public:
   ShenandoahCollectionSet(ShenandoahHeap* heap, ReservedSpace space, char* heap_base);
 
   // Add region to collection set
   void add_region(ShenandoahHeapRegion* r);
 
-  // MT version
+  // oneJDK-25: Populate TBB queue from cset map — called once before parallel evacuation
+  void populate_tbb_queue();
+
+  // MT version — oneJDK-25: Uses TBB concurrent_queue (lock-free, no Atomic::cmpxchg contention)
   ShenandoahHeapRegion* claim_next();
 
   // Single-thread version

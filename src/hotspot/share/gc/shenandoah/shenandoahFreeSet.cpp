@@ -37,6 +37,12 @@
 #include "logging/logStream.hpp"
 #include "memory/resourceArea.hpp"
 
+// oneJDK-25: TBB parallel_for + enumerable_thread_specific for find_regions_with_alloc_capacity()
+// — parallelizes the sequential region scan and partition assignment in FreeSet rebuild.
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/enumerable_thread_specific.h>
+
 static const char* partition_name(ShenandoahFreeSetPartitionId t) {
   switch (t) {
     case ShenandoahFreeSetPartitionId::NotFree: return "NotFree";
@@ -1424,6 +1430,88 @@ void ShenandoahFreeSet::find_regions_with_alloc_capacity(size_t &young_cset_regi
   size_t region_size_bytes = _partitions.region_size_bytes();
   size_t max_regions = _partitions.max_regions();
 
+  // oneJDK-25: Thread-local accumulators for TBB parallel_for.
+  // Each thread maintains its own copy of leftmost/rightmost/regions/used counters,
+  // eliminating atomic contention on shared variables. After parallel_for completes,
+  // we merge (reduce) all thread-local results into the final global values.
+  struct FreeSetPartitionStats {
+    size_t leftmost;
+    size_t rightmost;
+    size_t leftmost_empty;
+    size_t rightmost_empty;
+    size_t regions;
+    size_t used;
+    size_t old_cset_regions;
+    size_t young_cset_regions;
+    size_t old_region_count;
+    size_t first_old_region;
+    size_t last_old_region;
+
+    FreeSetPartitionStats(size_t max_r) :
+      leftmost(max_r), rightmost(0), leftmost_empty(max_r), rightmost_empty(0),
+      regions(0), used(0), old_cset_regions(0), young_cset_regions(0),
+      old_region_count(0), first_old_region(max_r), last_old_region(0) {}
+  };
+
+  // oneJDK-25: enumerable_thread_specific provides per-thread storage without contention
+  oneapi::tbb::enumerable_thread_specific<FreeSetPartitionStats> threadStats(max_regions);
+
+  size_t num_regions = _heap->num_regions();
+  ShenandoahFreeSet* self = this; // capture for lambda
+
+  // oneJDK-25: Parallel region scan — each thread processes its range independently
+  oneapi::tbb::parallel_for(
+    oneapi::tbb::blocked_range<size_t>(0, num_regions, 64),
+    [&](const oneapi::tbb::blocked_range<size_t>& range) {
+      FreeSetPartitionStats& stats = threadStats.local();
+      for (size_t idx = range.begin(); idx != range.end(); idx++) {
+        ShenandoahHeapRegion* region = self->_heap->get_region(idx);
+        if (region->is_trash()) {
+          if (region->is_old()) {
+            stats.old_cset_regions++;
+          } else {
+            assert(region->is_young(), "Trashed region should be old or young");
+            stats.young_cset_regions++;
+          }
+        } else if (region->is_old()) {
+          stats.old_region_count++;
+          if (stats.first_old_region > idx) {
+            stats.first_old_region = idx;
+          }
+          stats.last_old_region = idx;
+        }
+        if (region->is_alloc_allowed() || region->is_trash()) {
+          assert(!region->is_cset(), "Shouldn't be adding cset regions to the free set");
+          size_t ac = self->alloc_capacity(region);
+          if (ac > PLAB::min_size() * HeapWordSize) {
+            if (region->is_trash() || !region->is_old()) {
+              self->_partitions.raw_assign_membership(idx, ShenandoahFreeSetPartitionId::Mutator);
+              if (idx < stats.leftmost) stats.leftmost = idx;
+              if (idx > stats.rightmost) stats.rightmost = idx;
+              if (ac == region_size_bytes) {
+                if (idx < stats.leftmost_empty) stats.leftmost_empty = idx;
+                if (idx > stats.rightmost_empty) stats.rightmost_empty = idx;
+              }
+              stats.regions++;
+              stats.used += (region_size_bytes - ac);
+            } else {
+              self->_partitions.raw_assign_membership(idx, ShenandoahFreeSetPartitionId::OldCollector);
+              if (idx < stats.leftmost) stats.leftmost = idx;
+              if (idx > stats.rightmost) stats.rightmost = idx;
+              if (ac == region_size_bytes) {
+                if (idx < stats.leftmost_empty) stats.leftmost_empty = idx;
+                if (idx > stats.rightmost_empty) stats.rightmost_empty = idx;
+              }
+              stats.regions++;
+              stats.used += (region_size_bytes - ac);
+            }
+          }
+        }
+      }
+    }
+  );
+
+  // oneJDK-25: Merge (reduce) thread-local results into global variables
   size_t mutator_leftmost = max_regions;
   size_t mutator_rightmost = 0;
   size_t mutator_leftmost_empty = max_regions;
@@ -1438,73 +1526,45 @@ void ShenandoahFreeSet::find_regions_with_alloc_capacity(size_t &young_cset_regi
   size_t old_collector_regions = 0;
   size_t old_collector_used = 0;
 
-  size_t num_regions = _heap->num_regions();
+  // Note: The enumerable_thread_specific stores stats for ALL threads indiscriminately.
+  // We need to separate Mutator vs OldCollector stats. Since the lambda above stores
+  // both types in the same struct, we need a second pass or separate structs.
+  // For correctness, we use a simpler approach: re-scan the partition assignments
+  // to compute the final boundaries (this is O(num_regions) but single-threaded and fast).
   for (size_t idx = 0; idx < num_regions; idx++) {
-    ShenandoahHeapRegion* region = _heap->get_region(idx);
-    if (region->is_trash()) {
-      // Trashed regions represent regions that had been in the collection partition but have not yet been "cleaned up".
-      // The cset regions are not "trashed" until we have finished update refs.
-      if (region->is_old()) {
-        old_cset_regions++;
-      } else {
-        assert(region->is_young(), "Trashed region should be old or young");
-        young_cset_regions++;
+    ShenandoahFreeSetPartitionId pid = _partitions.partition_id(idx);
+    if (pid == ShenandoahFreeSetPartitionId::Mutator) {
+      if (idx < mutator_leftmost) mutator_leftmost = idx;
+      if (idx > mutator_rightmost) mutator_rightmost = idx;
+      ShenandoahHeapRegion* r = _heap->get_region(idx);
+      size_t ac = alloc_capacity(r);
+      if (ac == region_size_bytes) {
+        if (idx < mutator_leftmost_empty) mutator_leftmost_empty = idx;
+        if (idx > mutator_rightmost_empty) mutator_rightmost_empty = idx;
       }
-    } else if (region->is_old()) {
-      // count both humongous and regular regions, but don't count trash (cset) regions.
-      old_region_count++;
-      if (first_old_region > idx) {
-        first_old_region = idx;
+      mutator_regions++;
+      mutator_used += (region_size_bytes - ac);
+    } else if (pid == ShenandoahFreeSetPartitionId::OldCollector) {
+      if (idx < old_collector_leftmost) old_collector_leftmost = idx;
+      if (idx > old_collector_rightmost) old_collector_rightmost = idx;
+      ShenandoahHeapRegion* r = _heap->get_region(idx);
+      size_t ac = alloc_capacity(r);
+      if (ac == region_size_bytes) {
+        if (idx < old_collector_leftmost_empty) old_collector_leftmost_empty = idx;
+        if (idx > old_collector_rightmost_empty) old_collector_rightmost_empty = idx;
       }
-      last_old_region = idx;
+      old_collector_regions++;
+      old_collector_used += (region_size_bytes - ac);
     }
-    if (region->is_alloc_allowed() || region->is_trash()) {
-      assert(!region->is_cset(), "Shouldn't be adding cset regions to the free set");
+  }
 
-      // Do not add regions that would almost surely fail allocation
-      size_t ac = alloc_capacity(region);
-      if (ac > PLAB::min_size() * HeapWordSize) {
-        if (region->is_trash() || !region->is_old()) {
-          // Both young and old collected regions (trashed) are placed into the Mutator set
-          _partitions.raw_assign_membership(idx, ShenandoahFreeSetPartitionId::Mutator);
-          if (idx < mutator_leftmost) {
-            mutator_leftmost = idx;
-          }
-          if (idx > mutator_rightmost) {
-            mutator_rightmost = idx;
-          }
-          if (ac == region_size_bytes) {
-            if (idx < mutator_leftmost_empty) {
-              mutator_leftmost_empty = idx;
-            }
-            if (idx > mutator_rightmost_empty) {
-              mutator_rightmost_empty = idx;
-            }
-          }
-          mutator_regions++;
-          mutator_used += (region_size_bytes - ac);
-        } else {
-          // !region->is_trash() && region is_old()
-          _partitions.raw_assign_membership(idx, ShenandoahFreeSetPartitionId::OldCollector);
-          if (idx < old_collector_leftmost) {
-            old_collector_leftmost = idx;
-          }
-          if (idx > old_collector_rightmost) {
-            old_collector_rightmost = idx;
-          }
-          if (ac == region_size_bytes) {
-            if (idx < old_collector_leftmost_empty) {
-              old_collector_leftmost_empty = idx;
-            }
-            if (idx > old_collector_rightmost_empty) {
-              old_collector_rightmost_empty = idx;
-            }
-          }
-          old_collector_regions++;
-          old_collector_used += (region_size_bytes - ac);
-        }
-      }
-    }
+  // Merge cset/old region counts from thread-local stats
+  for (auto& stats : threadStats) {
+    young_cset_regions += stats.young_cset_regions;
+    old_cset_regions += stats.old_cset_regions;
+    old_region_count += stats.old_region_count;
+    if (stats.first_old_region < first_old_region) first_old_region = stats.first_old_region;
+    if (stats.last_old_region > last_old_region) last_old_region = stats.last_old_region;
   }
   log_debug(gc, free)("  At end of prep_to_rebuild, mutator_leftmost: %zu"
                       ", mutator_rightmost: %zu"
