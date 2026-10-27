@@ -360,11 +360,31 @@ jobs:
           ls -la "$BUILD_DIR/lib/server/"
         shell: bash
 
-      - name: Upload JDK artifact
+      - name: Package JDK as ZIP (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd jdk
+          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
+          cd "$(dirname "$BUILD_DIR")"
+          zip -r "${{ matrix.artifact_name }}.zip" onejdk-25/
+          echo "ZIP_FILE=${{ matrix.artifact_name }}.zip" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Package JDK as ZIP (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Set-Location jdk
+          $BuildDir = Get-ChildItem -Path "build" -Directory | Select-Object -First 1
+          $ZipPath = "${{ matrix.artifact_name }}.zip"
+          Compress-Archive -Path "$BuildDir\onejdk-25" -DestinationPath $ZipPath -Force
+          echo "ZIP_FILE=$ZipPath" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Upload JDK ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: jdk/build/*/onejdk-25/
+          name: ${{ matrix.artifact_name }}.zip
+          path: jdk/${{ matrix.artifact_name }}.zip
           retention-days: 90
 
       - name: Upload build logs
