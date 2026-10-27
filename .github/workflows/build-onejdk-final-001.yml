@@ -115,7 +115,10 @@ jobs:
             git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
             cd tbb-src
             mkdir build && cd build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+            # GCC 13 has a known bug: -Werror=stringop-overflow false positive in oneTBB v2021.12.0
+            # Disable this specific warning to allow build to succeed
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+              -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(nproc)
             cd ../..
             cp tbb-src/build/lib/libtbb*.a jdk/tbb-static/lib/
@@ -154,7 +157,9 @@ jobs:
             git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
             cd tbb-src
             mkdir build && cd build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+            # GCC 13 has a known bug: -Werror=stringop-overflow false positive in oneTBB v2021.12.0
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+              -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(sysctl -n hw.ncpu)
             cd ../..
             cp tbb-src/build/lib/libtbb*.a jdk/tbb-static/lib/
@@ -197,7 +202,9 @@ jobs:
             git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
             Set-Location tbb-src
             mkdir build; Set-Location build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+            # GCC 13 has a known bug: -Werror=stringop-overflow false positive in oneTBB v2021.12.0
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF `
+              -DCMAKE_CXX_FLAGS="/wd4996"
             cmake --build . --config Release
             Set-Location ..\..
             Copy-Item "tbb-src\build\Release\tbb*.lib" "jdk\tbb-static\lib\" -Force
