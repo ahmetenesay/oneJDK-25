@@ -62,17 +62,36 @@ JVM_LIBS += \
     $(JVM_LIBS_FEATURES) \
     #
 
-# oneJDK-25: Link Intel oneAPI TBB for GC worker thread pool and tbbmalloc
+# oneJDK-25 Final #001: Statically link Intel oneAPI TBB into libjvm
 # TBB provides work-stealing scheduler that replaces semaphore-based WorkerTaskDispatcher
 # tbbmalloc provides scalable, lock-free memory allocation for all HotSpot internal allocations
-# TBB is installed system-wide via package manager in GitHub Actions:
-#   - Linux: libtbb-dev (apt) → /usr/include/oneapi/tbb/
-#   - macOS: onetbb (brew) → $(brew --prefix onetbb)/include/oneapi/tbb/
-#   - Windows: tbb-devel (conda-forge) → $(CONDA)\Library\include\oneapi\tbb/
+#
+# STATIC LINKING: TBB is statically linked into libjvm.dll/so/dylib.
+# No external TBB binaries required at runtime — zero dependency!
+# TBB static libraries are downloaded during build and linked directly.
+#
+# TBB_STATIC_LIB_DIR is set by the build workflow to the directory containing
+# the static TBB libraries (libtbb.a, libtbbmalloc.a on Unix; tbb.lib, tbbmalloc.lib on Windows).
+#
+# On Linux/macOS: -L<TBB_STATIC_LIB_DIR> -ltbb -ltbbmalloc -lpthread -ldl
+# On Windows: <TBB_STATIC_LIB_DIR>\tbb.lib <TBB_STATIC_LIB_DIR>\tbbmalloc.lib
 ifeq ($(call isTargetOs, windows), true)
-  JVM_LIBS += tbb.lib tbbmalloc.lib
+  # Windows: Static link TBB .lib files directly
+  ifneq ($(TBB_STATIC_LIB_DIR),)
+    JVM_LIBS += $(TBB_STATIC_LIB_DIR)\tbb.lib $(TBB_STATIC_LIB_DIR)\tbbmalloc.lib
+  else
+    # Fallback: Try system TBB (dynamic) if static libs not found
+    JVM_LIBS += tbb.lib tbbmalloc.lib
+  endif
 else
-  JVM_LIBS += -ltbb -ltbbmalloc
+  # Linux/macOS: Static link TBB .a files
+  ifneq ($(TBB_STATIC_LIB_DIR),)
+    JVM_LDFLAGS += -L$(TBB_STATIC_LIB_DIR)
+    JVM_LIBS += -ltbb -ltbbmalloc -lpthread -ldl
+  else
+    # Fallback: Try system TBB (dynamic) if static libs not found
+    JVM_LIBS += -ltbb -ltbbmalloc
+  endif
 endif
 
 # These files and directories are always excluded

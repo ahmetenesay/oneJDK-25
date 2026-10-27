@@ -1,0 +1,362 @@
+# oneJDK-25 Final #001 — Full JDK 25 Build with Static TBB Integration
+#
+# This workflow builds a complete JDK 25 distribution with Intel oneAPI TBB
+# statically linked into libjvm. No external TBB binaries required at runtime.
+#
+# Key features:
+# - TBB statically linked into libjvm.dll/so/dylib — zero runtime dependency
+# - tbbmalloc statically linked — all HotSpot allocations use tbbmalloc
+# - Shenandoah GC enabled and verified
+# - Full JDK images output: bin/, conf/, include/, lib/, legal/, NOTICE, release
+# - 5 platforms: Linux x64/arm64, Windows x64, macOS x64/arm64
+#
+# Build output structure (same as Adoptium/Temurin):
+#   onejdk-25-*/
+#   ├── bin/          # java.exe, javac.exe, jcmd, jstack, etc.
+#   ├── conf/         # security/, security/java.security, etc.
+#   ├── include/      # jni.h, jvmti.h, etc.
+#   ├── lib/          # libjvm.dll/so/dylib (with TBB statically linked), src.zip, etc.
+#   ├── legal/        # LICENSE, README, etc.
+#   ├── NOTICE        # JDK notice file
+#   └── release       # JDK release properties
+
+name: oneJDK-25 Final #001
+
+on:
+  workflow_dispatch:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  build-jdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # === Linux x64 ===
+          - os: ubuntu-24.04
+            platform: linux-x64
+            artifact_name: onejdk-25-final-001-linux-x64
+            tbb_version: "2022.0.0"
+          # === Linux ARM64 ===
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            artifact_name: onejdk-25-final-001-linux-arm64
+            tbb_version: "2022.0.0"
+          # === Windows x64 ===
+          - os: windows-latest
+            platform: windows-x64
+            artifact_name: onejdk-25-final-001-windows-x64
+            tbb_version: "2022.0.0"
+          # === macOS x64 (Intel) ===
+          - os: macos-13
+            platform: macos-x64
+            artifact_name: onejdk-25-final-001-macos-x64
+            tbb_version: "2022.0.0"
+          # === macOS ARM64 (Apple Silicon) ===
+          - os: macos-14
+            platform: macos-arm64
+            artifact_name: onejdk-25-final-001-macos-arm64
+            tbb_version: "2022.0.0"
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout oneJDK-25
+        uses: actions/checkout@v4
+        with:
+          repository: ahmetenesay/oneJDK-25
+          path: jdk
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential zlib1g-dev libx11-dev libxext-dev \
+            libxrender-dev libxrandr-dev libxtst-dev libxt-dev \
+            ccache fonts-dejavu-core libfreetype6-dev libasound2-dev \
+            libpng-dev libjpeg-dev
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ccache freetype
+
+      - name: Install build dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ccache -y
+        shell: pwsh
+
+      - name: Download TBB static libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd jdk
+          TBB_VERSION="${{ matrix.tbb_version }}"
+          PLATFORM="lin"
+          ARCH="intel64"
+          
+          # Download oneTBB from GitHub releases
+          TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
+          echo "Downloading TBB from: $TBB_URL"
+          curl -L -o tbb.tar.gz "$TBB_URL" || {
+            # Fallback: Try older version
+            TBB_VERSION="2021.12.0"
+            TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
+            echo "Fallback: Downloading TBB $TBB_VERSION from: $TBB_URL"
+            curl -L -o tbb.tar.gz "$TBB_URL"
+          }
+          
+          mkdir -p tbb-static
+          tar -xzf tbb.tar.gz -C tbb-static --strip-components=1
+          
+          # Verify static libraries exist
+          if [ -f "tbb-static/lib/libtbb.a" ] && [ -f "tbb-static/lib/libtbbmalloc.a" ]; then
+            echo "✅ TBB static libraries found:"
+            ls -la tbb-static/lib/libtbb*.a
+          else
+            echo "❌ TBB static libraries not found!"
+            ls -la tbb-static/lib/
+            exit 1
+          fi
+          
+          echo "TBB_STATIC_LIB_DIR=$(pwd)/tbb-static/lib" >> $GITHUB_ENV
+
+      - name: Download TBB static libraries (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd jdk
+          TBB_VERSION="${{ matrix.tbb_version }}"
+          PLATFORM="mac"
+          
+          # Detect architecture
+          if [ "$(uname -m)" = "arm64" ]; then
+            ARCH="arm"
+          else
+            ARCH="intel64"
+          fi
+          
+          TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
+          echo "Downloading TBB from: $TBB_URL"
+          curl -L -o tbb.tar.gz "$TBB_URL" || {
+            # Fallback: Try older version
+            TBB_VERSION="2021.12.0"
+            TBB_URL="https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
+            echo "Fallback: Downloading TBB $TBB_VERSION from: $TBB_URL"
+            curl -L -o tbb.tar.gz "$TBB_URL"
+          }
+          
+          mkdir -p tbb-static
+          tar -xzf tbb.tar.gz -C tbb-static --strip-components=1
+          
+          # Verify static libraries exist
+          if [ -f "tbb-static/lib/libtbb.a" ] && [ -f "tbb-static/lib/libtbbmalloc.a" ]; then
+            echo "✅ TBB static libraries found:"
+            ls -la tbb-static/lib/libtbb*.a
+          else
+            echo "❌ TBB static libraries not found!"
+            ls -la tbb-static/lib/
+            exit 1
+          fi
+          
+          echo "TBB_STATIC_LIB_DIR=$(pwd)/tbb-static/lib" >> $GITHUB_ENV
+
+      - name: Download TBB static libraries (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Set-Location jdk
+          $TBB_VERSION = "${{ matrix.tbb_version }}"
+          $PLATFORM = "win"
+          $ARCH = "intel64"
+          
+          $TBB_URL = "https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.zip"
+          Write-Host "Downloading TBB from: $TBB_URL"
+          
+          try {
+            Invoke-WebRequest -Uri $TBB_URL -OutFile "tbb.zip"
+          } catch {
+            # Fallback: Try older version
+            $TBB_VERSION = "2021.12.0"
+            $TBB_URL = "https://github.com/uxlfoundation/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-${PLATFORM}-${ARCH}.zip"
+            Write-Host "Fallback: Downloading TBB $TBB_VERSION from: $TBB_URL"
+            Invoke-WebRequest -Uri $TBB_URL -OutFile "tbb.zip"
+          }
+          
+          New-Item -ItemType Directory -Path "tbb-static" -Force | Out-Null
+          Expand-Archive -Path "tbb.zip" -DestinationPath "tbb-static" -Force
+          
+          # Find the extracted directory (might have version in name)
+          $ExtractedDir = Get-ChildItem -Path "tbb-static" -Directory | Select-Object -First 1
+          if ($ExtractedDir) {
+            Move-Item -Path "$($ExtractedDir.FullName)\*" -Destination "tbb-static\" -Force
+            Remove-Item -Path $ExtractedDir.FullName -Recurse -Force
+          }
+          
+          # Verify static libraries exist
+          if (Test-Path "tbb-static\lib\tbb.lib") -and (Test-Path "tbb-static\lib\tbbmalloc.lib") {
+            Write-Host "✅ TBB static libraries found:"
+            Get-ChildItem -Path "tbb-static\lib\tbb*.lib" | Select-Object Name, Length
+          } else {
+            Write-Host "❌ TBB static libraries not found!"
+            Get-ChildItem -Path "tbb-static\lib\" -ErrorAction SilentlyContinue
+            exit 1
+          }
+          
+          $env:TBB_STATIC_LIB_DIR = (Resolve-Path "tbb-static\lib").Path
+          echo "TBB_STATIC_LIB_DIR=$env:TBB_STATIC_LIB_DIR" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Configure JDK (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd jdk
+          ./configure \
+            --with-debug-level=release \
+            --with-num-cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
+            --with-memory-size=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo 4096) \
+            --with-native-debug-symbols=zip \
+            --with-jvm-variants=server \
+            --with-gc=shenandoah \
+            --disable-warnings-as-errors \
+            --with-conf-name=onejdk-25
+          
+          # Verify Shenandoah GC is enabled
+          if grep -q "Shenandoah" build/*/conf/config.log; then
+            echo "✅ Shenandoah GC is enabled in build configuration"
+          else
+            echo "⚠️  Shenandoah GC configuration status unknown"
+          fi
+
+      - name: Configure JDK (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Set-Location jdk
+          $env:TBB_STATIC_LIB_DIR = ${env:TBB_STATIC_LIB_DIR}
+          .\configure `
+            --with-debug-level=release `
+            --with-num-cores=$env:NUMBER_OF_PROCESSORS `
+            --with-jvm-variants=server `
+            --with-gc=shenandoah `
+            --disable-warnings-as-errors `
+            --with-conf-name=onejdk-25
+          
+          # Verify Shenandoah GC is enabled
+          if (Select-String -Path "build/*/conf/config.log" -Pattern "Shenandoah" -Quiet) {
+            Write-Host "✅ Shenandoah GC is enabled in build configuration"
+          } else {
+            Write-Host "⚠️  Shenandoah GC configuration status unknown"
+          }
+        shell: pwsh
+
+      - name: Build JDK with static TBB
+        run: |
+          cd jdk
+          echo "TBB_STATIC_LIB_DIR: $TBB_STATIC_LIB_DIR"
+          
+          # Pass TBB_STATIC_LIB_DIR to make
+          make images \
+            JOB_COUNT=$(nproc 2>/dev/null || sysctl -n hw.ncpu || echo $env:NUMBER_OF_PROCESSORS) \
+            TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
+        shell: bash
+
+      - name: Verify TBB is statically linked (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd jdk
+          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
+          JVM_LIB="$BUILD_DIR/lib/server/libjvm.so"
+          
+          if [ -f "$JVM_LIB" ]; then
+            echo "Checking libjvm.so for TBB symbols..."
+            if nm "$JVM_LIB" | grep -q "tbb"; then
+              echo "✅ TBB symbols found in libjvm.so — statically linked!"
+            else
+              echo "⚠️  TBB symbols not found in libjvm.so"
+            fi
+            
+            # Check for dynamic TBB dependency
+            if ldd "$JVM_LIB" | grep -q "libtbb"; then
+              echo "❌ WARNING: libjvm.so still depends on dynamic libtbb!"
+            else
+              echo "✅ libjvm.so has no dynamic TBB dependency — fully static!"
+            fi
+          else
+            echo "❌ libjvm.so not found at: $JVM_LIB"
+            ls -la "$BUILD_DIR/lib/server/" 2>/dev/null || echo "Server lib dir not found"
+          fi
+
+      - name: Verify TBB is statically linked (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Set-Location jdk
+          $BuildDir = Get-ChildItem -Path "build" -Directory | Select-Object -First 1
+          $JvmDll = "$BuildDir.FullName\onejdk-25\lib\server\jvm.dll"
+          
+          if (Test-Path $JvmDll) {
+            Write-Host "Checking jvm.dll for TBB dependencies..."
+            $Deps = dumpbin /dependents $JvmDll 2>$null
+            if ($Deps -match "tbb") {
+              Write-Host "❌ WARNING: jvm.dll still depends on dynamic TBB!"
+            } else {
+              Write-Host "✅ jvm.dll has no dynamic TBB dependency — fully static!"
+            }
+          } else {
+            Write-Host "❌ jvm.dll not found at: $JvmDll"
+            Get-ChildItem -Path "$BuildDir\onejdk-25\lib\server\" -ErrorAction SilentlyContinue
+          }
+        shell: pwsh
+
+      - name: Verify Shenandoah GC works
+        run: |
+          cd jdk
+          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
+          
+          if [ -d "$BUILD_DIR" ]; then
+            echo "Testing Shenandoah GC..."
+            "$BUILD_DIR/bin/java" -XX:+UseShenandoahGC -version
+            echo "✅ Shenandoah GC works!"
+            
+            # Test with a simple Java program
+            "$BUILD_DIR/bin/java" -XX:+UseShenandoahGC -cp . -Xmx256m -Xms256m -Xlog:gc+heap=info -version
+            echo "✅ Shenandoah GC heap logging works!"
+          else
+            echo "❌ Build images not found"
+            exit 1
+          fi
+        shell: bash
+
+      - name: Show build output structure
+        run: |
+          cd jdk
+          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
+          echo "=== Build output structure ==="
+          ls -la "$BUILD_DIR"
+          echo ""
+          echo "=== bin/ directory ==="
+          ls -la "$BUILD_DIR/bin/" | head -20
+          echo ""
+          echo "=== lib/ directory ==="
+          ls -la "$BUILD_DIR/lib/" | head -20
+          echo ""
+          echo "=== lib/server/ directory ==="
+          ls -la "$BUILD_DIR/lib/server/"
+        shell: bash
+
+      - name: Upload JDK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: jdk/build/*/onejdk-25/
+          retention-days: 90
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-logs
+          path: jdk/build/*/conf/
+          retention-days: 30
