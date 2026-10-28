@@ -72,9 +72,17 @@ JVM_LIBS += \
 #
 # TBB_STATIC_LIB_DIR is set by the build workflow to the directory containing
 # the static TBB libraries (libtbb.a, libtbbmalloc.a on Unix; tbb.lib, tbbmalloc.lib on Windows).
+# TBB_INCLUDE_DIR is set by the build workflow to the directory containing
+# the TBB header files (oneapi/tbb/*.h).
 #
 # On Linux/macOS: -L<TBB_STATIC_LIB_DIR> -ltbb -ltbbmalloc -lpthread -ldl
 # On Windows: <TBB_STATIC_LIB_DIR>\tbb.lib <TBB_STATIC_LIB_DIR>\tbbmalloc.lib
+
+# Add TBB include path so that #include <oneapi/tbb/...> resolves correctly
+ifneq ($(TBB_INCLUDE_DIR),)
+  JVM_CFLAGS += -I$(TBB_INCLUDE_DIR)
+endif
+
 ifeq ($(call isTargetOs, windows), true)
   # Windows: Static link TBB .lib files directly
   ifneq ($(TBB_STATIC_LIB_DIR),)

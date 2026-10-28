@@ -88,12 +88,41 @@ jobs:
       # -----------------------------------------------------------------------
       # 2. Boot JDK — must come before configure on ALL platforms
       # -----------------------------------------------------------------------
-      - name: Set up Boot JDK (all platforms)
+      # Windows ARM64: Temurin does not provide JDK 24 for windows-aarch64.
+      # Use Microsoft Build of OpenJDK instead, which supports windows-aarch64.
+      # Other platforms continue to use Temurin.
+      - name: Set up Boot JDK (Linux/macOS/Windows x64)
+        if: runner.os != 'Windows' || (runner.os == 'Windows' && matrix.platform != 'windows-arm64')
         uses: actions/setup-java@v4
         with:
           java-version: '24'
           distribution: 'temurin'
-        id: boot-jdk
+        id: boot-jdk-unix
+
+      - name: Set up Boot JDK (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.platform == 'windows-arm64'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '24'
+          distribution: 'microsoft'
+        id: boot-jdk-winarm
+
+      # Create a unified output ID for downstream steps
+      - name: Set unified Boot JDK path (Linux/macOS/Windows x64)
+        if: runner.os != 'Windows' || (runner.os == 'Windows' && matrix.platform != 'windows-arm64')
+        shell: pwsh
+        run: |
+          $path = "${{ steps.boot-jdk-unix.outputs.path }}"
+          Write-Host "Boot JDK path: $path"
+          echo "BOOT_JDK_PATH=$path" >> $env:GITHUB_ENV
+
+      - name: Set unified Boot JDK path (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.platform == 'windows-arm64'
+        shell: pwsh
+        run: |
+          $path = "${{ steps.boot-jdk-winarm.outputs.path }}"
+          Write-Host "Boot JDK path (Microsoft JDK 24): $path"
+          echo "BOOT_JDK_PATH=$path" >> $env:GITHUB_ENV
 
       # -----------------------------------------------------------------------
       # 3. Platform build dependencies
@@ -133,26 +162,22 @@ jobs:
       - name: Install TBB (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y libtbb-dev
+          mkdir -p jdk/tbb-static/lib jdk/tbb-static/include
 
-          mkdir -p jdk/tbb-static/lib
+          # Build TBB from source to get both static libs and headers
+          echo "Building TBB from source..."
+          git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
+          mkdir -p tbb-src/build && cd tbb-src/build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
+            -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
+          make -j$(nproc)
+          cd ../..
 
-          # Copy system TBB static libraries if available
-          if ls /usr/lib/*/libtbb.a 2>/dev/null || ls /usr/lib/libtbb.a 2>/dev/null; then
-            find /usr/lib -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \; 2>/dev/null || true
-          fi
+          # Copy static libraries
+          find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
 
-          # Build from source if static libs are not available
-          if [ ! -f "jdk/tbb-static/lib/libtbb.a" ]; then
-            echo "Static TBB libs not found in system — building from source..."
-            git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
-            mkdir -p tbb-src/build && cd tbb-src/build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
-              -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
-            make -j$(nproc)
-            cd ../..
-            find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
-          fi
+          # Copy header files — critical for #include <oneapi/tbb/...>
+          cp -r tbb-src/include/oneapi jdk/tbb-static/include/
 
           if [ -f "jdk/tbb-static/lib/libtbb.a" ] && [ -f "jdk/tbb-static/lib/libtbbmalloc.a" ]; then
             echo "✅ TBB static libraries found:"
@@ -163,7 +188,16 @@ jobs:
             exit 1
           fi
 
+          if [ -d "jdk/tbb-static/include/oneapi/tbb" ]; then
+            echo "✅ TBB headers found:"
+            ls jdk/tbb-static/include/oneapi/tbb/ | head -10
+          else
+            echo "❌ TBB headers not found!"
+            exit 1
+          fi
+
           echo "TBB_STATIC_LIB_DIR=$(pwd)/jdk/tbb-static/lib" >> $GITHUB_ENV
+          echo "TBB_INCLUDE_DIR=$(pwd)/jdk/tbb-static/include" >> $GITHUB_ENV
 
       - name: Install TBB (macOS)
         if: runner.os == 'macOS'
@@ -203,6 +237,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Path "jdk\tbb-static\lib" -Force | Out-Null
+          New-Item -ItemType Directory -Path "jdk\tbb-static\include" -Force | Out-Null
 
           Write-Host "Building TBB from source..."
           git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
@@ -219,10 +254,14 @@ jobs:
           cmake --build . --config Release
           Set-Location ..\..
 
+          # Copy static libraries
           Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbb*.lib" |
             Copy-Item -Destination "jdk\tbb-static\lib\" -Force
           Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbbmalloc*.lib" |
             Copy-Item -Destination "jdk\tbb-static\lib\" -Force
+
+          # Copy header files — critical for #include <oneapi/tbb/...>
+          Copy-Item -Path "tbb-src\include\oneapi" -Destination "jdk\tbb-static\include\" -Recurse -Force
 
           # oneTBB v2021.12+ names the lib tbb12.lib — create tbb.lib alias if needed
           if ((Test-Path "jdk\tbb-static\lib\tbb12.lib") -and (-not (Test-Path "jdk\tbb-static\lib\tbb.lib"))) {
@@ -238,8 +277,18 @@ jobs:
             exit 1
           }
 
-          $tbbDir = (Resolve-Path "jdk\tbb-static\lib").Path
-          echo "TBB_STATIC_LIB_DIR=$tbbDir" >> $env:GITHUB_ENV
+          if (Test-Path "jdk\tbb-static\include\oneapi\tbb") {
+            Write-Host "✅ TBB headers found:"
+            Get-ChildItem -Path "jdk\tbb-static\include\oneapi\tbb\" | Select-Object -First 10 Name
+          } else {
+            Write-Host "❌ TBB headers not found!"
+            exit 1
+          }
+
+          $tbbLibDir = (Resolve-Path "jdk\tbb-static\lib").Path
+          $tbbIncludeDir = (Resolve-Path "jdk\tbb-static\include").Path
+          echo "TBB_STATIC_LIB_DIR=$tbbLibDir" >> $env:GITHUB_ENV
+          echo "TBB_INCLUDE_DIR=$tbbIncludeDir" >> $env:GITHUB_ENV
         shell: pwsh
 
       # -----------------------------------------------------------------------
@@ -248,8 +297,7 @@ jobs:
       - name: Configure JDK (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Convert JAVA_HOME to a path configure can use
-          BOOT_JDK="${{ steps.boot-jdk.outputs.path }}"
+          BOOT_JDK="$BOOT_JDK_PATH"
           echo "Boot JDK: $BOOT_JDK"
 
           cd jdk
@@ -277,7 +325,7 @@ jobs:
       - name: Configure JDK (macOS)
         if: runner.os == 'macOS'
         run: |
-          BOOT_JDK="${{ steps.boot-jdk.outputs.path }}"
+          BOOT_JDK="$BOOT_JDK_PATH"
           echo "Boot JDK: $BOOT_JDK"
 
           cd jdk
@@ -294,8 +342,8 @@ jobs:
       - name: Configure JDK (Windows)
         if: runner.os == 'Windows'
         run: |
-          # Use Boot JDK path from actions/setup-java — convert to MSYS2 path
-          BOOT_JDK=$(cygpath -u "${{ steps.boot-jdk.outputs.path }}")
+          # Use BOOT_JDK_PATH from environment — convert to MSYS2 path
+          BOOT_JDK=$(cygpath -u "$BOOT_JDK_PATH")
           echo "Boot JDK (MSYS2 path): $BOOT_JDK"
 
           cd jdk
@@ -324,8 +372,10 @@ jobs:
         run: |
           cd jdk
           echo "TBB_STATIC_LIB_DIR: $TBB_STATIC_LIB_DIR"
+          echo "TBB_INCLUDE_DIR: $TBB_INCLUDE_DIR"
           make images JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
-            TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
+            TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR" \
+            TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR"
         shell: bash
 
       - name: Build JDK with static TBB (Windows)
@@ -333,7 +383,10 @@ jobs:
         run: |
           cd jdk
           echo "TBB_STATIC_LIB_DIR: $TBB_STATIC_LIB_DIR"
-          make images TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
+          echo "TBB_INCLUDE_DIR: $TBB_INCLUDE_DIR"
+          TBB_LIB_DIR=$(cygpath -u "$TBB_STATIC_LIB_DIR")
+          TBB_INC_DIR=$(cygpath -u "$TBB_INCLUDE_DIR")
+          make images TBB_STATIC_LIB_DIR="$TBB_LIB_DIR" TBB_INCLUDE_DIR="$TBB_INC_DIR"
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
