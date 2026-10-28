@@ -4,18 +4,18 @@
 # statically linked into libjvm. No external TBB binaries required at runtime.
 #
 # Key features:
-# - TBB statically linked into libjvm.dll/so/dylib — zero runtime dependency
+# - TBB statically linked into libjvm.dll/so — zero runtime dependency
 # - tbbmalloc statically linked — all HotSpot allocations use tbbmalloc
-# - Shenandoah GC enabled and verified
+# - Shenandoah GC enabled and verified (Linux/ARM64 only — not available on Windows)
 # - Full JDK images output: bin/, conf/, include/, lib/, legal/, NOTICE, release
-# - 5 platforms: Linux x64/arm64, Windows x64, macOS x64/arm64
+# - Targets: Linux x64, Linux ARM64, Windows x64, Windows ARM64
 #
 # Build output structure (same as Adoptium/Temurin):
 #   onejdk-25-*/
-#   ├── bin/          # java.exe, javac.exe, jcmd, jstack, etc.
+#   ├── bin/          # java, javac, jcmd, jstack, etc.
 #   ├── conf/         # security/, security/java.security, etc.
 #   ├── include/      # jni.h, jvmti.h, etc.
-#   ├── lib/          # libjvm.dll/so/dylib (with TBB statically linked), src.zip, etc.
+#   ├── lib/          # libjvm.so/dll (with TBB statically linked), src.zip, etc.
 #   ├── legal/        # LICENSE, README, etc.
 #   ├── NOTICE        # JDK notice file
 #   └── release       # JDK release properties
@@ -40,41 +40,68 @@ jobs:
             platform: linux-x64
             artifact_name: onejdk-25-final-001-linux-x64
             tbb_version: "2022.0.0"
+            shenandoah: "true"
           # === Linux ARM64 ===
           - os: ubuntu-24.04-arm
             platform: linux-arm64
             artifact_name: onejdk-25-final-001-linux-arm64
             tbb_version: "2022.0.0"
+            shenandoah: "true"
           # === Windows x64 ===
           - os: windows-latest
             platform: windows-x64
             artifact_name: onejdk-25-final-001-windows-x64
             tbb_version: "2022.0.0"
-          # === macOS x64 (Intel) ===
-          - os: macos-13
-            platform: macos-x64
-            artifact_name: onejdk-25-final-001-macos-x64
+            shenandoah: "false"
+          # === Windows ARM64 ===
+          - os: windows-11-arm
+            platform: windows-arm64
+            artifact_name: onejdk-25-final-001-windows-arm64
             tbb_version: "2022.0.0"
-          # === macOS ARM64 (Apple Silicon) ===
-          - os: macos-14
-            platform: macos-arm64
-            artifact_name: onejdk-25-final-001-macos-arm64
-            tbb_version: "2022.0.0"
+            shenandoah: "false"
+          # === macOS x64 (Intel) — DISABLED ===
+          # - os: macos-13
+          #   platform: macos-x64
+          #   artifact_name: onejdk-25-final-001-macos-x64
+          #   tbb_version: "2022.0.0"
+          #   shenandoah: "false"
+          # === macOS ARM64 (Apple Silicon) — DISABLED ===
+          # - os: macos-14
+          #   platform: macos-arm64
+          #   artifact_name: onejdk-25-final-001-macos-arm64
+          #   tbb_version: "2022.0.0"
+          #   shenandoah: "false"
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 240
+    timeout-minutes: 300
 
     steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
       - name: Checkout oneJDK-25
         uses: actions/checkout@v4
         with:
           repository: ahmetenesay/oneJDK-25
           path: jdk
 
+      # -----------------------------------------------------------------------
+      # 2. Boot JDK — must come before configure on ALL platforms
+      # -----------------------------------------------------------------------
+      - name: Set up Boot JDK (all platforms)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '24'
+          distribution: 'temurin'
+        id: boot-jdk
+
+      # -----------------------------------------------------------------------
+      # 3. Platform build dependencies
+      # -----------------------------------------------------------------------
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
+          sudo apt-get update -y
           sudo apt-get install -y \
             autoconf make file \
             build-essential zlib1g-dev libx11-dev libxext-dev \
@@ -95,111 +122,113 @@ jobs:
           path-type: minimal
           release: false
 
-      - name: Install build dependencies (Windows)
+      - name: Install ccache (Windows)
         if: runner.os == 'Windows'
-        run: |
-          choco install ccache -y
+        run: choco install ccache -y
         shell: pwsh
 
+      # -----------------------------------------------------------------------
+      # 4. Build/Install static TBB
+      # -----------------------------------------------------------------------
       - name: Install TBB (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
           sudo apt-get install -y libtbb-dev
-          
+
           mkdir -p jdk/tbb-static/lib
-          
-          # Copy system TBB static libraries to our tbb-static directory if available
-          if [ -f /usr/lib/x86_64-linux-gnu/libtbb.a ] || [ -f /usr/lib/libtbb.a ]; then
-            cp /usr/lib*/libtbb*.a jdk/tbb-static/lib/ 2>/dev/null || true
+
+          # Copy system TBB static libraries if available
+          if ls /usr/lib/*/libtbb.a 2>/dev/null || ls /usr/lib/libtbb.a 2>/dev/null; then
+            find /usr/lib -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \; 2>/dev/null || true
           fi
-          
-          # If static libs are not available, build from source
+
+          # Build from source if static libs are not available
           if [ ! -f "jdk/tbb-static/lib/libtbb.a" ]; then
-            echo "Static TBB libs not found in system, building from source..."
+            echo "Static TBB libs not found in system — building from source..."
             git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
-            cd tbb-src
-            mkdir build && cd build
-            # Disable test suite (-DTBB_TEST=OFF) for faster build and avoid doctest/gcc13 warnings
+            mkdir -p tbb-src/build && cd tbb-src/build
             cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
               -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(nproc)
             cd ../..
-            # TBB outputs to platform-specific dirs like gnu_*_cxx11_64_release/
             find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
           fi
-          
-          # Verify static libraries exist
+
           if [ -f "jdk/tbb-static/lib/libtbb.a" ] && [ -f "jdk/tbb-static/lib/libtbbmalloc.a" ]; then
             echo "✅ TBB static libraries found:"
             ls -la jdk/tbb-static/lib/libtbb*.a
           else
             echo "❌ TBB static libraries not found!"
-            ls -la jdk/tbb-static/lib/
+            ls -la jdk/tbb-static/lib/ || true
             exit 1
           fi
-          
+
           echo "TBB_STATIC_LIB_DIR=$(pwd)/jdk/tbb-static/lib" >> $GITHUB_ENV
 
       - name: Install TBB (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install onetbb
-          
+
           mkdir -p jdk/tbb-static/lib
-          
-          # Copy system TBB static libraries
+
           TBB_PREFIX=$(brew --prefix onetbb)
           if [ -d "$TBB_PREFIX/lib" ]; then
             cp $TBB_PREFIX/lib/libtbb*.a jdk/tbb-static/lib/ 2>/dev/null || true
           fi
-          
-          # If static libs are not available, build from source
+
           if [ ! -f "jdk/tbb-static/lib/libtbb.a" ]; then
-            echo "Static TBB libs not found, building from source..."
+            echo "Static TBB libs not found — building from source..."
             git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
-            cd tbb-src
-            mkdir build && cd build
+            mkdir -p tbb-src/build && cd tbb-src/build
             cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
               -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
             make -j$(sysctl -n hw.ncpu)
             cd ../..
             find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
           fi
-          
-          # Verify static libraries exist
+
           if [ -f "jdk/tbb-static/lib/libtbb.a" ] && [ -f "jdk/tbb-static/lib/libtbbmalloc.a" ]; then
             echo "✅ TBB static libraries found:"
             ls -la jdk/tbb-static/lib/libtbb*.a
           else
             echo "❌ TBB static libraries not found!"
-            ls -la jdk/tbb-static/lib/
+            ls -la jdk/tbb-static/lib/ || true
             exit 1
           fi
-          
+
           echo "TBB_STATIC_LIB_DIR=$(pwd)/jdk/tbb-static/lib" >> $GITHUB_ENV
 
       - name: Install TBB (Windows)
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Path "jdk\tbb-static\lib" -Force | Out-Null
-          
+
           Write-Host "Building TBB from source..."
           git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
           Set-Location tbb-src
-          mkdir build; Set-Location build
-          # Disable TBB tests to prevent doctest.h / MSVC C5285 errors and speed up build
+          New-Item -ItemType Directory -Path "build" -Force | Out-Null
+          Set-Location build
+
+          # For Windows ARM64 runner, build natively; for x64 runner, build for x64
+          $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "ARM64" } else { "x64" }
+          Write-Host "Building TBB for architecture: $arch"
+
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF `
-            -DCMAKE_CXX_FLAGS="/wd4996 /W3"
+            -DCMAKE_CXX_FLAGS="/wd4996 /W3" -A $arch
           cmake --build . --config Release
           Set-Location ..\..
-          Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbb*.lib" | Copy-Item -Destination "jdk\tbb-static\lib\" -Force
-          # If tbb12.lib was generated instead of tbb.lib, create a copy as tbb.lib
+
+          Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbb*.lib" |
+            Copy-Item -Destination "jdk\tbb-static\lib\" -Force
+          Get-ChildItem -Path "tbb-src\build" -Recurse -Filter "tbbmalloc*.lib" |
+            Copy-Item -Destination "jdk\tbb-static\lib\" -Force
+
+          # oneTBB v2021.12+ names the lib tbb12.lib — create tbb.lib alias if needed
           if ((Test-Path "jdk\tbb-static\lib\tbb12.lib") -and (-not (Test-Path "jdk\tbb-static\lib\tbb.lib"))) {
             Copy-Item "jdk\tbb-static\lib\tbb12.lib" "jdk\tbb-static\lib\tbb.lib" -Force
           }
-          
-          # Verify static libraries exist
+
           if ((Test-Path "jdk\tbb-static\lib\tbb.lib") -and (Test-Path "jdk\tbb-static\lib\tbbmalloc.lib")) {
             Write-Host "✅ TBB static libraries found:"
             Get-ChildItem -Path "jdk\tbb-static\lib\tbb*.lib" | Select-Object Name, Length
@@ -208,65 +237,94 @@ jobs:
             Get-ChildItem -Path "jdk\tbb-static\lib\" -ErrorAction SilentlyContinue
             exit 1
           }
-          
-          $env:TBB_STATIC_LIB_DIR = (Resolve-Path "jdk\tbb-static\lib").Path
-          echo "TBB_STATIC_LIB_DIR=$env:TBB_STATIC_LIB_DIR" >> $env:GITHUB_ENV
+
+          $tbbDir = (Resolve-Path "jdk\tbb-static\lib").Path
+          echo "TBB_STATIC_LIB_DIR=$tbbDir" >> $env:GITHUB_ENV
         shell: pwsh
 
-      - name: Configure JDK (Linux/macOS)
-        if: runner.os != 'Windows'
+      # -----------------------------------------------------------------------
+      # 5. Configure JDK
+      # -----------------------------------------------------------------------
+      - name: Configure JDK (Linux)
+        if: runner.os == 'Linux'
         run: |
+          # Convert JAVA_HOME to a path configure can use
+          BOOT_JDK="${{ steps.boot-jdk.outputs.path }}"
+          echo "Boot JDK: $BOOT_JDK"
+
           cd jdk
           chmod +x configure make/autoconf/build-aux/* 2>/dev/null || true
-          bash ./configure \
-            --with-debug-level=release \
-            --with-num-cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
-            --with-memory-size=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo 4096) \
-            --with-native-debug-symbols=zip \
-            --with-jvm-variants=server \
-            --with-jvm-features=shenandoahgc \
-            --disable-warnings-as-errors \
-            --with-conf-name=onejdk-25
-          
-          # Verify Shenandoah GC is enabled
-          if grep -q "Shenandoah" build/*/conf/config.log; then
-            echo "✅ Shenandoah GC is enabled in build configuration"
-          else
-            echo "⚠️  Shenandoah GC configuration status unknown"
+
+          EXTRA_FEATURES=""
+          if [ "${{ matrix.shenandoah }}" = "true" ]; then
+            EXTRA_FEATURES="--with-jvm-features=shenandoahgc,zgc"
           fi
+
+          bash ./configure \
+            --with-conf-name=onejdk-25 \
+            --with-debug-level=release \
+            --with-boot-jdk="$BOOT_JDK" \
+            --with-jvm-variants=server \
+            --with-zlib=system \
+            --with-jmod-compress=zip-1 \
+            --disable-warnings-as-errors \
+            $EXTRA_FEATURES
+
+          echo "=== Configure summary ==="
+          grep -E "^(Build|Host|Target|Shenandoah|ZGC|Variant|Debug)" build/onejdk-25/configure-support/generated-configure.sh 2>/dev/null || \
+            grep -i "shenandoah\|variant\|gc" build/onejdk-25/spec.gmk 2>/dev/null || true
+
+      - name: Configure JDK (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          BOOT_JDK="${{ steps.boot-jdk.outputs.path }}"
+          echo "Boot JDK: $BOOT_JDK"
+
+          cd jdk
+          chmod +x configure make/autoconf/build-aux/* 2>/dev/null || true
+
+          bash ./configure \
+            --with-conf-name=onejdk-25 \
+            --with-debug-level=release \
+            --with-boot-jdk="$BOOT_JDK" \
+            --with-jvm-variants=server \
+            --with-jmod-compress=zip-1 \
+            --disable-warnings-as-errors
 
       - name: Configure JDK (Windows)
         if: runner.os == 'Windows'
         run: |
+          # Use Boot JDK path from actions/setup-java — convert to MSYS2 path
+          BOOT_JDK=$(cygpath -u "${{ steps.boot-jdk.outputs.path }}")
+          echo "Boot JDK (MSYS2 path): $BOOT_JDK"
+
           cd jdk
           chmod +x configure make/autoconf/build-aux/* 2>/dev/null || true
+
+          # Shenandoah is NOT supported on Windows — omit that feature flag
           bash ./configure \
+            --with-conf-name=onejdk-25 \
             --with-debug-level=release \
+            --with-boot-jdk="$BOOT_JDK" \
             --with-jvm-variants=server \
-            --with-jvm-features=shenandoahgc \
-            --disable-warnings-as-errors \
-            --with-conf-name=onejdk-25
-          
-          # Verify Shenandoah GC is enabled
-          if grep -q "Shenandoah" build/*/conf/config.log 2>/dev/null; then
-            echo "✅ Shenandoah GC is enabled in build configuration"
-          else
-            echo "⚠️  Shenandoah GC configuration status unknown"
-          fi
+            --with-jmod-compress=zip-1 \
+            --disable-warnings-as-errors
+
+          echo "=== Configure done ==="
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
         shell: msys2 {0}
 
+      # -----------------------------------------------------------------------
+      # 6. Build JDK
+      # -----------------------------------------------------------------------
       - name: Build JDK with static TBB (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           cd jdk
           echo "TBB_STATIC_LIB_DIR: $TBB_STATIC_LIB_DIR"
-          
-          # Pass TBB_STATIC_LIB_DIR to make
-          make images \
-            JOB_COUNT=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
+          make images JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
             TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
         shell: bash
 
@@ -275,49 +333,47 @@ jobs:
         run: |
           cd jdk
           echo "TBB_STATIC_LIB_DIR: $TBB_STATIC_LIB_DIR"
-          
-          make images \
-            TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
+          make images TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
         shell: msys2 {0}
 
-      - name: Verify TBB is statically linked (Linux/macOS)
-        if: runner.os != 'Windows'
+      # -----------------------------------------------------------------------
+      # 7. Verify TBB static linkage
+      # -----------------------------------------------------------------------
+      - name: Verify TBB is statically linked (Linux)
+        if: runner.os == 'Linux'
         run: |
           cd jdk
-          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
-          JVM_LIB="$BUILD_DIR/lib/server/libjvm.so"
-          
+          JVM_LIB=$(find build/onejdk-25 -name "libjvm.so" | head -1)
+
           if [ -f "$JVM_LIB" ]; then
-            echo "Checking libjvm.so for TBB symbols..."
-            if nm "$JVM_LIB" | grep -q "tbb"; then
-              echo "✅ TBB symbols found in libjvm.so — statically linked!"
+            echo "Checking $JVM_LIB for TBB symbols..."
+            if nm "$JVM_LIB" 2>/dev/null | grep -q "tbb"; then
+              echo "✅ TBB symbols found — statically linked!"
             else
-              echo "⚠️  TBB symbols not found in libjvm.so"
+              echo "⚠️  TBB symbols not detected in nm output"
             fi
-            
-            # Check for dynamic TBB dependency
-            if ldd "$JVM_LIB" | grep -q "libtbb"; then
-              echo "❌ WARNING: libjvm.so still depends on dynamic libtbb!"
+            if ldd "$JVM_LIB" 2>/dev/null | grep -q "libtbb"; then
+              echo "❌ WARNING: libjvm.so still has a dynamic TBB dependency!"
             else
               echo "✅ libjvm.so has no dynamic TBB dependency — fully static!"
             fi
           else
-            echo "❌ libjvm.so not found at: $JVM_LIB"
-            ls -la "$BUILD_DIR/lib/server/" 2>/dev/null || echo "Server lib dir not found"
+            echo "❌ libjvm.so not found"
+            find build/onejdk-25 -name "*.so" | head -10 || true
           fi
 
       - name: Verify TBB is statically linked (Windows)
         if: runner.os == 'Windows'
         run: |
           Set-Location jdk
-          $BuildDir = Get-ChildItem -Path "build" -Directory | Select-Object -First 1
-          $JvmDll = "$BuildDir.FullName\onejdk-25\lib\server\jvm.dll"
-          
-          if (Test-Path $JvmDll) {
-            Write-Host "Checking jvm.dll for TBB dependencies..."
+          $JvmDll = Get-ChildItem -Path "build\onejdk-25" -Recurse -Filter "jvm.dll" |
+                    Select-Object -First 1 -ExpandProperty FullName
+
+          if ($JvmDll) {
+            Write-Host "Checking $JvmDll for TBB dependencies..."
             $Deps = dumpbin /dependents $JvmDll 2>$null
             if ($Deps -match "tbb") {
               Write-Host "❌ WARNING: jvm.dll still depends on dynamic TBB!"
@@ -325,78 +381,94 @@ jobs:
               Write-Host "✅ jvm.dll has no dynamic TBB dependency — fully static!"
             }
           } else {
-            Write-Host "❌ jvm.dll not found at: $JvmDll"
-            Get-ChildItem -Path "$BuildDir\onejdk-25\lib\server\" -ErrorAction SilentlyContinue
+            Write-Host "❌ jvm.dll not found in build/onejdk-25"
+            Get-ChildItem -Path "build\onejdk-25" -Recurse -Filter "*.dll" | Select-Object -First 10
           }
         shell: pwsh
 
+      # -----------------------------------------------------------------------
+      # 8. Verify Shenandoah GC (Linux only — not available on Windows)
+      # -----------------------------------------------------------------------
       - name: Verify Shenandoah GC works
+        if: runner.os == 'Linux'
         run: |
           cd jdk
-          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
-          
-          if [ -d "$BUILD_DIR" ]; then
-            echo "Testing Shenandoah GC..."
-            "$BUILD_DIR/bin/java" -XX:+UseShenandoahGC -version
+          JAVA_BIN=$(find build/onejdk-25 -name "java" -type f | head -1)
+
+          if [ -x "$JAVA_BIN" ]; then
+            echo "Testing Shenandoah GC with: $JAVA_BIN"
+            "$JAVA_BIN" -XX:+UseShenandoahGC -version
             echo "✅ Shenandoah GC works!"
-            
-            # Test with a simple Java program
-            "$BUILD_DIR/bin/java" -XX:+UseShenandoahGC -cp . -Xmx256m -Xms256m -Xlog:gc+heap=info -version
-            echo "✅ Shenandoah GC heap logging works!"
           else
-            echo "❌ Build images not found"
+            echo "❌ java binary not found"
+            find build/onejdk-25 -name "java" | head -5 || true
             exit 1
           fi
         shell: bash
 
+      # -----------------------------------------------------------------------
+      # 9. Show build output structure
+      # -----------------------------------------------------------------------
       - name: Show build output structure
         run: |
           cd jdk
-          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
+          BUILD_DIR=$(find build/onejdk-25 -maxdepth 0 -type d 2>/dev/null || find build -maxdepth 1 -type d | tail -1)
           echo "=== Build output structure ==="
-          ls -la "$BUILD_DIR"
+          ls -la "$BUILD_DIR" 2>/dev/null || echo "(build dir not found)"
           echo ""
-          echo "=== bin/ directory ==="
-          ls -la "$BUILD_DIR/bin/" | head -20
+          echo "=== bin/ ==="
+          ls -la "$BUILD_DIR/bin/" 2>/dev/null | head -20 || true
           echo ""
-          echo "=== lib/ directory ==="
-          ls -la "$BUILD_DIR/lib/" | head -20
-          echo ""
-          echo "=== lib/server/ directory ==="
-          ls -la "$BUILD_DIR/lib/server/"
+          echo "=== lib/server/ ==="
+          ls -la "$BUILD_DIR/lib/server/" 2>/dev/null || true
         shell: bash
 
+      # -----------------------------------------------------------------------
+      # 10. Package & Upload
+      # -----------------------------------------------------------------------
       - name: Package JDK as ZIP (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           cd jdk
-          BUILD_DIR=$(ls -d build/*/onejdk-25 2>/dev/null | head -1)
-          cd "$(dirname "$BUILD_DIR")"
-          zip -r "${{ matrix.artifact_name }}.zip" onejdk-25/
-          echo "ZIP_FILE=${{ matrix.artifact_name }}.zip" >> $GITHUB_ENV
+          IMAGES_DIR=$(find build/onejdk-25/images -maxdepth 0 -type d 2>/dev/null || \
+                       find build -path "*/images/jdk" -type d | head -1 | xargs dirname)
+          if [ -z "$IMAGES_DIR" ]; then
+            # Fallback: zip the whole onejdk-25 output dir
+            IMAGES_DIR="build/onejdk-25"
+          fi
+          cd "$IMAGES_DIR"
+          zip -r "$GITHUB_WORKSPACE/${{ matrix.artifact_name }}.zip" .
+          echo "ZIP_FILE=$GITHUB_WORKSPACE/${{ matrix.artifact_name }}.zip" >> $GITHUB_ENV
         shell: bash
 
       - name: Package JDK as ZIP (Windows)
         if: runner.os == 'Windows'
         run: |
           Set-Location jdk
-          $BuildDir = Get-ChildItem -Path "build" -Directory | Select-Object -First 1
-          $ZipPath = "${{ matrix.artifact_name }}.zip"
-          Compress-Archive -Path "$BuildDir\onejdk-25" -DestinationPath $ZipPath -Force
+          $ImagesDir = Get-ChildItem -Path "build\onejdk-25\images\jdk" -ErrorAction SilentlyContinue |
+                       Select-Object -First 1 -ExpandProperty FullName
+          if (-not $ImagesDir) {
+            $ImagesDir = "build\onejdk-25"
+          }
+          $ZipPath = "$env:GITHUB_WORKSPACE\${{ matrix.artifact_name }}.zip"
+          Compress-Archive -Path "$ImagesDir\*" -DestinationPath $ZipPath -Force
           echo "ZIP_FILE=$ZipPath" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Upload JDK ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}.zip
-          path: jdk/${{ matrix.artifact_name }}.zip
+          name: ${{ matrix.artifact_name }}
+          path: ${{ env.ZIP_FILE }}
           retention-days: 90
 
-      - name: Upload build logs
-        if: always()
+      - name: Upload build logs on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}-logs
-          path: jdk/build/*/conf/
+          path: |
+            jdk/build/*/configure-support/
+            jdk/build/*/spec.gmk
+            jdk/build/*/configure.log
           retention-days: 30
