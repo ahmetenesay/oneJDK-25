@@ -1034,62 +1034,15 @@ public class JavaCompiler {
            return List.nil();
 
         // Collect unique files first
-        java.util.List<JavaFileObject> files = new java.util.ArrayList<>();
+        ListBuffer<JCCompilationUnit> trees = new ListBuffer<>();
         Set<JavaFileObject> filesSoFar = new HashSet<>();
         for (JavaFileObject fileObject : fileObjects) {
             if (!filesSoFar.contains(fileObject)) {
                 filesSoFar.add(fileObject);
-                files.add(fileObject);
-            }
-        }
-
-        // oneJDK-25: Parallel parsing using ForkJoinPool.
-        // Each file is parsed independently — no symbol dependencies exist at parse time.
-        // The parse(JavaFileObject) method uses log.useSource() which is NOT thread-safe,
-        // so we use a synchronized wrapper that ensures only one thread accesses log at a time,
-        // while the actual parsing (Parser.parseCompilationUnit()) runs in parallel.
-        // For small file counts (< 8), sequential parsing avoids ForkJoinPool overhead.
-        if (files.size() < 8) {
-            ListBuffer<JCCompilationUnit> trees = new ListBuffer<>();
-            for (JavaFileObject fileObject : files) {
                 trees.append(parse(fileObject));
             }
-            return trees.toList();
         }
-
-        ForkJoinPool pool = ForkJoinPool.commonPool();
-        java.util.List<JCCompilationUnit> treesJava;
-        try {
-            treesJava = pool.submit(() ->
-                files.parallelStream()
-                     .map(f -> {
-                         // Synchronize only the log.useSource() call, not the entire parse
-                         // The heavy work (Parser.parseCompilationUnit()) runs outside the lock
-                         JavaFileObject prev;
-                         synchronized (log) {
-                             prev = log.useSource(f);
-                         }
-                         try {
-                             JCTree.JCCompilationUnit t = parse(f, readSource(f));
-                             if (t.endPositions != null) {
-                                 synchronized (log) {
-                                     log.setEndPosTable(f, t.endPositions);
-                                 }
-                             }
-                             return t;
-                         } finally {
-                             synchronized (log) {
-                                 log.useSource(prev);
-                             }
-                         }
-                     })
-                     .collect(Collectors.toList())
-            ).get();
-        } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
-        }
-        return List.from(treesJava);
+        return trees.toList();
     }
 
    /**

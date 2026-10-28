@@ -322,6 +322,7 @@ jobs:
             --with-zlib=system \
             --with-jmod-compress=zip-1 \
             --disable-warnings-as-errors \
+            --disable-javac-server \
             $EXTRA_FEATURES
 
           echo "=== Configure summary ==="
@@ -350,7 +351,8 @@ jobs:
             --with-boot-jdk="$BOOT_JDK" \
             --with-jvm-variants=server \
             --with-jmod-compress=zip-1 \
-            --disable-warnings-as-errors
+            --disable-warnings-as-errors \
+            --disable-javac-server
 
           # Append TBB variables to spec.gmk so all sub-makes (including hotspot) inherit them
           echo "# oneJDK-25: TBB static linking variables (injected by workflow)" >> build/onejdk-25/spec.gmk
@@ -376,7 +378,8 @@ jobs:
             --with-boot-jdk="$BOOT_JDK" \
             --with-jvm-variants=server \
             --with-jmod-compress=zip-1 \
-            --disable-warnings-as-errors
+            --disable-warnings-as-errors \
+            --disable-javac-server
 
           echo "=== Configure done ==="
 
@@ -407,7 +410,8 @@ jobs:
           ls -la "$TBB_STATIC_LIB_DIR/" 2>/dev/null || echo "(dir not found)"
           echo "TBB include files:"
           ls "$TBB_INCLUDE_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
-          make images JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
+          # Use JOBS=1 to avoid parallel javac crashes with Boot JDK 24
+          make images JOBS=1 \
             TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR" \
             TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR" 2>&1 | tee build.log
         shell: bash
@@ -426,7 +430,8 @@ jobs:
           ls -la "$TBB_LIB_DIR/" 2>/dev/null || echo "(dir not found)"
           echo "TBB include files:"
           ls "$TBB_INC_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
-          make images TBB_STATIC_LIB_DIR="$TBB_LIB_DIR" TBB_INCLUDE_DIR="$TBB_INC_DIR" 2>&1 | tee build.log
+          # Use JOBS=1 to avoid parallel javac crashes with Boot JDK 24
+          make images JOBS=1 TBB_STATIC_LIB_DIR="$TBB_LIB_DIR" TBB_INCLUDE_DIR="$TBB_INC_DIR" 2>&1 | tee build.log
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
