@@ -39,7 +39,7 @@
 #include <oneapi/tbb/blocked_range.h>
 
 // oneJDK-25: TBB task_arena — shared across all WorkerTaskDispatchers
-// Uses automatic concurrency (TBB detects CPU topology, including P-core/E-core)
+// TBB automatically detects CPU topology (hybrid P/E cores, homogeneous) and schedules optimally.
 oneapi::tbb::task_arena* WorkerTaskDispatcher::_arena = nullptr;
 
 // oneJDK-25: TBB-based WorkerTaskDispatcher implementation
@@ -48,7 +48,6 @@ WorkerTaskDispatcher::WorkerTaskDispatcher() :
     _task(nullptr),
     _done(false) {
   // Initialize TBB task_arena on first use.
-  // Automatic concurrency lets TBB detect CPU topology (hybrid P/E cores, homogeneous).
   //
   // SMT/HyperThreading optimization: On CPUs with SMT/HT enabled, TBB by default may
   // schedule 2 threads per physical core (one per logical thread). For GC and JIT workloads,
@@ -58,7 +57,11 @@ WorkerTaskDispatcher::WorkerTaskDispatcher() :
   // By setting max_threads_per_core = 1, we ensure each physical core runs at most one
   // TBB worker thread, eliminating cache contention while still utilizing all physical cores.
   // On non-SMT CPUs, this constraint has no effect — TBB already uses 1 thread per core.
-  // On hybrid CPUs, this preserves P-core/E-core routing while preventing SMT contention.
+  //
+  // TBB's work-stealing scheduler handles hybrid CPU topologies automatically:
+  // On Intel Hybrid CPUs, TBB routes latency-sensitive tasks to P-cores and batch tasks to E-cores.
+  // On homogeneous CPUs, all cores are treated equally.
+  // Letting TBB decide is better than forcing P-cores, as TBB considers workload characteristics.
   if (!_arena) {
     oneapi::tbb::task_arena::constraints constraints;
     constraints.max_threads_per_core = 1;  // One thread per physical core to avoid SMT cache contention
@@ -78,7 +81,6 @@ void WorkerTaskDispatcher::coordinator_distribute_task(WorkerTask* task, uint nu
 
   // oneJDK-25: Use TBB parallel_for to distribute work across workers.
   // TBB's work-stealing scheduler automatically balances load across all available cores.
-  // On hybrid CPUs, TBB routes tasks to P-cores first, then E-cores.
   // This replaces the semaphore-based dispatch:
   //   OLD: _start_semaphore.signal(num_workers); _end_semaphore.wait();
   //   NEW: TBB parallel_for with blocked_range
