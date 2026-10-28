@@ -275,6 +275,16 @@ jobs:
             Copy-Item "jdk\tbb-static\lib\tbb12.lib" "jdk\tbb-static\lib\tbb.lib" -Force
           }
 
+          # Create lib-prefixed aliases — MSYS2 linker on Windows expects libtbb.lib / libtbbmalloc.lib
+          # The JDK build system (CompileJvm.gmk) references tbb.lib, but the MSYS2 environment
+          # may pass the path to the MSVC linker as libtbb.lib. Create both to be safe.
+          if (Test-Path "jdk\tbb-static\lib\tbb.lib") {
+            Copy-Item "jdk\tbb-static\lib\tbb.lib" "jdk\tbb-static\lib\libtbb.lib" -Force
+          }
+          if (Test-Path "jdk\tbb-static\lib\tbbmalloc.lib") {
+            Copy-Item "jdk\tbb-static\lib\tbbmalloc.lib" "jdk\tbb-static\lib\libtbbmalloc.lib" -Force
+          }
+
           if ((Test-Path "jdk\tbb-static\lib\tbb.lib") -and (Test-Path "jdk\tbb-static\lib\tbbmalloc.lib")) {
             Write-Host "✅ TBB static libraries found:"
             Get-ChildItem -Path "jdk\tbb-static\lib\tbb*.lib" | Select-Object Name, Length
