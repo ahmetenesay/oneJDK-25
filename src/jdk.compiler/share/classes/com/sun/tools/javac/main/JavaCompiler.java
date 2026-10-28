@@ -1085,7 +1085,7 @@ public class JavaCompiler {
                      })
                      .collect(Collectors.toList())
             ).get();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         }

@@ -328,6 +328,13 @@ jobs:
           grep -E "^(Build|Host|Target|Shenandoah|ZGC|Variant|Debug)" build/onejdk-25/configure-support/generated-configure.sh 2>/dev/null || \
             grep -i "shenandoah\|variant\|gc" build/onejdk-25/spec.gmk 2>/dev/null || true
 
+          # Append TBB variables to spec.gmk so all sub-makes (including hotspot) inherit them
+          echo "# oneJDK-25: TBB static linking variables (injected by workflow)" >> build/onejdk-25/spec.gmk
+          echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
+          echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
+          echo "✅ TBB variables appended to spec.gmk"
+          tail -5 build/onejdk-25/spec.gmk
+
       - name: Configure JDK (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -344,6 +351,13 @@ jobs:
             --with-jvm-variants=server \
             --with-jmod-compress=zip-1 \
             --disable-warnings-as-errors
+
+          # Append TBB variables to spec.gmk so all sub-makes (including hotspot) inherit them
+          echo "# oneJDK-25: TBB static linking variables (injected by workflow)" >> build/onejdk-25/spec.gmk
+          echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
+          echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
+          echo "✅ TBB variables appended to spec.gmk"
+          tail -5 build/onejdk-25/spec.gmk
 
       - name: Configure JDK (Windows)
         if: runner.os == 'Windows'
@@ -365,6 +379,16 @@ jobs:
             --disable-warnings-as-errors
 
           echo "=== Configure done ==="
+
+          # Append TBB variables to spec.gmk so all sub-makes (including hotspot) inherit them
+          TBB_LIB_DIR=$(cygpath -u "$TBB_STATIC_LIB_DIR")
+          TBB_INC_DIR=$(cygpath -u "$TBB_INCLUDE_DIR")
+          echo "# oneJDK-25: TBB static linking variables (injected by workflow)" >> build/onejdk-25/spec.gmk
+          echo "TBB_STATIC_LIB_DIR := $TBB_LIB_DIR" >> build/onejdk-25/spec.gmk
+          echo "TBB_INCLUDE_DIR := $TBB_INC_DIR" >> build/onejdk-25/spec.gmk
+          echo "✅ TBB variables appended to spec.gmk"
+          tail -5 build/onejdk-25/spec.gmk
+
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
