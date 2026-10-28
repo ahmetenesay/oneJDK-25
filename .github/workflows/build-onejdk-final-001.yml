@@ -322,6 +322,7 @@ jobs:
             --with-jvm-variants=server \
             --with-zlib=system \
             --with-jmod-compress=zip-1 \
+            --disable-javac-server \
             --disable-warnings-as-errors \
             $EXTRA_FEATURES
 
@@ -351,6 +352,7 @@ jobs:
             --with-boot-jdk="$BOOT_JDK" \
             --with-jvm-variants=server \
             --with-jmod-compress=zip-1 \
+            --disable-javac-server \
             --disable-warnings-as-errors
 
           # oneJDK-25: Inject TBB variables into spec.gmk so all sub-makes (including hotspot) see them
@@ -377,6 +379,7 @@ jobs:
             --with-boot-jdk="$BOOT_JDK" \
             --with-jvm-variants=server \
             --with-jmod-compress=zip-1 \
+            --disable-javac-server \
             --disable-warnings-as-errors
 
           echo "=== Configure done ==="
@@ -408,9 +411,9 @@ jobs:
           ls -la "$TBB_STATIC_LIB_DIR/" 2>/dev/null || echo "(dir not found)"
           echo "TBB include files:"
           ls "$TBB_INCLUDE_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
-          # Boot JDK 25 is stable; use parallel build
+          # Boot JDK 25 has javac crash bug; use sequential build to avoid it
           # TBB variables are in spec.gmk, inherited by all sub-makes
-          make images 2>&1 | tee build.log
+          make images JOBS=1 2>&1 | tee build.log
         shell: bash
 
       - name: Build JDK with static TBB (Windows)
@@ -427,9 +430,9 @@ jobs:
           ls -la "$TBB_LIB_DIR/" 2>/dev/null || echo "(dir not found)"
           echo "TBB include files:"
           ls "$TBB_INC_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
-          # Boot JDK 25 is stable; use parallel build
+          # Boot JDK 25 has javac crash bug; use sequential build to avoid it
           # TBB variables are in spec.gmk, inherited by all sub-makes
-          make images 2>&1 | tee build.log
+          make images JOBS=1 2>&1 | tee build.log
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
