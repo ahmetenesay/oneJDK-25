@@ -30,6 +30,8 @@ import java.nio.ByteBuffer;
 import java.nio.ReadOnlyBufferException;
 
 import jdk.internal.ref.CleanerFactory;
+import java.util.Objects;
+
 import jdk.internal.util.Preconditions;
 
 import static java.util.zip.ZipUtils.NIO_ACCESS;
@@ -169,7 +171,7 @@ public class ZstdDeflater implements AutoCloseable {
      * @since 25
      */
     public void setInput(ByteBuffer input) {
-        Preconditions.checkNotNull(input);
+        Objects.requireNonNull(input);
         synchronized (zsRef) {
             this.input = input;
             this.inputArray = null;
@@ -287,7 +289,7 @@ public class ZstdDeflater implements AutoCloseable {
      * @since 25
      */
     public int deflate(ByteBuffer output, int flush) {
-        Preconditions.checkNotNull(output);
+        Objects.requireNonNull(output);
         if (output.isReadOnly()) {
             throw new ReadOnlyBufferException();
         }

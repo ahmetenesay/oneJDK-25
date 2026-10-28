@@ -29,6 +29,8 @@ import java.lang.ref.Cleaner.Cleanable;
 import java.nio.ByteBuffer;
 import java.nio.ReadOnlyBufferException;
 
+import java.util.Objects;
+
 import jdk.internal.ref.CleanerFactory;
 import jdk.internal.util.Preconditions;
 
@@ -112,7 +114,7 @@ public class ZstdInflater implements AutoCloseable {
      * @since 25
      */
     public void setInput(ByteBuffer input) {
-        Preconditions.checkNotNull(input);
+        Objects.requireNonNull(input);
         synchronized (zsRef) {
             this.input = input;
             this.inputArray = null;
@@ -197,7 +199,7 @@ public class ZstdInflater implements AutoCloseable {
      * @since 25
      */
     public int inflate(ByteBuffer output) throws DataFormatException {
-        Preconditions.checkNotNull(output);
+        Objects.requireNonNull(output);
         if (output.isReadOnly()) {
             throw new ReadOnlyBufferException();
         }
