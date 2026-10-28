@@ -88,8 +88,8 @@ jobs:
       # -----------------------------------------------------------------------
       # 2. Boot JDK — must come before configure on ALL platforms
       # -----------------------------------------------------------------------
-      # Windows ARM64: Temurin does not provide JDK 24 for windows-aarch64.
-      # Use Microsoft Build of OpenJDK instead, which supports windows-aarch64.
+      # Windows ARM64: Temurin and Microsoft do not provide JDK 24 for windows-aarch64.
+      # Use Liberica JDK, which supports Windows ARM64.
       # Other platforms continue to use Temurin.
       - name: Set up Boot JDK (Linux/macOS/Windows x64)
         if: runner.os != 'Windows' || (runner.os == 'Windows' && matrix.platform != 'windows-arm64')
@@ -104,7 +104,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '24'
-          distribution: 'microsoft'
+          distribution: 'liberica'
         id: boot-jdk-winarm
 
       # Create a unified output ID for downstream steps
@@ -121,7 +121,7 @@ jobs:
         shell: pwsh
         run: |
           $path = "${{ steps.boot-jdk-winarm.outputs.path }}"
-          Write-Host "Boot JDK path (Microsoft JDK 24): $path"
+          Write-Host "Boot JDK path (Liberica JDK 24): $path"
           echo "BOOT_JDK_PATH=$path" >> $env:GITHUB_ENV
 
       # -----------------------------------------------------------------------
@@ -202,25 +202,22 @@ jobs:
       - name: Install TBB (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install onetbb
+          mkdir -p jdk/tbb-static/lib jdk/tbb-static/include
 
-          mkdir -p jdk/tbb-static/lib
+          # Build TBB from source to get both static libs and headers
+          echo "Building TBB from source..."
+          git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
+          mkdir -p tbb-src/build && cd tbb-src/build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
+            -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
+          make -j$(sysctl -n hw.ncpu)
+          cd ../..
 
-          TBB_PREFIX=$(brew --prefix onetbb)
-          if [ -d "$TBB_PREFIX/lib" ]; then
-            cp $TBB_PREFIX/lib/libtbb*.a jdk/tbb-static/lib/ 2>/dev/null || true
-          fi
+          # Copy static libraries
+          find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
 
-          if [ ! -f "jdk/tbb-static/lib/libtbb.a" ]; then
-            echo "Static TBB libs not found — building from source..."
-            git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
-            mkdir -p tbb-src/build && cd tbb-src/build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
-              -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
-            make -j$(sysctl -n hw.ncpu)
-            cd ../..
-            find tbb-src/build -name "libtbb*.a" -exec cp {} jdk/tbb-static/lib/ \;
-          fi
+          # Copy header files — critical for #include <oneapi/tbb/...>
+          cp -r tbb-src/include/oneapi jdk/tbb-static/include/
 
           if [ -f "jdk/tbb-static/lib/libtbb.a" ] && [ -f "jdk/tbb-static/lib/libtbbmalloc.a" ]; then
             echo "✅ TBB static libraries found:"
@@ -231,7 +228,16 @@ jobs:
             exit 1
           fi
 
+          if [ -d "jdk/tbb-static/include/oneapi/tbb" ]; then
+            echo "✅ TBB headers found:"
+            ls jdk/tbb-static/include/oneapi/tbb/ | head -10
+          else
+            echo "❌ TBB headers not found!"
+            exit 1
+          fi
+
           echo "TBB_STATIC_LIB_DIR=$(pwd)/jdk/tbb-static/lib" >> $GITHUB_ENV
+          echo "TBB_INCLUDE_DIR=$(pwd)/jdk/tbb-static/include" >> $GITHUB_ENV
 
       - name: Install TBB (Windows)
         if: runner.os == 'Windows'

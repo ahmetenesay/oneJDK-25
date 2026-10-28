@@ -1058,31 +1058,37 @@ public class JavaCompiler {
         }
 
         ForkJoinPool pool = ForkJoinPool.commonPool();
-        java.util.List<JCCompilationUnit> treesJava = pool.submit(() ->
-            files.parallelStream()
-                 .map(f -> {
-                     // Synchronize only the log.useSource() call, not the entire parse
-                     // The heavy work (Parser.parseCompilationUnit()) runs outside the lock
-                     JavaFileObject prev;
-                     synchronized (log) {
-                         prev = log.useSource(f);
-                     }
-                     try {
-                         JCTree.JCCompilationUnit t = parse(f, readSource(f));
-                         if (t.endPositions != null) {
+        java.util.List<JCCompilationUnit> treesJava;
+        try {
+            treesJava = pool.submit(() ->
+                files.parallelStream()
+                     .map(f -> {
+                         // Synchronize only the log.useSource() call, not the entire parse
+                         // The heavy work (Parser.parseCompilationUnit()) runs outside the lock
+                         JavaFileObject prev;
+                         synchronized (log) {
+                             prev = log.useSource(f);
+                         }
+                         try {
+                             JCTree.JCCompilationUnit t = parse(f, readSource(f));
+                             if (t.endPositions != null) {
+                                 synchronized (log) {
+                                     log.setEndPosTable(f, t.endPositions);
+                                 }
+                             }
+                             return t;
+                         } finally {
                              synchronized (log) {
-                                 log.setEndPosTable(f, t.endPositions);
+                                 log.useSource(prev);
                              }
                          }
-                         return t;
-                     } finally {
-                         synchronized (log) {
-                             log.useSource(prev);
-                         }
-                     }
-                 })
-                 .collect(Collectors.toList())
-        ).get();
+                     })
+                     .collect(Collectors.toList())
+            ).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        }
         return List.from(treesJava);
     }
 
