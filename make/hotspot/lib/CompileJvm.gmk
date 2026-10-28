@@ -78,6 +78,10 @@ JVM_LIBS += \
 # On Linux/macOS: -L<TBB_STATIC_LIB_DIR> -ltbb -ltbbmalloc -lpthread -ldl
 # On Windows: <TBB_STATIC_LIB_DIR>\tbb.lib <TBB_STATIC_LIB_DIR>\tbbmalloc.lib
 
+# oneJDK-25: TBB variables come from environment variables (exported by workflow).
+# Make automatically picks up environment variables as make variables.
+# No need for spec.gmk injection - environment variables are inherited by all sub-makes.
+
 # Add TBB include path so that #include <oneapi/tbb/...> resolves correctly
 ifneq ($(TBB_INCLUDE_DIR),)
   JVM_CFLAGS += -I$(TBB_INCLUDE_DIR)

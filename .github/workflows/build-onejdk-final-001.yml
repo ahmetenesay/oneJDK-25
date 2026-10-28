@@ -90,20 +90,39 @@ jobs:
       # -----------------------------------------------------------------------
       # JDK 25 can build itself (self-hosted build).
       # Using Boot JDK 25 avoids the javac crash bug present in JDK 24.
-      # Temurin JDK 25 (LTS) supports all platforms including Windows ARM64.
-      - name: Set up Boot JDK (All platforms)
+      # Temurin JDK 25 does NOT support Windows ARM64 yet (as of Oct 2026).
+      # Windows ARM64 uses Liberica JDK 25, which supports windows-aarch64.
+      - name: Set up Boot JDK (Linux/macOS/Windows x64)
+        if: runner.os != 'Windows' || (runner.os == 'Windows' && matrix.platform != 'windows-arm64')
         uses: actions/setup-java@v4
         with:
           java-version: '25'
           distribution: 'temurin'
-        id: boot-jdk
+        id: boot-jdk-unix
+
+      - name: Set up Boot JDK (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.platform == 'windows-arm64'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'liberica'
+        id: boot-jdk-winarm
 
       # Create a unified output ID for downstream steps
-      - name: Set unified Boot JDK path
+      - name: Set unified Boot JDK path (Linux/macOS/Windows x64)
+        if: runner.os != 'Windows' || (runner.os == 'Windows' && matrix.platform != 'windows-arm64')
         shell: pwsh
         run: |
-          $path = "${{ steps.boot-jdk.outputs.path }}"
+          $path = "${{ steps.boot-jdk-unix.outputs.path }}"
           Write-Host "Boot JDK path (Temurin JDK 25): $path"
+          echo "BOOT_JDK_PATH=$path" >> $env:GITHUB_ENV
+
+      - name: Set unified Boot JDK path (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.platform == 'windows-arm64'
+        shell: pwsh
+        run: |
+          $path = "${{ steps.boot-jdk-winarm.outputs.path }}"
+          Write-Host "Boot JDK path (Liberica JDK 25): $path"
           echo "BOOT_JDK_PATH=$path" >> $env:GITHUB_ENV
 
       # -----------------------------------------------------------------------
@@ -310,12 +329,14 @@ jobs:
           grep -E "^(Build|Host|Target|Shenandoah|ZGC|Variant|Debug)" build/onejdk-25/configure-support/generated-configure.sh 2>/dev/null || \
             grep -i "shenandoah\|variant\|gc" build/onejdk-25/spec.gmk 2>/dev/null || true
 
-          # Append TBB variables to spec.gmk so all sub-makes (including hotspot) inherit them
-          echo "# oneJDK-25: TBB static linking variables (injected by workflow)" >> build/onejdk-25/spec.gmk
-          echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
-          echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
-          echo "✅ TBB variables appended to spec.gmk"
-          tail -5 build/onejdk-25/spec.gmk
+          # oneJDK-25: Export TBB variables as environment variables for hotspot build
+          # spec.gmk injection does NOT work because MAKE_ARGS only passes SPEC, not USER_MAKE_VARS
+          # So we use environment variables which are inherited by all sub-makes
+          export TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
+          export TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR"
+          echo "✅ TBB variables exported as environment variables"
+          echo "TBB_STATIC_LIB_DIR=$TBB_STATIC_LIB_DIR"
+          echo "TBB_INCLUDE_DIR=$TBB_INCLUDE_DIR"
 
       - name: Configure JDK (macOS)
         if: runner.os == 'macOS'
@@ -334,12 +355,12 @@ jobs:
             --with-jmod-compress=zip-1 \
             --disable-warnings-as-errors
 
-          # Append TBB variables to spec.gmk so all sub-makes (including hotspot) inherit them
-          echo "# oneJDK-25: TBB static linking variables (injected by workflow)" >> build/onejdk-25/spec.gmk
-          echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
-          echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
-          echo "✅ TBB variables appended to spec.gmk"
-          tail -5 build/onejdk-25/spec.gmk
+          # oneJDK-25: Export TBB variables as environment variables for hotspot build
+          # spec.gmk injection does NOT work because MAKE_ARGS only passes SPEC, not USER_MAKE_VARS
+          # So we use environment variables which are inherited by all sub-makes
+          export TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
+          export TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR"
+          echo "✅ TBB variables exported as environment variables"
 
       - name: Configure JDK (Windows)
         if: runner.os == 'Windows'
@@ -362,14 +383,14 @@ jobs:
 
           echo "=== Configure done ==="
 
-          # Append TBB variables to spec.gmk so all sub-makes (including hotspot) inherit them
+          # oneJDK-25: Export TBB variables as environment variables for hotspot build
+          # spec.gmk injection does NOT work because MAKE_ARGS only passes SPEC, not USER_MAKE_VARS
+          # So we use environment variables which are inherited by all sub-makes
           TBB_LIB_DIR=$(cygpath -u "$TBB_STATIC_LIB_DIR")
           TBB_INC_DIR=$(cygpath -u "$TBB_INCLUDE_DIR")
-          echo "# oneJDK-25: TBB static linking variables (injected by workflow)" >> build/onejdk-25/spec.gmk
-          echo "TBB_STATIC_LIB_DIR := $TBB_LIB_DIR" >> build/onejdk-25/spec.gmk
-          echo "TBB_INCLUDE_DIR := $TBB_INC_DIR" >> build/onejdk-25/spec.gmk
-          echo "✅ TBB variables appended to spec.gmk"
-          tail -5 build/onejdk-25/spec.gmk
+          export TBB_STATIC_LIB_DIR="$TBB_LIB_DIR"
+          export TBB_INCLUDE_DIR="$TBB_INC_DIR"
+          echo "✅ TBB variables exported as environment variables"
 
         env:
           MSYS2_PATH_TYPE: minimal
@@ -390,9 +411,8 @@ jobs:
           echo "TBB include files:"
           ls "$TBB_INCLUDE_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
           # Boot JDK 25 is stable; use parallel build
-          make images \
-            TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR" \
-            TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR" 2>&1 | tee build.log
+          # TBB variables are exported as environment variables, inherited by all sub-makes
+          make images 2>&1 | tee build.log
         shell: bash
 
       - name: Build JDK with static TBB (Windows)
@@ -410,7 +430,8 @@ jobs:
           echo "TBB include files:"
           ls "$TBB_INC_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
           # Boot JDK 25 is stable; use parallel build
-          make images TBB_STATIC_LIB_DIR="$TBB_LIB_DIR" TBB_INCLUDE_DIR="$TBB_INC_DIR" 2>&1 | tee build.log
+          # TBB variables are exported as environment variables, inherited by all sub-makes
+          make images 2>&1 | tee build.log
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
