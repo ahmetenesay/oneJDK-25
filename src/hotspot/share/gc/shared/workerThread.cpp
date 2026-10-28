@@ -32,6 +32,12 @@
 #include "runtime/os.hpp"
 #include "runtime/safepoint.hpp"
 
+// oneJDK-25: TBB headers for task_arena, parallel_for, blocked_range, auto_partitioner
+// These are used directly in this file and must be included explicitly.
+#include <oneapi/tbb/task_arena.h>
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+
 // oneJDK-25: TBB task_arena — shared across all WorkerTaskDispatchers
 // Uses automatic concurrency (TBB detects CPU topology, including P-core/E-core)
 oneapi::tbb::task_arena* WorkerTaskDispatcher::_arena = nullptr;
