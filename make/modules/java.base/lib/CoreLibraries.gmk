@@ -111,10 +111,14 @@ LIBZIP_ZSTD_SRC := \
     zstd/lib/compress/zstd_ldm.c \
     zstd/lib/compress/zstd_opt.c \
     zstd/lib/compress/zstd_preSplit.c \
+    zstd/lib/compress/zstdmt_compress.c \
     zstd/lib/decompress/huf_decompress.c \
     zstd/lib/decompress/zstd_ddict.c \
     zstd/lib/decompress/zstd_decompress.c \
-    zstd/lib/decompress/zstd_decompress_block.c
+    zstd/lib/decompress/zstd_decompress_block.c \
+    zstd/lib/deprecated/zbuff_common.c \
+    zstd/lib/deprecated/zbuff_compress.c \
+    zstd/lib/deprecated/zbuff_decompress.c
 
 LIBZIP_ZSTD_FILES += \
     $(addprefix $(TOPDIR)/src/java.base/share/native/libzip/, \
