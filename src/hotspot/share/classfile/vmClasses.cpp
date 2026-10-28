@@ -25,6 +25,9 @@
 #include "cds/aotLinkedClassBulkLoader.hpp"
 #include "cds/archiveHeapLoader.hpp"
 #include "cds/cdsConfig.hpp"
+
+// oneJDK-25: TBB JNI registration
+extern "C" int register_jdk_internal_tbb_TBBSession(JNIEnv* env);
 #include "classfile/classLoader.hpp"
 #include "classfile/classLoaderData.hpp"
 #include "classfile/dictionary.hpp"
@@ -150,6 +153,11 @@ void vmClasses::resolve_all(TRAPS) {
   assert(vmClasses::Object_klass() != nullptr, "well-known classes should now be initialized");
 
   java_lang_Object::register_natives(CHECK);
+
+  // oneJDK-25: Register TBBSession native methods
+  if (register_jdk_internal_tbb_TBBSession(THREAD->jni_environment()) != JNI_OK) {
+    warning("Failed to register TBBSession natives");
+  }
 
   // Calculate offsets for String and Class classes since they are loaded and
   // can be used after this point. These are no-op when CDS is enabled.
