@@ -40,7 +40,9 @@
 // including GC (Shenandoah), JIT compiler, Metaspace, CodeCache, and runtime.
 // NMT (Native Memory Tracking) remains compatible because tbbmalloc supports the
 // standard malloc/free/realloc API, and os::malloc() handles NMT overhead tracking.
-#include <oneapi/tbb/scalable_memory.h>
+// Note: scalable_memory.h was renamed to scalable_allocator.h in oneTBB 2021+.
+// The scalable_allocator.h header declares scalable_malloc, scalable_free, etc.
+#include <oneapi/tbb/scalable_allocator.h>
 
 // Provide wrappers for some functions otherwise forbidden from use in HotSpot.
 //
