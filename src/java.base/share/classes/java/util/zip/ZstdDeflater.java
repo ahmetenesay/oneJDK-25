@@ -249,6 +249,8 @@ public class ZstdDeflater implements AutoCloseable {
      * Compresses the input data and fills the specified buffer with compressed
      * data. Returns actual number of bytes of data compressed.
      * @param output the buffer for the compressed data
+     * @param off the start offset of the data
+     * @param len the maximum number of bytes of compressed data
      * @param flush the flush mode
      * @return the actual number of bytes of compressed data written
      */
