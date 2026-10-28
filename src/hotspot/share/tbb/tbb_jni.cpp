@@ -15,7 +15,6 @@
 #include "compiler/compileBroker.hpp"
 #include "gc/shared/workerThread.hpp"
 #include "memory/universe.hpp"
-#include "prims/jniFastGetField.hpp"
 #include "prims/jniHandles.hpp"
 #include "prims/jni.cpp"
 #include "prims/jni.hpp"
@@ -37,16 +36,6 @@
 // ============================================================================
 
 namespace TBBJNI {
-
-// Helper: Get the TBBSession class reference
-static jclass TBBSession_class(JNIEnv* env) {
-    static JniFastGetField<jclass> cache(
-        JNI_VERSION_1_6,
-        "jdk/internal/tbb/TBBSession",
-        NULL,
-        'L');
-    return cache.get_field(env);
-}
 
 // ============================================================================
 // 1. Version Information (version.h)
@@ -239,13 +228,10 @@ static jint TBB_scalableAllocationCommand(JNIEnv* /*env*/, jclass /*cls*/, jint 
 
 static jlong TBB_poolCreate(JNIEnv* /*env*/, jclass /*cls*/,
                              jlong granularity, jboolean fixedPool, jboolean keepAllMemory) {
-    // rml::pool_create_v1 creates a memory pool with custom raw allocators
-    // For simple default pool, use NULL policy which creates default pool
     rml::MemoryPool* pool = nullptr;
     rml::MemPoolPolicy policy(nullptr, nullptr,
                               (std::size_t)granularity,
-                              fixedPool ? true : false,
-                              keepAllMemory ? true : false);
+                              fixedPool, keepAllMemory);
     rml::MemPoolError err = rml::pool_create_v1(0, &policy, &pool);
     return (err == rml::POOL_OK) ? (jlong)pool : 0;
 }

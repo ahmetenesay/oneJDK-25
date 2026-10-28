@@ -155,7 +155,8 @@ void vmClasses::resolve_all(TRAPS) {
   java_lang_Object::register_natives(CHECK);
 
   // oneJDK-25: Register TBBSession native methods
-  if (register_jdk_internal_tbb_TBBSession(THREAD->jni_environment()) != JNI_OK) {
+  JavaThread* thread = JavaThread::thread_from_jni_environment(JNIHandles::thread_jni_environment(THREAD));
+  if (thread != nullptr && register_jdk_internal_tbb_TBBSession(JNIHandles::thread_jni_environment(thread)) != JNI_OK) {
     warning("Failed to register TBBSession natives");
   }
 
