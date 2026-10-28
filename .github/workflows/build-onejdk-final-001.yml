@@ -379,9 +379,13 @@ jobs:
           cd jdk
           echo "TBB_STATIC_LIB_DIR: $TBB_STATIC_LIB_DIR"
           echo "TBB_INCLUDE_DIR: $TBB_INCLUDE_DIR"
+          echo "TBB lib files:"
+          ls -la "$TBB_STATIC_LIB_DIR/" 2>/dev/null || echo "(dir not found)"
+          echo "TBB include files:"
+          ls "$TBB_INCLUDE_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
           make images JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
             TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR" \
-            TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR"
+            TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR" 2>&1 | tee build.log
         shell: bash
 
       - name: Build JDK with static TBB (Windows)
@@ -392,7 +396,13 @@ jobs:
           echo "TBB_INCLUDE_DIR: $TBB_INCLUDE_DIR"
           TBB_LIB_DIR=$(cygpath -u "$TBB_STATIC_LIB_DIR")
           TBB_INC_DIR=$(cygpath -u "$TBB_INCLUDE_DIR")
-          make images TBB_STATIC_LIB_DIR="$TBB_LIB_DIR" TBB_INCLUDE_DIR="$TBB_INC_DIR"
+          echo "TBB lib dir (MSYS2): $TBB_LIB_DIR"
+          echo "TBB include dir (MSYS2): $TBB_INC_DIR"
+          echo "TBB lib files:"
+          ls -la "$TBB_LIB_DIR/" 2>/dev/null || echo "(dir not found)"
+          echo "TBB include files:"
+          ls "$TBB_INC_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
+          make images TBB_STATIC_LIB_DIR="$TBB_LIB_DIR" TBB_INCLUDE_DIR="$TBB_INC_DIR" 2>&1 | tee build.log
         env:
           MSYS2_PATH_TYPE: minimal
           CHERE_INVOKING: 1
@@ -530,4 +540,6 @@ jobs:
             jdk/build/*/configure-support/
             jdk/build/*/spec.gmk
             jdk/build/*/configure.log
+            jdk/build.log
+            jdk/build/*/build.log
           retention-days: 30
