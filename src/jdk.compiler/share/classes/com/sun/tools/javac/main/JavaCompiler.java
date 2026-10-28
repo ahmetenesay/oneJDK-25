@@ -1034,7 +1034,7 @@ public class JavaCompiler {
            return List.nil();
 
         // Collect unique files first
-        List<JavaFileObject> files = new java.util.ArrayList<>();
+        java.util.List<JavaFileObject> files = new java.util.ArrayList<>();
         Set<JavaFileObject> filesSoFar = new HashSet<>();
         for (JavaFileObject fileObject : fileObjects) {
             if (!filesSoFar.contains(fileObject)) {
@@ -1058,7 +1058,7 @@ public class JavaCompiler {
         }
 
         ForkJoinPool pool = ForkJoinPool.commonPool();
-        List<JCCompilationUnit> trees = pool.submit(() ->
+        java.util.List<JCCompilationUnit> treesJava = pool.submit(() ->
             files.parallelStream()
                  .map(f -> {
                      // Synchronize only the log.useSource() call, not the entire parse
@@ -1083,7 +1083,7 @@ public class JavaCompiler {
                  })
                  .collect(Collectors.toList())
         ).get();
-        return List.from(trees);
+        return List.from(treesJava);
     }
 
    /**
