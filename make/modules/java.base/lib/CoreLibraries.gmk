@@ -86,16 +86,54 @@ ifeq ($(LIBZIP_CAN_USE_MMAP), true)
   BUILD_LIBZIP_MMAP := -DUSE_MMAP
 endif
 
+# oneJDK-25: Zstd source files to be compiled into libzip.
+# Zstd provides modern compression/decompression, replacing old Deflate for high-performance scenarios.
+# Only include core compression/decompression files, excluding dictBuilder, legacy, and programs.
+LIBZIP_ZSTD_SRC := \
+    zstd/lib/common/debug.c \
+    zstd/lib/common/entropy_common.c \
+    zstd/lib/common/error_private.c \
+    zstd/lib/common/fse_decompress.c \
+    zstd/lib/common/pool.c \
+    zstd/lib/common/threading.c \
+    zstd/lib/common/xxhash.c \
+    zstd/lib/common/zstd_common.c \
+    zstd/lib/compress/fse_compress.c \
+    zstd/lib/compress/hist.c \
+    zstd/lib/compress/huf_compress.c \
+    zstd/lib/compress/zstd_compress.c \
+    zstd/lib/compress/zstd_compress_literals.c \
+    zstd/lib/compress/zstd_compress_sequences.c \
+    zstd/lib/compress/zstd_compress_superblock.c \
+    zstd/lib/compress/zstd_double_fast.c \
+    zstd/lib/compress/zstd_fast.c \
+    zstd/lib/compress/zstd_lazy.c \
+    zstd/lib/compress/zstd_ldm.c \
+    zstd/lib/compress/zstd_opt.c \
+    zstd/lib/compress/zstd_preSplit.c \
+    zstd/lib/decompress/huf_decompress.c \
+    zstd/lib/decompress/zstd_ddict.c \
+    zstd/lib/decompress/zstd_decompress.c \
+    zstd/lib/decompress/zstd_decompress_block.c
+
+LIBZIP_ZSTD_FILES += \
+    $(addprefix $(TOPDIR)/src/java.base/share/native/libzip/, \
+        $(LIBZIP_ZSTD_SRC))
+
+LIBZIP_ZSTD_CFLAGS := -I$(TOPDIR)/src/java.base/share/native/libzip/zstd/lib
+
 $(eval $(call SetupJdkLibrary, BUILD_LIBZIP, \
     NAME := zip, \
     OPTIMIZATION := LOW, \
     EXCLUDES := $(LIBZIP_EXCLUDES), \
-    CFLAGS := $(LIBZ_CFLAGS), \
+    EXTRA_FILES := $(LIBZIP_ZSTD_FILES), \
+    CFLAGS := $(LIBZ_CFLAGS) $(LIBZIP_ZSTD_CFLAGS), \
     CFLAGS_unix := $(BUILD_LIBZIP_MMAP) -UDEBUG, \
     DISABLED_WARNINGS_gcc_zip_util.c := unused-function, \
     DISABLED_WARNINGS_clang := deprecated-non-prototype, \
     DISABLED_WARNINGS_clang_gzwrite.c := format-nonliteral, \
     DISABLED_WARNINGS_clang_zip_util.c := unused-function, \
+    DISABLED_WARNINGS_gcc := unused-function unused-variable, \
     JDK_LIBS := libjava libjvm, \
     LIBS_unix := $(LIBZ_LIBS), \
 ))

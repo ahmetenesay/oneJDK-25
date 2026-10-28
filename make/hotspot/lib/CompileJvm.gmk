@@ -102,6 +102,13 @@ else
   endif
 endif
 
+# oneJDK-25 Final #001: Statically link Zstd into libjvm
+# Zstd provides modern compression/decompression, replacing old Deflate for high-performance scenarios.
+# Zstd is built from source in src/java.base/share/native/libzip/zstd/ and linked statically.
+#
+# Add Zstd include path so that #include <zstd.h> resolves correctly
+JVM_CFLAGS += -I$(TOPDIR)/src/java.base/share/native/libzip/zstd/lib
+
 # These files and directories are always excluded
 JVM_EXCLUDE_FILES += args.cc
 JVM_EXCLUDES += adlc
