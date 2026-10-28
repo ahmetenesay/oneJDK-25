@@ -240,14 +240,15 @@ void WorkerThread::run() {
   // The thread exists for JVMTI enumeration and threads_do() iteration,
   // but GC work is executed by TBB's work-stealing scheduler.
   //
-  // Park interval increased from 1000ms to 60000ms to reduce CPU waste.
-  // With 16 worker threads, parking every 1 second means 16 unparks/second
-  // doing nothing. Parking every 60 seconds reduces this to 16 unparks/minute,
+  // Sleep interval increased from 1000ms to 60000ms to reduce CPU waste.
+  // With 16 worker threads, waking every 1 second means 16 wakeups/second
+  // doing nothing. Sleeping every 60 seconds reduces this to 16 wakeups/minute,
   // a 60x reduction in wasted CPU cycles.
   while (true) {
     // TBB mode: thread is a stub for enumeration only.
     // Actual GC work is dispatched via TBB parallel_for in coordinator_distribute_task().
-    // Park this thread to avoid busy-waiting — it's kept alive for JVMTI visibility.
-    os::NakedPark(os::ParkInterval, 60000);  // Park for up to 60 seconds (was 1 second)
+    // Sleep this thread to avoid busy-waiting — it's kept alive for JVMTI visibility.
+    // os::naked_sleep is the cross-platform sleep method for non-JavaThreads.
+    os::naked_sleep(60000);  // Sleep for up to 60 seconds (was 1 second)
   }
 }
