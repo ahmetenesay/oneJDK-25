@@ -47,9 +47,10 @@
 #include "utilities/growableArray.hpp"
 #include "utilities/macros.hpp"
 
-// oneJDK-25: TBB parallel_for for StringDedup hash table bucket scanning — parallelizes
-// bucket creation, verification, and statistics logging across multiple cores.
+// oneJDK-25: TBB parallel_for and parallel_reduce for StringDedup hash table bucket scanning —
+// parallelizes bucket creation, verification, and statistics logging across multiple cores.
 #include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/parallel_reduce.h>
 #include <oneapi/tbb/blocked_range.h>
 
 //////////////////////////////////////////////////////////////////////////////
