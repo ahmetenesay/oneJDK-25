@@ -88,11 +88,12 @@ endif
 
 ifeq ($(call isTargetOs, windows), true)
   # Windows: Static link TBB .lib files directly
+  # MSYS2/MSVC linker expects lib-prefixed names (libtbb.lib, libtbbmalloc.lib)
   ifneq ($(TBB_STATIC_LIB_DIR),)
-    JVM_LIBS += $(TBB_STATIC_LIB_DIR)\tbb.lib $(TBB_STATIC_LIB_DIR)\tbbmalloc.lib
+    JVM_LIBS += $(TBB_STATIC_LIB_DIR)/libtbb.lib $(TBB_STATIC_LIB_DIR)/libtbbmalloc.lib
   else
     # Fallback: Try system TBB (dynamic) if static libs not found
-    JVM_LIBS += tbb.lib tbbmalloc.lib
+    JVM_LIBS += libtbb.lib libtbbmalloc.lib
   endif
 else
   # Linux/macOS: Static link TBB .a files
