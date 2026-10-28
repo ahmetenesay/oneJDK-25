@@ -1034,15 +1034,21 @@ public class JavaCompiler {
            return List.nil();
 
         // Collect unique files first
-        ListBuffer<JCCompilationUnit> trees = new ListBuffer<>();
-        Set<JavaFileObject> filesSoFar = new HashSet<>();
+        Set<JavaFileObject> uniqueFiles = new HashSet<>();
         for (JavaFileObject fileObject : fileObjects) {
-            if (!filesSoFar.contains(fileObject)) {
-                filesSoFar.add(fileObject);
-                trees.append(parse(fileObject));
-            }
+            uniqueFiles.add(fileObject);
         }
-        return trees.toList();
+
+        // oneJDK-25: Parallel parsing using ForkJoinPool for better multi-core utilization.
+        // This significantly speeds up the parsing phase, which is I/O bound.
+        // With Boot JDK 21 (LTS), the javac crash issue is resolved, so parallel parsing is safe.
+        List<JCCompilationUnit> trees = ForkJoinPool.commonPool().submit(() -> {
+            return uniqueFiles.parallelStream()
+                .map(this::parse)
+                .collect(Collectors.toList());
+        }).join();
+
+        return trees;
     }
 
    /**
