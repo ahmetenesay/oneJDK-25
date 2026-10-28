@@ -329,14 +329,12 @@ jobs:
           grep -E "^(Build|Host|Target|Shenandoah|ZGC|Variant|Debug)" build/onejdk-25/configure-support/generated-configure.sh 2>/dev/null || \
             grep -i "shenandoah\|variant\|gc" build/onejdk-25/spec.gmk 2>/dev/null || true
 
-          # oneJDK-25: Export TBB variables as environment variables for hotspot build
-          # spec.gmk injection does NOT work because MAKE_ARGS only passes SPEC, not USER_MAKE_VARS
-          # So we use environment variables which are inherited by all sub-makes
-          export TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
-          export TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR"
-          echo "✅ TBB variables exported as environment variables"
-          echo "TBB_STATIC_LIB_DIR=$TBB_STATIC_LIB_DIR"
-          echo "TBB_INCLUDE_DIR=$TBB_INCLUDE_DIR"
+          # oneJDK-25: Inject TBB variables into spec.gmk so all sub-makes (including hotspot) see them
+          echo "# oneJDK-25: TBB static linking variables" >> build/onejdk-25/spec.gmk
+          echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
+          echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
+          echo "✅ TBB variables injected into spec.gmk"
+          tail -5 build/onejdk-25/spec.gmk
 
       - name: Configure JDK (macOS)
         if: runner.os == 'macOS'
@@ -355,12 +353,12 @@ jobs:
             --with-jmod-compress=zip-1 \
             --disable-warnings-as-errors
 
-          # oneJDK-25: Export TBB variables as environment variables for hotspot build
-          # spec.gmk injection does NOT work because MAKE_ARGS only passes SPEC, not USER_MAKE_VARS
-          # So we use environment variables which are inherited by all sub-makes
-          export TBB_STATIC_LIB_DIR="$TBB_STATIC_LIB_DIR"
-          export TBB_INCLUDE_DIR="$TBB_INCLUDE_DIR"
-          echo "✅ TBB variables exported as environment variables"
+          # oneJDK-25: Inject TBB variables into spec.gmk so all sub-makes (including hotspot) see them
+          echo "# oneJDK-25: TBB static linking variables" >> build/onejdk-25/spec.gmk
+          echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
+          echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
+          echo "✅ TBB variables injected into spec.gmk"
+          tail -5 build/onejdk-25/spec.gmk
 
       - name: Configure JDK (Windows)
         if: runner.os == 'Windows'
@@ -383,14 +381,14 @@ jobs:
 
           echo "=== Configure done ==="
 
-          # oneJDK-25: Export TBB variables as environment variables for hotspot build
-          # spec.gmk injection does NOT work because MAKE_ARGS only passes SPEC, not USER_MAKE_VARS
-          # So we use environment variables which are inherited by all sub-makes
+          # oneJDK-25: Inject TBB variables into spec.gmk so all sub-makes (including hotspot) see them
           TBB_LIB_DIR=$(cygpath -u "$TBB_STATIC_LIB_DIR")
           TBB_INC_DIR=$(cygpath -u "$TBB_INCLUDE_DIR")
-          export TBB_STATIC_LIB_DIR="$TBB_LIB_DIR"
-          export TBB_INCLUDE_DIR="$TBB_INC_DIR"
-          echo "✅ TBB variables exported as environment variables"
+          echo "# oneJDK-25: TBB static linking variables" >> build/onejdk-25/spec.gmk
+          echo "TBB_STATIC_LIB_DIR := $TBB_LIB_DIR" >> build/onejdk-25/spec.gmk
+          echo "TBB_INCLUDE_DIR := $TBB_INC_DIR" >> build/onejdk-25/spec.gmk
+          echo "✅ TBB variables injected into spec.gmk"
+          tail -5 build/onejdk-25/spec.gmk
 
         env:
           MSYS2_PATH_TYPE: minimal
@@ -411,7 +409,7 @@ jobs:
           echo "TBB include files:"
           ls "$TBB_INCLUDE_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
           # Boot JDK 25 is stable; use parallel build
-          # TBB variables are exported as environment variables, inherited by all sub-makes
+          # TBB variables are in spec.gmk, inherited by all sub-makes
           make images 2>&1 | tee build.log
         shell: bash
 
@@ -430,7 +428,7 @@ jobs:
           echo "TBB include files:"
           ls "$TBB_INC_DIR/oneapi/tbb/" 2>/dev/null | head -10 || echo "(dir not found)"
           # Boot JDK 25 is stable; use parallel build
-          # TBB variables are exported as environment variables, inherited by all sub-makes
+          # TBB variables are in spec.gmk, inherited by all sub-makes
           make images 2>&1 | tee build.log
         env:
           MSYS2_PATH_TYPE: minimal
