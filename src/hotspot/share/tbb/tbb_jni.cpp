@@ -8,9 +8,9 @@
  */
 
 #include "jni.h"
-#include "prims/jniHandles.hpp"
 #include "prims/jni.hpp"
 #include "runtime/javaThreads.hpp"
+#include "runtime/jniHandles.hpp"
 #include "runtime/thread.hpp"
 
 // oneTBB headers (statically linked into libjvm)
