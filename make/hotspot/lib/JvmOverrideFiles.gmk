@@ -60,6 +60,7 @@ ifeq ($(call isTargetOs, linux), true)
   JVM_PRECOMPILED_HEADER_EXCLUDE := \
       sharedRuntimeTrig.cpp \
       sharedRuntimeTrans.cpp \
+      tbb_jni.cpp \
       $(OPT_SPEED_SRC) \
       #
 
@@ -105,6 +106,7 @@ else ifeq ($(call isTargetOs, macosx), true)
         sharedRuntimeTrans.cpp \
         loopTransform.cpp \
         jvmciCompilerToVM.cpp \
+        tbb_jni.cpp \
         $(OPT_SPEED_SRC) \
         #
   endif
@@ -131,6 +133,7 @@ else ifeq ($(call isTargetOs, aix), true)
       sharedRuntimeTrig.cpp \
       sharedRuntimeTrans.cpp \
       synchronizer.cpp \
+      tbb_jni.cpp \
       $(OPT_SPEED_SRC) \
       #
 
@@ -141,6 +144,7 @@ else ifeq ($(call isTargetOs, windows), true)
       os_windows_x86.cpp \
       osThread_windows.cpp \
       jvmciCompilerToVMInit.cpp \
+      tbb_jni.cpp \
       $(OPT_SPEED_SRC) \
       #
 
