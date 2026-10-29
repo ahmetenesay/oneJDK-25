@@ -7,20 +7,10 @@
  * published by the Free Software Foundation.
  */
 
-#include "precompiled.hpp"
-#include "classfile/javaClasses.hpp"
-#include "classfile/javaCalls.hpp"
-#include "classfile/vmOperations.hpp"
-#include "code/nmethod.hpp"
-#include "compiler/compileBroker.hpp"
-#include "gc/shared/workerThread.hpp"
-#include "memory/universe.hpp"
+#include "jni.h"
 #include "prims/jniHandles.hpp"
-#include "prims/jni.cpp"
 #include "prims/jni.hpp"
-#include "runtime/handles.hpp"
 #include "runtime/javaThreads.hpp"
-#include "runtime/jniHandleBlock.hpp"
 #include "runtime/thread.hpp"
 
 // oneTBB headers (statically linked into libjvm)
