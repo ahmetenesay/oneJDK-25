@@ -19,6 +19,10 @@
                         range,                                               \
                         constraint)                                          \
                                                                              \
+  product(ccstr, RedletOptions, "", EXPERIMENTAL,                            \
+          "Direct Redlet flag sequence or intent keywords "                  \
+          "(e.g. 'turbo,trim,strict_vfs,vector').")                          \
+                                                                             \
   product(bool, RedletVFSStrict, true, EXPERIMENTAL,                         \
           "Enforce strict VFS branch validation and fail-fast protection "   \
           "against missing VFS branches.")                                   \

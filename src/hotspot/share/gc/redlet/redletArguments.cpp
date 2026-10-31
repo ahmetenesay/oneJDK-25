@@ -4,6 +4,7 @@
  */
 
 #include "gc/redlet/redletArguments.hpp"
+#include "gc/redlet/redletFlags.hpp"
 #include "gc/redlet/redletHeap.hpp"
 #include "gc/redlet/redlet_globals.hpp"
 #include "gc/shared/gcArguments.hpp"
@@ -20,6 +21,11 @@ void RedletArguments::initialize() {
   GCArguments::initialize();
 
   assert(UseRedletGC, "Sanity");
+
+  RedletFlags::init_defaults();
+  if (RedletOptions != nullptr && RedletOptions[0] != '\0') {
+    RedletFlags::parse_flag_sequence(RedletOptions);
+  }
 
   if (RedletMaxTLABSize < MinTLABSize) {
     log_warning(gc)("RedletMaxTLABSize < MinTLABSize, adjusting it to %zu", MinTLABSize);

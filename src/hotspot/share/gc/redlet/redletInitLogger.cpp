@@ -3,6 +3,7 @@
  * RedletGC: High-Performance Generative & Vectorized Garbage Collector.
  */
 
+#include "gc/redlet/redletFlags.hpp"
 #include "gc/redlet/redletHeap.hpp"
 #include "gc/redlet/redletInitLogger.hpp"
 #include "gc/redlet/redlet_globals.hpp"
@@ -26,6 +27,8 @@ void RedletInitLogger::print_gc_specific() {
     size_t max_tlab = RedletHeap::heap()->max_tlab_size() * HeapWordSize;
     log_info(gc, init)("TLAB Size Max: " EXACTFMT, EXACTFMTARGS(max_tlab));
   }
+
+  RedletFlags::print_on(defaultStream::output_stream());
 }
 
 void RedletInitLogger::print() {
