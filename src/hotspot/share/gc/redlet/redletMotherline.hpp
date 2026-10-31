@@ -66,6 +66,8 @@ struct alignas(SACFOR_CACHE_LINE) SF_custominiVm_live_header_t {
     std::atomic<float>  heat_score{ 1.0f };
     uint64_t            gc_sweep_count{ 0 };
     std::atomic<uint16_t> current_core{ 0 };
+    std::atomic<int32_t>  pin_count{ 0 };
+    size_t                slice_byte_offset{ 0 };
 
     SF_custominiVm_live_header_t* next{ nullptr };
     SF_custominiVm_live_header_t* prev{ nullptr };
@@ -88,6 +90,8 @@ struct alignas(SACFOR_CACHE_LINE) SF_custominiVm_live_header_t {
         heat_score.store(o.heat_score.load(std::memory_order_relaxed), std::memory_order_relaxed);
         gc_sweep_count = o.gc_sweep_count;
         current_core.store(o.current_core.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        pin_count.store(o.pin_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        slice_byte_offset = o.slice_byte_offset;
         next = nullptr;
         prev = nullptr;
     }
@@ -109,8 +113,54 @@ struct alignas(SACFOR_CACHE_LINE) SF_custominiVm_live_header_t {
             heat_score.store(o.heat_score.load(std::memory_order_relaxed), std::memory_order_relaxed);
             gc_sweep_count = o.gc_sweep_count;
             current_core.store(o.current_core.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            pin_count.store(o.pin_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            slice_byte_offset = o.slice_byte_offset;
         }
         return *this;
+    }
+
+    bool try_pin(void) {
+        while (true) {
+            uint8_t st = state.load(std::memory_order_acquire);
+            if (st != static_cast<uint8_t>(sf_live_state_e::LIVE)) {
+                return false;
+            }
+            int32_t pc = pin_count.load(std::memory_order_relaxed);
+            if (pin_count.compare_exchange_weak(pc, pc + 1,
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                if (state.load(std::memory_order_acquire) == static_cast<uint8_t>(sf_live_state_e::LIVE)) {
+                    return true;
+                }
+                pin_count.fetch_sub(1, std::memory_order_release);
+                return false;
+            }
+        }
+    }
+
+    void unpin(void) {
+        int32_t cur = pin_count.load(std::memory_order_relaxed);
+        while (cur > 0 && !pin_count.compare_exchange_weak(cur, cur - 1, std::memory_order_release, std::memory_order_relaxed)) {}
+    }
+
+    bool is_pinned(void) const {
+        return pin_count.load(std::memory_order_acquire) > 0;
+    }
+
+    inline void* resolve_active_body(void) const {
+        static constexpr int MAX_DEPTH = 16;
+        const SF_custominiVm_live_header_t* cur = this;
+        size_t accumulated_offset = 0;
+        for (int depth = 0; depth < MAX_DEPTH; ++depth) {
+            auto* p = static_cast<const SF_custominiVm_live_header_t*>(cur->parent_header.load(std::memory_order_acquire));
+            if (!p) {
+                void* fwd = cur->forwarding_address.load(std::memory_order_acquire);
+                uint8_t* base_ptr = fwd ? static_cast<uint8_t*>(fwd) : const_cast<uint8_t*>(cur->body());
+                return base_ptr + accumulated_offset;
+            }
+            accumulated_offset += cur->slice_byte_offset;
+            cur = p;
+        }
+        return const_cast<uint8_t*>(body());
     }
 
     inline uint8_t* body() const noexcept {
@@ -119,20 +169,37 @@ struct alignas(SACFOR_CACHE_LINE) SF_custominiVm_live_header_t {
     }
 
     inline void* tailCanaryPtr() const noexcept {
+        if (parent_header.load(std::memory_order_relaxed) != nullptr) {
+            static uint64_t dummy_canary = SF_TAIL_CANARY;
+            return &dummy_canary;
+        }
         size_t fp = memory_footprint.load(std::memory_order_relaxed);
         size_t aligned_fp = (fp + 7) & ~7ULL;
+        size_t header_sz = (sizeof(SF_custominiVm_live_header_t) + SACFOR_CACHE_LINE - 1) & ~(SACFOR_CACHE_LINE - 1);
+        if (total_cell_bytes > 0 && header_sz + aligned_fp + 8 > total_cell_bytes) {
+            static uint64_t dummy_canary = SF_TAIL_CANARY;
+            return &dummy_canary;
+        }
         return body() + aligned_fp;
     }
 
     inline void writeTailCanary() noexcept {
-        volatile uint64_t* canary = reinterpret_cast<volatile uint64_t*>(tailCanaryPtr());
+        if (parent_header.load(std::memory_order_relaxed) != nullptr) return;
+        size_t fp = memory_footprint.load(std::memory_order_relaxed);
+        size_t aligned_fp = (fp + 7) & ~7ULL;
+        size_t header_sz = (sizeof(SF_custominiVm_live_header_t) + SACFOR_CACHE_LINE - 1) & ~(SACFOR_CACHE_LINE - 1);
+        if (total_cell_bytes > 0 && header_sz + aligned_fp + 8 > total_cell_bytes) return;
+        volatile uint64_t* canary = reinterpret_cast<volatile uint64_t*>(body() + aligned_fp);
         *canary = SF_TAIL_CANARY;
     }
 
     inline bool isTailCanaryValid() const noexcept {
+        if (parent_header.load(std::memory_order_relaxed) != nullptr) return true;
         size_t fp = memory_footprint.load(std::memory_order_relaxed);
         if (fp == 0) return true;
         size_t aligned_fp = (fp + 7) & ~7ULL;
+        size_t header_sz = (sizeof(SF_custominiVm_live_header_t) + SACFOR_CACHE_LINE - 1) & ~(SACFOR_CACHE_LINE - 1);
+        if (total_cell_bytes > 0 && header_sz + aligned_fp + 8 > total_cell_bytes) return false;
         return *reinterpret_cast<const volatile uint64_t*>(body() + aligned_fp) == SF_TAIL_CANARY;
     }
 

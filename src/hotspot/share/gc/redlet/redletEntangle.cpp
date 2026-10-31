@@ -63,6 +63,53 @@ void sf_entangle_execution_engine_t::record_op(uint32_t fn_id, const void* in_pt
     }
 }
 
+void sf_entangle_execution_engine_t::record_kernel_op(uint32_t fn_id,
+    const SF_custominiVm_tensor_t* inputs, int n_in,
+    SF_custominiVm_tensor_t* outputs, int n_out) {
+    if (!in_transaction.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> g(dag_lock);
+    uint32_t idx = dag_node_count.load(std::memory_order_relaxed);
+    const void* in_ptr = (inputs && n_in > 0) ? inputs[0].data : nullptr;
+    void* out_ptr = (outputs && n_out > 0) ? outputs[0].data : nullptr;
+    size_t      bsize = (outputs && n_out > 0) ? outputs[0].byte_size : ((inputs && n_in > 0) ? inputs[0].byte_size : 0);
+    uint8_t     dt = (outputs && n_out > 0) ? outputs[0].dtype : ((inputs && n_in > 0) ? inputs[0].dtype : 0);
+
+    bool fused = false;
+    if (idx > 0 && idx <= MAX_DAG_NODES) {
+        const auto& prev = dag_nodes[idx - 1];
+        if (prev.primary_out != nullptr && (prev.primary_out == in_ptr || prev.primary_out == out_ptr)) {
+            fused = true;
+            fused_operation_count.fetch_add(1, std::memory_order_relaxed);
+            lifetime_fused_ops.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    if (out_ptr && bsize > 0 && bsize <= 256 * 1024) {
+        const char* p = static_cast<const char*>(out_ptr);
+        for (size_t off = 0; off < bsize; off += 64) {
+#if defined(_M_X64) || defined(__x86_64__)
+            _mm_prefetch(p + off, _MM_HINT_T0);
+#elif defined(__GNUC__) || defined(__clang__)
+            __builtin_prefetch(p + off, 1, 3);
+#endif
+        }
+        if (idx == 0) {
+            sf_hotlog_emit(SF_Ebin0_SRAM_PREWARM_START, SF_Ebin1_TRACE, fn_id, 0, dt, 0, 0, 0,
+                static_cast<uint32_t>(bsize / 1024), "entangle_sram_prewarm");
+        }
+    }
+
+    if (idx < MAX_DAG_NODES) {
+        dag_nodes[idx].fn_id = fn_id;
+        dag_nodes[idx].primary_in = in_ptr;
+        dag_nodes[idx].primary_out = out_ptr;
+        dag_nodes[idx].byte_size = bsize;
+        dag_nodes[idx].dtype = dt;
+        dag_nodes[idx].is_fused_epilogue = fused ? 1 : 0;
+        dag_node_count.store(idx + 1, std::memory_order_release);
+    }
+}
+
 void sf_entangle_execution_engine_t::commit() {
     uint32_t d = transaction_depth.load(std::memory_order_acquire);
     if (d > 0) {
@@ -143,6 +190,8 @@ void sf_entangle_execution_engine_t::reset() {
     transaction_depth.store(0, std::memory_order_release);
     fused_operation_count.store(0, std::memory_order_relaxed);
     dag_node_count.store(0, std::memory_order_relaxed);
+    total_warmup_hits.store(0, std::memory_order_relaxed);
+    compiled_superkernel_count.store(0, std::memory_order_relaxed);
     for (size_t i = 0; i < MAX_DAG_NODES; ++i) {
         dag_nodes[i] = sf_entangle_dag_node_t{};
     }
@@ -163,6 +212,12 @@ MSIMD_API void SF_custominiVm_entangle_commit(void) {
 
 MSIMD_API int SF_custominiVm_entangle_is_active(void) {
     return g_sf_entangle_engine.is_active() ? 1 : 0;
+}
+
+MSIMD_API void SF_custominiVm_entangle_record_op(uint32_t fn_id,
+    const SF_custominiVm_tensor_t* inputs, int n_in,
+    SF_custominiVm_tensor_t* outputs, int n_out) {
+    g_sf_entangle_engine.record_kernel_op(fn_id, inputs, n_in, outputs, n_out);
 }
 
 MSIMD_API uint32_t SF_custominiVm_entangle_get_fused_count(void) {

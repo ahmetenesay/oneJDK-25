@@ -21,7 +21,47 @@
 #endif
 
 /* ========================================================================= */
-/* 1. ALU PIPELINE SPECIFICATION                                             */
+/* 1. DTYPE & EMULATION SCHEMA DEFINITIONS                                   */
+/* ========================================================================= */
+
+typedef enum sfDType {
+    SF_DTYPE_F64  = 0,
+    SF_DTYPE_F32  = 1,
+    SF_DTYPE_F16  = 2,
+    SF_DTYPE_I64  = 3,
+    SF_DTYPE_I32  = 4,
+    SF_DTYPE_I16  = 5,
+    SF_DTYPE_U8   = 6,
+    SF_DTYPE_F8   = 7,
+    SF_DTYPE_I8   = 8,
+    SF_DTYPE_F128 = 9,
+    SF_DTYPE_I128 = 10,
+    SF_DTYPE_F256 = 11,
+    SF_DTYPE_I256 = 12,
+    SF_DTYPE_U16  = 13,
+    SF_DTYPE_U32  = 14,
+    SF_DTYPE_U64  = 15,
+    SF_DTYPE_U128 = 16,
+    SF_DTYPE_U256 = 17
+} sfDType;
+
+typedef enum sf_emulation_schema_e {
+    SF_EMU_SCHEMA_NONE        = 0,
+    SF_EMU_SCHEMA_FLOAT_2X32  = 1,
+    SF_EMU_SCHEMA_FLOAT_4X16  = 2,
+    SF_EMU_SCHEMA_FLOAT_2X16  = 3,
+    SF_EMU_SCHEMA_FLOAT_4X8   = 4,
+    SF_EMU_SCHEMA_FLOAT_2X64  = 5,
+    SF_EMU_SCHEMA_FLOAT_4X64  = 6,
+    SF_EMU_SCHEMA_INT_2X32    = 7,
+    SF_EMU_SCHEMA_INT_4X16    = 8,
+    SF_EMU_SCHEMA_INT_2X16    = 9,
+    SF_EMU_SCHEMA_INT_2X64    = 10,
+    SF_EMU_SCHEMA_INT_4X64    = 11
+} sf_emulation_schema_e;
+
+/* ========================================================================= */
+/* 2. ALU PIPELINE SPECIFICATION                                             */
 /* ========================================================================= */
 
 struct sf_alu_pipeline_t {
@@ -41,7 +81,7 @@ struct sf_alu_pipeline_t {
 };
 
 /* ========================================================================= */
-/* 2. ALU DISPATCH NEXUS & WORK-STEALING BALANCER (16 LANES)                 */
+/* 3. ALU DISPATCH NEXUS & WORK-STEALING BALANCER (16 LANES)                 */
 /* ========================================================================= */
 
 struct sf_alu_dispatch_nexus_t {
@@ -57,8 +97,10 @@ struct sf_alu_dispatch_nexus_t {
     sf_alu_dispatch_nexus_t();
 
     MSIMD_API uint32_t dispatch_op(uint32_t preferred_alu, uint8_t priority);
-    MSIMD_API void release_op(uint32_t alu_lane);
-    MSIMD_API void reset();
+    MSIMD_API int      resolve_route(uint8_t dtype, uint8_t priority, int* out_is_emulated, int* out_schema_id);
+    MSIMD_API void     complete_op(uint32_t alu_id);
+    MSIMD_API void     release_op(uint32_t alu_lane) { complete_op(alu_lane); }
+    MSIMD_API void     reset();
 };
 
 extern sf_alu_dispatch_nexus_t g_sf_alu_nexus;
@@ -68,9 +110,13 @@ extern "C" {
 #endif
 
 MSIMD_API uint32_t SF_custominiVm_alu_dispatch(uint32_t preferred_alu, uint8_t priority);
+MSIMD_API int      SF_custominiVm_alu_resolve_route(uint8_t dtype, uint8_t priority, int* out_is_emulated, int* out_schema_id);
+MSIMD_API void     SF_custominiVm_alu_complete_op(uint32_t alu_lane);
 MSIMD_API void     SF_custominiVm_alu_release(uint32_t alu_lane);
 MSIMD_API uint32_t SF_custominiVm_get_allow_operation_dispatchings(void);
 MSIMD_API void     SF_custominiVm_set_allow_operation_dispatchings(uint32_t enable);
+MSIMD_API const char* SF_custominiVm_get_emulation_schema_name(int schema_id);
+MSIMD_API const char* SF_custominiVm_get_dtype_name(uint8_t dtype);
 
 #ifdef __cplusplus
 }

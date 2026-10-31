@@ -52,5 +52,6 @@ public:
 };
 
 extern sf_mltc_engine_t g_sf_mltc_solver;
+using RedletMLTC = sf_mltc_engine_t;
 
 #endif // SHARE_GC_REDLET_REDLETMLTC_HPP

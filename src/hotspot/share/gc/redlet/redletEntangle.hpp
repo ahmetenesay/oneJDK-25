@@ -22,6 +22,18 @@
 #endif
 
 /* ========================================================================= */
+/* 0. TENSOR DATA STRUCTURE (SacFor_VM.cpp:3092-3110)                        */
+/* ========================================================================= */
+
+typedef struct SF_custominiVm_tensor_t {
+    void*   data{ nullptr };
+    size_t  byte_size{ 0 };
+    uint8_t dtype{ 0 };
+    int32_t ndim{ 0 };
+    int32_t shape[8]{ 0 };
+} SF_custominiVm_tensor_t;
+
+/* ========================================================================= */
 /* 1. DAG NODE & TRACE CACHE STRUCTURES                                      */
 /* ========================================================================= */
 
@@ -82,6 +94,9 @@ struct sf_entangle_execution_engine_t {
     MSIMD_API void commit();
     MSIMD_API bool is_active() const { return in_transaction.load(std::memory_order_acquire); }
     MSIMD_API void record_op(uint32_t fn_id, const void* in_ptr, void* out_ptr, size_t byte_size, uint8_t dtype);
+    MSIMD_API void record_kernel_op(uint32_t fn_id,
+                                    const SF_custominiVm_tensor_t* inputs, int n_in,
+                                    SF_custominiVm_tensor_t* outputs, int n_out);
     MSIMD_API void reset();
 };
 
@@ -94,6 +109,9 @@ extern "C" {
 MSIMD_API void     SF_custominiVm_entangle_begin(void);
 MSIMD_API void     SF_custominiVm_entangle_commit(void);
 MSIMD_API int      SF_custominiVm_entangle_is_active(void);
+MSIMD_API void     SF_custominiVm_entangle_record_op(uint32_t fn_id,
+                                                     const SF_custominiVm_tensor_t* inputs, int n_in,
+                                                     SF_custominiVm_tensor_t* outputs, int n_out);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_fused_count(void);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_dag_depth(void);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_warmup_hits(void);

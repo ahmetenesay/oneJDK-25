@@ -5,6 +5,8 @@
  */
 
 #include "gc/redlet/redletGearkit.hpp"
+#include "gc/redlet/redletMotherline.hpp"
+#include "gc/redlet/redletSIMD.hpp"
 #ifndef REDLET_STANDALONE_BUILD
 #include "gc/redlet/redlet_globals.hpp"
 #include "logging/log.hpp"
@@ -370,66 +372,372 @@ MSIMD_API size_t SF_custominiVm_coldlog_format_json(const SF_custominiVm_coldlog
 /* 4-POINTS EXECUTION ENGINE IMPLEMENTATION                                  */
 /* ========================================================================= */
 
-MSIMD_API void sf_gc_safepoint_poll(void) {
-    ++tl_point_ctx.tl_safepoint_polls;
-    g_point_coordinator.safepoint_polls.fetch_add(1, std::memory_order_relaxed);
-
-    if (g_gearkit_mode.load(std::memory_order_relaxed) == MSIMD_PROFILE_SAFETY_CRITICAL) {
-        return; // In SC mode, dynamic asynchronous rendezvous stalls are disabled
+bool sf_thread_point_ctx_t::has_pinned_hdr(const SF_custominiVm_live_header_t* hdr) const noexcept {
+    if (!hdr) return false;
+    for (uint32_t i = 0; i < pinned_hdr_count; ++i) {
+        if (pinned_hdrs[i] == hdr) return true;
     }
-
-    if (g_stream_pause_gate.load(std::memory_order_relaxed)) {
-        ++tl_point_ctx.tl_pausepoint_polls;
-        g_point_coordinator.pausepoint_preemptions.fetch_add(1, std::memory_order_relaxed);
-    }
+    return false;
 }
 
-MSIMD_API void sf_gc_controlpoint_check(void* ptr, size_t bytes) {
-    (void)ptr;
-    ++tl_point_ctx.tl_controlpoint_checks;
-    tl_point_ctx.tl_controlpoint_bytes += bytes;
-    g_point_coordinator.controlpoint_checks.fetch_add(1, std::memory_order_relaxed);
-    g_point_coordinator.controlpoint_bytes_validated.fetch_add(bytes, std::memory_order_relaxed);
-}
-
-MSIMD_API void sf_gc_hookpoint_enter(uint32_t fn_id, void* tensor_hdr) {
-    tl_point_ctx.active_fn_id = fn_id;
-    tl_point_ctx.nesting_depth++;
-    g_point_coordinator.hookpoint_enter_count.fetch_add(1, std::memory_order_relaxed);
-    if (tensor_hdr && tl_point_ctx.pinned_hdr_count < sf_thread_point_ctx_t::MAX_PINNED_HDRS) {
-        tl_point_ctx.pinned_hdrs[tl_point_ctx.pinned_hdr_count++] = tensor_hdr;
-        g_point_coordinator.hookpoint_auto_pinned_tensors.fetch_add(1, std::memory_order_relaxed);
-        g_point_coordinator.hookpoint_active_pinned.fetch_add(1, std::memory_order_relaxed);
+void sf_thread_point_ctx_t::add_pinned_hdr(SF_custominiVm_live_header_t* hdr) {
+    if (!hdr) return;
+    for (uint32_t i = 0; i < pinned_hdr_count; ++i) {
+        if (pinned_hdrs[i] == hdr) return;
     }
-}
-
-MSIMD_API void sf_gc_hookpoint_exit(void* tensor_hdr) {
-    if (tl_point_ctx.nesting_depth > 0) {
-        tl_point_ctx.nesting_depth--;
-    }
-    g_point_coordinator.hookpoint_exit_count.fetch_add(1, std::memory_order_relaxed);
-    if (tensor_hdr) {
-        for (uint32_t i = 0; i < tl_point_ctx.pinned_hdr_count; ++i) {
-            if (tl_point_ctx.pinned_hdrs[i] == tensor_hdr) {
-                tl_point_ctx.pinned_hdrs[i] = tl_point_ctx.pinned_hdrs[--tl_point_ctx.pinned_hdr_count];
-                g_point_coordinator.hookpoint_active_pinned.fetch_sub(1, std::memory_order_relaxed);
-                break;
-            }
+    if (pinned_hdr_count < MAX_PINNED_HDRS) {
+        pinned_hdrs[pinned_hdr_count++] = hdr;
+        if (pinned_hdr_count == 1) {
+            pinned_hdr = hdr;
         }
     }
 }
 
-MSIMD_API void sf_gc_pausepoint_poll(void) {
-    ++tl_point_ctx.tl_pausepoint_polls;
-    g_point_coordinator.pausepoint_polls.fetch_add(1, std::memory_order_relaxed);
-    if (g_point_coordinator.pausepoint_gate.load(std::memory_order_relaxed)) {
-        g_point_coordinator.pausepoint_preemptions.fetch_add(1, std::memory_order_relaxed);
+void sf_thread_point_ctx_t::clear_pinned_hdrs() {
+    for (uint32_t i = 0; i < MAX_PINNED_HDRS; ++i) {
+        pinned_hdrs[i] = nullptr;
+    }
+    pinned_hdr_count = 0;
+    pinned_hdr = nullptr;
+}
+
+void sf_thread_point_ctx_t::unpin_and_clear_all(uint32_t fn_id) {
+    for (uint32_t i = 0; i < pinned_hdr_count; ++i) {
+        SF_custominiVm_live_header_t* hdr = pinned_hdrs[i];
+        if (hdr) {
+            if (!hdr->isTailCanaryValid()) {
+                hdr->state.store(static_cast<uint8_t>(sf_live_state_e::QUARANTINED), std::memory_order_release);
+                g_point_coordinator.hookpoint_canary_faults_caught.fetch_add(1, std::memory_order_relaxed);
+                sf_unified_log_emit(SF_Ebin0_HEAL_CANARY_QUARANTINE, SF_Ebin1_ERROR,
+                    fn_id, "hp_canary_quarantine", "hookpoint_exit_canary_corrupt");
+            }
+            hdr->unpin();
+            pinned_hdrs[i] = nullptr;
+        }
+    }
+    pinned_hdr_count = 0;
+    pinned_hdr = nullptr;
+}
+
+void sf_thread_point_ctx_t::flush_telemetry(void) {
+    if (tl_safepoint_polls > 0) {
+        g_point_coordinator.safepoint_polls.fetch_add(tl_safepoint_polls, std::memory_order_relaxed);
+        tl_safepoint_polls = 0;
+    }
+    if (tl_controlpoint_checks > 0) {
+        g_point_coordinator.controlpoint_checks.fetch_add(tl_controlpoint_checks, std::memory_order_relaxed);
+        tl_controlpoint_checks = 0;
+    }
+    if (tl_controlpoint_bytes > 0) {
+        g_point_coordinator.controlpoint_bytes_validated.fetch_add(tl_controlpoint_bytes, std::memory_order_relaxed);
+        tl_controlpoint_bytes = 0;
+    }
+    if (tl_pausepoint_polls > 0) {
+        g_point_coordinator.pausepoint_polls.fetch_add(tl_pausepoint_polls, std::memory_order_relaxed);
+        tl_pausepoint_polls = 0;
     }
 }
 
+sf_thread_point_ctx_t::~sf_thread_point_ctx_t() {
+    if (nesting_depth > 0) {
+        uint32_t cur_inf = g_point_coordinator.active_in_flight_kernels.load(std::memory_order_relaxed);
+        while (cur_inf > 0 &&
+            !g_point_coordinator.active_in_flight_kernels.compare_exchange_weak(
+                cur_inf, cur_inf - (nesting_depth > cur_inf ? cur_inf : nesting_depth),
+                std::memory_order_release, std::memory_order_relaxed)) {
+        }
+        g_point_coordinator.notify_rendezvous_change();
+        nesting_depth = 0;
+    }
+    unpin_and_clear_all();
+    flush_telemetry();
+}
+
+MSIMD_API void sf_flush_thread_point_telemetry(void) {
+    tl_point_ctx.flush_telemetry();
+}
+
+MSIMD_API void sf_gc_safepoint_poll(void) {
+    ++tl_point_ctx.tl_safepoint_polls;
+    if ((++tl_point_ctx.tl_poll_step_counter & 0xFFu) == 0u) {
+        sf_flush_thread_point_telemetry();
+    }
+
+    if (g_gearkit_mode.load(std::memory_order_relaxed) == MSIMD_PROFILE_SAFETY_CRITICAL) {
+        return; // In SC mode, asynchronous rendezvous stalls are bypassed
+    }
+
+    bool stream_pause = g_stream_pause_gate.load(std::memory_order_relaxed);
+    if (stream_pause) {
+        ++tl_point_ctx.tl_pausepoint_polls;
+        g_point_coordinator.pausepoint_preemptions.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    if (tl_point_ctx.in_safepoint) {
+        return;
+    }
+
+    tl_point_ctx.in_safepoint = true;
+    g_point_coordinator.safepoint_rendezvous_stalls.fetch_add(1, std::memory_order_relaxed);
+    g_point_coordinator.safepoint_parked_threads.fetch_add(1, std::memory_order_acq_rel);
+    g_point_coordinator.safepoint_parked_threads.notify_all();
+    g_point_coordinator.notify_rendezvous_change();
+    sf_hotlog_emit(SF_Ebin0_SAFEPOINT_RENDEZVOUS, SF_Ebin1_TRACE, tl_point_ctx.active_fn_id,
+        0, 0, 0, 0, 0, 0, "safepoint_park");
+
+    // Refresh forwarding addresses for pinned tensors if relocated
+    for (uint32_t i = 0; i < tl_point_ctx.pinned_hdr_count; ++i) {
+        if (tl_point_ctx.pinned_hdrs[i]) {
+            void* active_body = tl_point_ctx.pinned_hdrs[i]->resolve_active_body();
+            if (i == 0) {
+                tl_point_ctx.active_buffer_ptr = active_body;
+            }
+        }
+    }
+
+    uint32_t cur_parked = g_point_coordinator.safepoint_parked_threads.load(std::memory_order_relaxed);
+    while (cur_parked > 0 &&
+        !g_point_coordinator.safepoint_parked_threads.compare_exchange_weak(
+            cur_parked, cur_parked - 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+    }
+    g_point_coordinator.safepoint_parked_threads.notify_all();
+    g_point_coordinator.notify_rendezvous_change();
+    sf_hotlog_emit(SF_Ebin0_SAFEPOINT_RELEASE, SF_Ebin1_TRACE, tl_point_ctx.active_fn_id,
+        0, 0, 0, 0, 0, 0, "safepoint_resume");
+    tl_point_ctx.in_safepoint = false;
+}
+
+MSIMD_API void sf_gc_safepoint_rendezvous_wait(void) {
+    uint64_t ticket = g_point_coordinator.rendezvous_ticket.load(std::memory_order_acquire);
+    while (g_point_coordinator.active_in_flight_kernels.load(std::memory_order_acquire) > 0) {
+        g_point_coordinator.rendezvous_ticket.wait(ticket, std::memory_order_relaxed);
+        ticket = g_point_coordinator.rendezvous_ticket.load(std::memory_order_acquire);
+    }
+}
+
+MSIMD_API int sf_gc_controlpoint_check(size_t allocated_bytes) {
+    ++tl_point_ctx.tl_controlpoint_checks;
+    if (allocated_bytes > 0) {
+        tl_point_ctx.tl_controlpoint_bytes += allocated_bytes;
+    }
+    if ((++tl_point_ctx.tl_poll_step_counter & 0xFFu) == 0u) {
+        sf_flush_thread_point_telemetry();
+    }
+
+    // 1. Validate all active managed tensors: tail canary verification
+    bool any_quarantined = false;
+    for (uint32_t i = 0; i < tl_point_ctx.pinned_hdr_count; ++i) {
+        auto* hdr = tl_point_ctx.pinned_hdrs[i];
+        if (hdr) {
+            if (!hdr->isTailCanaryValid()) {
+                hdr->state.store(static_cast<uint8_t>(sf_live_state_e::QUARANTINED), std::memory_order_release);
+                g_point_coordinator.hookpoint_canary_faults_caught.fetch_add(1, std::memory_order_relaxed);
+                sf_unified_log_emit(SF_Ebin0_HEAL_CANARY_QUARANTINE, SF_Ebin1_ERROR,
+                    tl_point_ctx.active_fn_id, "cp_canary_quarantine", "controlpoint_canary_hazard");
+                any_quarantined = true;
+            }
+        }
+    }
+    if (any_quarantined) {
+        return 1;
+    }
+
+    if (tl_point_ctx.pinned_hdr_count == 0 && tl_point_ctx.active_buffer_ptr) {
+        auto* hdr = SF_custominiVm_live_header_t::from_body(tl_point_ctx.active_buffer_ptr);
+        if (hdr && !hdr->isTailCanaryValid()) {
+            hdr->state.store(static_cast<uint8_t>(sf_live_state_e::QUARANTINED), std::memory_order_release);
+            g_point_coordinator.hookpoint_canary_faults_caught.fetch_add(1, std::memory_order_relaxed);
+            sf_unified_log_emit(SF_Ebin0_HEAL_CANARY_QUARANTINE, SF_Ebin1_ERROR,
+                tl_point_ctx.active_fn_id, "cp_canary_quarantine", "controlpoint_canary_hazard");
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+MSIMD_API int sf_gc_controlpoint_check_tensor(void* ptr, size_t bytes) {
+    if (ptr) {
+        auto* hdr = SF_custominiVm_live_header_t::from_body(ptr);
+        if (hdr && !hdr->isTailCanaryValid()) {
+            hdr->state.store(static_cast<uint8_t>(sf_live_state_e::QUARANTINED), std::memory_order_release);
+            g_point_coordinator.hookpoint_canary_faults_caught.fetch_add(1, std::memory_order_relaxed);
+            sf_unified_log_emit(SF_Ebin0_HEAL_CANARY_QUARANTINE, SF_Ebin1_ERROR,
+                tl_point_ctx.active_fn_id, "cp_canary_quarantine", "controlpoint_canary_hazard");
+            return 1;
+        }
+    }
+    return sf_gc_controlpoint_check(bytes);
+}
+
+MSIMD_API void sf_vm_hookpoint_pin_tensor(void* ptr) {
+    if (!ptr) return;
+    auto* hdr = SF_custominiVm_live_header_t::from_body(ptr);
+    if (!hdr) {
+        auto* test_hdr = static_cast<SF_custominiVm_live_header_t*>(ptr);
+        if (test_hdr->sfMN == SF_LIVE_MAGIC) {
+            hdr = test_hdr;
+        }
+    }
+    if (hdr) {
+        if (tl_point_ctx.has_pinned_hdr(hdr)) return;
+        if (hdr->try_pin()) {
+            tl_point_ctx.add_pinned_hdr(hdr);
+            g_point_coordinator.hookpoint_auto_pinned_tensors.fetch_add(1, std::memory_order_relaxed);
+            g_point_coordinator.hookpoint_active_pinned.fetch_add(1, std::memory_order_relaxed);
+            g_point_coordinator.safepoint_parked_threads.notify_all();
+        }
+    }
+}
+
+MSIMD_API void sf_vm_hookpoint_trigger(uint32_t event_id, uint32_t fn_id, void* context, size_t byte_size) {
+    if (event_id == SF_HOOKPOINT_KERNEL_ENTER) {
+        // === KERNEL PROLOGUE (ENTER) ===
+        g_point_coordinator.hookpoint_enter_count.fetch_add(1, std::memory_order_relaxed);
+        g_point_coordinator.active_in_flight_kernels.fetch_add(1, std::memory_order_acquire);
+        g_point_coordinator.safepoint_parked_threads.notify_all();
+        g_point_coordinator.notify_rendezvous_change();
+
+        if (tl_point_ctx.nesting_depth++ == 0) {
+            tl_point_ctx.active_fn_id = fn_id;
+            tl_point_ctx.active_buffer_ptr = context;
+            tl_point_ctx.active_byte_size = byte_size;
+            tl_point_ctx.enter_tsc = 0;
+            tl_point_ctx.prefer_streaming_stores = (byte_size >= 64 * 1024);
+
+            if (context) {
+                sf_vm_hookpoint_pin_tensor(context);
+            }
+        }
+        sf_hotlog_emit(SF_Ebin0_HOOKPOINT_ENTER, SF_Ebin1_TRACE, fn_id,
+            static_cast<uint16_t>(event_id), 0, 0, 0, 0, static_cast<uint32_t>(byte_size / 1024), "hook_kernel_enter");
+    }
+    else if (event_id == SF_HOOKPOINT_KERNEL_EXIT) {
+        // === KERNEL EPILOGUE (EXIT) ===
+        g_point_coordinator.hookpoint_exit_count.fetch_add(1, std::memory_order_relaxed);
+        sf_flush_thread_point_telemetry();
+
+        if (tl_point_ctx.nesting_depth > 0) {
+            --tl_point_ctx.nesting_depth;
+        }
+
+        if (tl_point_ctx.nesting_depth == 0) {
+            // Post-execution canary verification & unpinning for all pinned tensors
+            for (uint32_t i = 0; i < tl_point_ctx.pinned_hdr_count; ++i) {
+                auto* hdr = tl_point_ctx.pinned_hdrs[i];
+                if (hdr) {
+                    if (!hdr->isTailCanaryValid()) {
+                        hdr->state.store(static_cast<uint8_t>(sf_live_state_e::QUARANTINED), std::memory_order_release);
+                        g_point_coordinator.hookpoint_canary_faults_caught.fetch_add(1, std::memory_order_relaxed);
+                        sf_unified_log_emit(SF_Ebin0_HEAL_CANARY_QUARANTINE, SF_Ebin1_ERROR,
+                            fn_id, "hp_canary_quarantine", "hookpoint_exit_canary_corrupt");
+                    }
+                    hdr->unpin();
+                    if (g_point_coordinator.hookpoint_active_pinned.load(std::memory_order_relaxed) > 0) {
+                        g_point_coordinator.hookpoint_active_pinned.fetch_sub(1, std::memory_order_relaxed);
+                    }
+                    tl_point_ctx.pinned_hdrs[i] = nullptr;
+                }
+            }
+            if (tl_point_ctx.pinned_hdr_count == 0 && context) {
+                auto* hdr = SF_custominiVm_live_header_t::from_body(context);
+                if (hdr && !hdr->isTailCanaryValid()) {
+                    hdr->state.store(static_cast<uint8_t>(sf_live_state_e::QUARANTINED), std::memory_order_release);
+                    g_point_coordinator.hookpoint_canary_faults_caught.fetch_add(1, std::memory_order_relaxed);
+                    sf_unified_log_emit(SF_Ebin0_HEAL_CANARY_QUARANTINE, SF_Ebin1_ERROR,
+                        fn_id, "hp_canary_quarantine", "hookpoint_exit_canary_corrupt");
+                }
+            }
+            tl_point_ctx.pinned_hdr_count = 0;
+            tl_point_ctx.pinned_hdr = nullptr;
+
+            if (tl_point_ctx.prefer_streaming_stores) {
+                sf_flush_wc_buffers();
+                tl_point_ctx.prefer_streaming_stores = false;
+            }
+            tl_point_ctx.active_buffer_ptr = nullptr;
+            tl_point_ctx.active_byte_size = 0;
+        }
+
+        uint32_t cur_inf = g_point_coordinator.active_in_flight_kernels.load(std::memory_order_relaxed);
+        while (cur_inf > 0 &&
+            !g_point_coordinator.active_in_flight_kernels.compare_exchange_weak(
+                cur_inf, cur_inf - 1, std::memory_order_release, std::memory_order_relaxed)) {
+        }
+        g_point_coordinator.safepoint_parked_threads.notify_all();
+        g_point_coordinator.notify_rendezvous_change();
+
+        sf_hotlog_emit(SF_Ebin0_HOOKPOINT_EXIT, SF_Ebin1_TRACE, fn_id,
+            static_cast<uint16_t>(event_id), 0, 0, 0, 0, static_cast<uint32_t>(byte_size / 1024), "hook_kernel_exit");
+    }
+}
+
+MSIMD_API void sf_gc_hookpoint_trigger(uint32_t event_id, uint32_t fn_id, void* context, size_t byte_size) {
+    sf_vm_hookpoint_trigger(event_id, fn_id, context, byte_size);
+}
+
+MSIMD_API void sf_gc_hookpoint_enter(uint32_t fn_id, void* tensor_hdr) {
+    sf_vm_hookpoint_trigger(SF_HOOKPOINT_KERNEL_ENTER, fn_id, tensor_hdr, 0);
+}
+
+MSIMD_API void sf_gc_hookpoint_exit(void* tensor_hdr) {
+    sf_vm_hookpoint_trigger(SF_HOOKPOINT_KERNEL_EXIT, tl_point_ctx.active_fn_id, tensor_hdr, 0);
+}
+
+MSIMD_API int sf_gc_pausepoint_poll(void) {
+    ++tl_point_ctx.tl_pausepoint_polls;
+    if ((++tl_point_ctx.tl_poll_step_counter & 0xFFu) == 0u) {
+        sf_flush_thread_point_telemetry();
+    }
+    bool gate = g_stream_pause_gate.load(std::memory_order_relaxed) ||
+                g_point_coordinator.pausepoint_gate.load(std::memory_order_relaxed);
+    if (gate) {
+        g_point_coordinator.pausepoint_preemptions.fetch_add(1, std::memory_order_relaxed);
+        sf_hotlog_emit(SF_Ebin0_PAUSEPOINT_HALT, SF_Ebin1_TRACE, tl_point_ctx.active_fn_id,
+            1, 0, 0, 0, 0, 0, "pausepoint_preempt");
+        return 1;
+    }
+    return 0;
+}
+
+MSIMD_API int sf_vm_pausepoint_poll(void) {
+    return sf_gc_pausepoint_poll();
+}
+
 MSIMD_API void sf_gc_pausepoint_set_gate(bool armed) {
-    g_point_coordinator.pausepoint_gate.store(armed, std::memory_order_release);
-    g_stream_pause_gate.store(armed, std::memory_order_release);
+    SF_custominiVm_set_pausepoint_gate(armed ? 1 : 0);
+}
+
+MSIMD_API void SF_custominiVm_set_pausepoint_gate(int armed) {
+    g_point_coordinator.pausepoint_gate.store(armed != 0, std::memory_order_release);
+    g_stream_pause_gate.store(armed != 0, std::memory_order_release);
+    g_point_coordinator.pausepoint_gate.notify_all();
+    sf_hotlog_emit(SF_Ebin0_INTERRUPT_GATE_SET, SF_Ebin1_INFO, 0,
+        static_cast<uint16_t>(armed ? 1 : 0), 0, 0, 0, 0, 0,
+        armed ? "pause_gate_armed" : "pause_gate_cleared");
+}
+
+MSIMD_API int SF_custominiVm_get_pausepoint_gate(void) {
+    return g_point_coordinator.pausepoint_gate.load(std::memory_order_acquire) ? 1 : 0;
+}
+
+MSIMD_API void SF_custominiVm_point_telemetry_query(SF_custominiVm_point_telemetry_t* out_stat) {
+    if (!out_stat) return;
+    sf_flush_thread_point_telemetry();
+    out_stat->safepoint_polls = g_point_coordinator.safepoint_polls.load(std::memory_order_relaxed);
+    out_stat->safepoint_rendezvous_stalls = g_point_coordinator.safepoint_rendezvous_stalls.load(std::memory_order_relaxed);
+    out_stat->safepoint_parked_threads = g_point_coordinator.safepoint_parked_threads.load(std::memory_order_relaxed);
+    out_stat->active_in_flight_kernels = g_point_coordinator.active_in_flight_kernels.load(std::memory_order_relaxed);
+    out_stat->controlpoint_checks = g_point_coordinator.controlpoint_checks.load(std::memory_order_relaxed);
+    out_stat->controlpoint_pacing_triggers = g_point_coordinator.controlpoint_pacing_triggers.load(std::memory_order_relaxed);
+    out_stat->controlpoint_auto_pageins = g_point_coordinator.controlpoint_auto_pageins.load(std::memory_order_relaxed);
+    out_stat->controlpoint_bytes_validated = g_point_coordinator.controlpoint_bytes_validated.load(std::memory_order_relaxed);
+    out_stat->hookpoint_enter_count = g_point_coordinator.hookpoint_enter_count.load(std::memory_order_relaxed);
+    out_stat->hookpoint_exit_count = g_point_coordinator.hookpoint_exit_count.load(std::memory_order_relaxed);
+    out_stat->hookpoint_auto_pinned_tensors = g_point_coordinator.hookpoint_auto_pinned_tensors.load(std::memory_order_relaxed);
+    out_stat->hookpoint_canary_faults_caught = g_point_coordinator.hookpoint_canary_faults_caught.load(std::memory_order_relaxed);
+    out_stat->pausepoint_polls = g_point_coordinator.pausepoint_polls.load(std::memory_order_relaxed);
+    out_stat->pausepoint_preemptions = g_point_coordinator.pausepoint_preemptions.load(std::memory_order_relaxed);
 }
 
 MSIMD_API sf_point_coordinator_t* sf_get_point_coordinator(void) {

@@ -269,6 +269,31 @@ MSIMD_API size_t SF_custominiVm_coldlog_format_json(const SF_custominiVm_coldlog
 /* 8. 4-POINTS EXECUTION COORDINATOR (SAFE / CONTROL / HOOK / PAUSE)         */
 /* ========================================================================= */
 
+#define SF_HOOKPOINT_KERNEL_ENTER   1
+#define SF_HOOKPOINT_KERNEL_EXIT    2
+#define SF_HOOKPOINT_GC_PRE_SWEEP   3
+#define SF_HOOKPOINT_GC_POST_SWEEP  4
+#define SF_HOOKPOINT_GC_PRE_COMPACT 5
+#define SF_HOOKPOINT_GC_POST_COMPACT 6
+#define SF_HOOKPOINT_DEOPT_TRIGGER  7
+
+typedef struct SF_custominiVm_point_telemetry_t {
+    uint64_t safepoint_polls;
+    uint64_t safepoint_rendezvous_stalls;
+    uint32_t safepoint_parked_threads;
+    uint32_t active_in_flight_kernels;
+    uint64_t controlpoint_checks;
+    uint64_t controlpoint_pacing_triggers;
+    uint64_t controlpoint_auto_pageins;
+    uint64_t controlpoint_bytes_validated;
+    uint64_t hookpoint_enter_count;
+    uint64_t hookpoint_exit_count;
+    uint64_t hookpoint_auto_pinned_tensors;
+    uint64_t hookpoint_canary_faults_caught;
+    uint64_t pausepoint_polls;
+    uint64_t pausepoint_preemptions;
+} SF_custominiVm_point_telemetry_t;
+
 struct SACFOR_ALIGN_CL sf_point_coordinator_t {
     // 1. Safepoint: In-flight cooperative kernel rendezvous ticket
     alignas(64) std::atomic<uint64_t> safepoint_polls{ 0 };
@@ -279,6 +304,7 @@ struct SACFOR_ALIGN_CL sf_point_coordinator_t {
 
     inline void notify_rendezvous_change() noexcept {
         rendezvous_ticket.fetch_add(1, std::memory_order_acq_rel);
+        rendezvous_ticket.notify_all();
     }
 
     // 2. Controlpoint: Allocation pacing, proactive page-in, byte validation
@@ -300,33 +326,54 @@ struct SACFOR_ALIGN_CL sf_point_coordinator_t {
     alignas(64) std::atomic<bool>     pausepoint_gate{ false };
 };
 
+struct SF_custominiVm_live_header_t;
+
 struct sf_thread_point_ctx_t {
     static constexpr size_t MAX_PINNED_HDRS = 4;
 
-    uint32_t active_fn_id{ 0 };
-    void*    active_buffer_ptr{ nullptr };
-    size_t   active_byte_size{ 0 };
-    uint64_t enter_tsc{ 0 };
-    void*    pinned_hdrs[MAX_PINNED_HDRS]{ nullptr };
-    uint32_t pinned_hdr_count{ 0 };
-    uint32_t nesting_depth{ 0 };
-    bool     prefer_streaming_stores{ false };
-    bool     in_safepoint{ false };
+    uint32_t                      active_fn_id{ 0 };
+    void*                         active_buffer_ptr{ nullptr };
+    size_t                        active_byte_size{ 0 };
+    uint64_t                      enter_tsc{ 0 };
+    SF_custominiVm_live_header_t* pinned_hdrs[MAX_PINNED_HDRS]{ nullptr };
+    uint32_t                      pinned_hdr_count{ 0 };
+    SF_custominiVm_live_header_t* pinned_hdr{ nullptr };
+    uint32_t                      nesting_depth{ 0 };
+    uint32_t                      irq_poll_counter{ 0 };
+    bool                          prefer_streaming_stores{ false };
+    bool                          in_safepoint{ false };
 
     // Telemetry batching counters
-    uint64_t tl_safepoint_polls{ 0 };
-    uint64_t tl_controlpoint_checks{ 0 };
-    uint64_t tl_controlpoint_bytes{ 0 };
-    uint64_t tl_pausepoint_polls{ 0 };
-    uint64_t tl_poll_step_counter{ 0 };
+    uint64_t                      tl_safepoint_polls{ 0 };
+    uint64_t                      tl_controlpoint_checks{ 0 };
+    uint64_t                      tl_controlpoint_bytes{ 0 };
+    uint64_t                      tl_pausepoint_polls{ 0 };
+    uint64_t                      tl_poll_step_counter{ 0 };
+
+    bool has_pinned_hdr(const SF_custominiVm_live_header_t* hdr) const noexcept;
+    void add_pinned_hdr(SF_custominiVm_live_header_t* hdr);
+    void clear_pinned_hdrs();
+    void unpin_and_clear_all(uint32_t fn_id = 0);
+    void flush_telemetry(void);
+    ~sf_thread_point_ctx_t();
 };
 
 MSIMD_API void sf_gc_safepoint_poll(void);
-MSIMD_API void sf_gc_controlpoint_check(void* ptr, size_t bytes);
+MSIMD_API void sf_gc_safepoint_rendezvous_wait(void);
+MSIMD_API int  sf_gc_controlpoint_check(size_t allocated_bytes);
+MSIMD_API int  sf_gc_controlpoint_check_tensor(void* ptr, size_t bytes);
+MSIMD_API void sf_vm_hookpoint_pin_tensor(void* ptr);
+MSIMD_API void sf_vm_hookpoint_trigger(uint32_t event_id, uint32_t fn_id, void* context, size_t byte_size);
+MSIMD_API void sf_gc_hookpoint_trigger(uint32_t event_id, uint32_t fn_id, void* context, size_t byte_size);
 MSIMD_API void sf_gc_hookpoint_enter(uint32_t fn_id, void* tensor_hdr);
 MSIMD_API void sf_gc_hookpoint_exit(void* tensor_hdr);
-MSIMD_API void sf_gc_pausepoint_poll(void);
+MSIMD_API int  sf_gc_pausepoint_poll(void);
+MSIMD_API int  sf_vm_pausepoint_poll(void);
 MSIMD_API void sf_gc_pausepoint_set_gate(bool armed);
+MSIMD_API void SF_custominiVm_set_pausepoint_gate(int armed);
+MSIMD_API int  SF_custominiVm_get_pausepoint_gate(void);
+MSIMD_API void SF_custominiVm_point_telemetry_query(SF_custominiVm_point_telemetry_t* out_stat);
+MSIMD_API void sf_flush_thread_point_telemetry(void);
 
 MSIMD_API sf_point_coordinator_t* sf_get_point_coordinator(void);
 

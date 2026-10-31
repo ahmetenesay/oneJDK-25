@@ -9,16 +9,19 @@
 #include "gc/shared/barrierSetAssembler.hpp"
 #include "runtime/javaThread.hpp"
 #ifdef COMPILER1
-#include "gc/shared/c1/barrierSetC1.hpp"
+#include "gc/redlet/c1/redletBarrierSetC1.hpp"
 #endif
 #ifdef COMPILER2
-#include "gc/shared/c2/barrierSetC2.hpp"
+#include "gc/redlet/c2/redletBarrierSetC2.hpp"
 #endif
+
+class RedletBarrierSetC1;
+class RedletBarrierSetC2;
 
 RedletBarrierSet::RedletBarrierSet() : BarrierSet(
           make_barrier_set_assembler<BarrierSetAssembler>(),
-          make_barrier_set_c1<BarrierSetC1>(),
-          make_barrier_set_c2<BarrierSetC2>(),
+          make_barrier_set_c1<RedletBarrierSetC1>(),
+          make_barrier_set_c2<RedletBarrierSetC2>(),
           nullptr /* barrier_set_nmethod */,
           nullptr /* barrier_set_stack_chunk */,
           BarrierSet::FakeRtti(BarrierSet::RedletBarrierSet)) {}

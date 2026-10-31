@@ -46,8 +46,8 @@ jint RedletHeap::initialize() {
   size_t init_byte_size = align_up(InitialHeapSize, align);
   size_t max_byte_size  = align_up(MaxHeapSize, align);
 
-  if (RedletSCMode || RedletForbidDynamicGrowth) {
-    // Under Safety-Critical (SSIOLSC) or when dynamic growth is forbidden,
+  if (RedletSCMode || RedletForbidDynamicGrowth || AlwaysPreTouch) {
+    // Under Safety-Critical (SSIOLSC), AlwaysPreTouch, or when dynamic growth is forbidden,
     // lock initial committed size to MaxHeapSize upfront to eliminate paging jitter.
     init_byte_size = max_byte_size;
     log_info(gc)("RedletGC Zero-Jitter boundary: Committed heap locked to MaxHeapSize upfront (" EXACTFMT ")", EXACTFMTARGS(max_byte_size));
