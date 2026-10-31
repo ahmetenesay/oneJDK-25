@@ -6,8 +6,8 @@
 #ifndef SHARE_GC_REDLET_REDLETEMPTYBOX_HPP
 #define SHARE_GC_REDLET_REDLETEMPTYBOX_HPP
 
-#include "memory/allStatic.hpp"
-#include "utilities/globalDefinitions.hpp"
+#include <cstdint>
+#include <cstddef>
 #include <atomic>
 
 //

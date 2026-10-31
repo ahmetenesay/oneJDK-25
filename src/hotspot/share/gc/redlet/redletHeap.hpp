@@ -7,8 +7,16 @@
 #define SHARE_GC_REDLET_REDLETHEAP_HPP
 
 #include "gc/redlet/redletBarrierSet.hpp"
+#include "gc/redlet/redletEmptyBox.hpp"
 #include "gc/redlet/redletFalline.hpp"
+#include "gc/redlet/redletGearkit.hpp"
+#include "gc/redlet/redletMotherline.hpp"
 #include "gc/redlet/redletMonitoringSupport.hpp"
+#include "gc/redlet/redletPitstop.hpp"
+#include "gc/redlet/redletPuzzleArena.hpp"
+#include "gc/redlet/redletRunway.hpp"
+#include "gc/redlet/redletSIMD.hpp"
+#include "gc/redlet/redletTBBArena.hpp"
 #include "gc/redlet/vfs/redletVFSTree.hpp"
 #include "gc/shared/collectedHeap.hpp"
 #include "gc/shared/softRefPolicy.hpp"
@@ -32,6 +40,13 @@ private:
 
   RedletVFSTree            _vfs_tree;
   RedletFalline            _falline;
+  RedletTBBArenaManager    _tbb_arenas;
+  RedletMotherline         _motherline;
+  RedletRunway             _runway;
+  RedletLandfill           _landfill;
+  RedletPitstop            _pitstop;
+  RedletPuzzleArena        _puzzle_arena;
+
   std::atomic<uint64_t>    _current_sweep_no;
   std::atomic<size_t>      _allocated_bytes;
 
@@ -101,8 +116,17 @@ public:
   void verify(VerifyOption option) override {}
 
   // Redlet custom subsystems
-  RedletVFSTree* vfs()     { return &_vfs_tree; }
-  RedletFalline* falline() { return &_falline; }
+  RedletVFSTree*         vfs()          { return &_vfs_tree; }
+  RedletFalline*         falline()      { return &_falline; }
+  RedletTBBArenaManager* tbb_arenas()   { return &_tbb_arenas; }
+  RedletMotherline*      motherline()   { return &_motherline; }
+  RedletRunway*          runway()       { return &_runway; }
+  RedletLandfill*        landfill()     { return &_landfill; }
+  RedletPitstop*         pitstop()      { return &_pitstop; }
+  RedletPuzzleArena*     puzzle_arena() { return &_puzzle_arena; }
+
+  bool is_sc_mode()               const { return RedletSCMode; }
+  bool is_forbid_dynamic_growth() const { return RedletForbidDynamicGrowth; }
 
   // RMRP (Reduce Memory Resident Set Reclamation)
   size_t execute_rmrp();

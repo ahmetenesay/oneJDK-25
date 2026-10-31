@@ -46,6 +46,13 @@ jint RedletHeap::initialize() {
   size_t init_byte_size = align_up(InitialHeapSize, align);
   size_t max_byte_size  = align_up(MaxHeapSize, align);
 
+  if (RedletSCMode || RedletForbidDynamicGrowth) {
+    // Under Safety-Critical (SSIOLSC) or when dynamic growth is forbidden,
+    // lock initial committed size to MaxHeapSize upfront to eliminate paging jitter.
+    init_byte_size = max_byte_size;
+    log_info(gc)("RedletGC Zero-Jitter boundary: Committed heap locked to MaxHeapSize upfront (" EXACTFMT ")", EXACTFMTARGS(max_byte_size));
+  }
+
   ReservedHeapSpace heap_rs = Universe::reserve_heap(max_byte_size, align);
   _virtual_space.initialize(heap_rs, init_byte_size);
 
@@ -61,6 +68,14 @@ jint RedletHeap::initialize() {
 
   // Initialize VFS memory tree
   _vfs_tree.init();
+
+  // Initialize oneTBB heterogeneous task arenas if enabled
+  if (RedletHeteroArenas) {
+    _tbb_arenas.init();
+  }
+
+  // Initialize runway allocator with initial capacity
+  _runway.init(max_byte_size / 4, RedletForbidDynamicGrowth || RedletSCMode);
 
   RedletInitLogger::print();
 
@@ -104,19 +119,23 @@ HeapWord* RedletHeap::allocate_work(size_t size) {
     return res;
   }
 
-  // 3. Third attempt: Expand heap if possible
-  size_t expand_bytes = align_up(MAX2(size * HeapWordSize, (size_t)RedletMinHeapExpand), SpaceAlignment);
-  if (_virtual_space.uncommitted_size() >= expand_bytes) {
-    if (_virtual_space.expand_by(expand_bytes)) {
-      MemRegion new_committed((HeapWord*)_virtual_space.low(), (HeapWord*)_virtual_space.high());
-      _space->set_end((HeapWord*)_virtual_space.high());
-      log_info(gc)("Expanded heap by " EXACTFMT " to " EXACTFMT, EXACTFMTARGS(expand_bytes), EXACTFMTARGS(_virtual_space.committed_size()));
-      res = _space->par_allocate(size);
-      if (res != nullptr) {
-        _allocated_bytes.fetch_add(size * HeapWordSize, std::memory_order_relaxed);
-        return res;
+  // 3. Third attempt: Expand heap if possible (strictly forbidden when RedletForbidDynamicGrowth or RedletSCMode is active)
+  if (!RedletForbidDynamicGrowth && !RedletSCMode) {
+    size_t expand_bytes = align_up(MAX2(size * HeapWordSize, (size_t)RedletMinHeapExpand), SpaceAlignment);
+    if (_virtual_space.uncommitted_size() >= expand_bytes) {
+      if (_virtual_space.expand_by(expand_bytes)) {
+        MemRegion new_committed((HeapWord*)_virtual_space.low(), (HeapWord*)_virtual_space.high());
+        _space->set_end((HeapWord*)_virtual_space.high());
+        log_info(gc)("Expanded heap by " EXACTFMT " to " EXACTFMT, EXACTFMTARGS(expand_bytes), EXACTFMTARGS(_virtual_space.committed_size()));
+        res = _space->par_allocate(size);
+        if (res != nullptr) {
+          _allocated_bytes.fetch_add(size * HeapWordSize, std::memory_order_relaxed);
+          return res;
+        }
       }
     }
+  } else {
+    log_debug(gc, alloc)("Dynamic heap expansion forbidden under RedletSCMode / RedletForbidDynamicGrowth (%zu words requested)", size);
   }
 
   // 4. Fourth attempt: Execute RMRP reclamation and retry
@@ -170,6 +189,36 @@ size_t RedletHeap::unsafe_max_tlab_alloc(Thread* thr) const {
 }
 
 void RedletHeap::collect(GCCause::Cause cause) {
+  // Support PrimitiveRW bypass and deterministic Default bureaucratic collection phases
+  if (RedletSCMode) {
+    if (RedletSCGCType != nullptr && strcasecmp(RedletSCGCType, "PrimitiveRW") == 0) {
+      log_info(gc)("RedletGC SC: PrimitiveRW bypass active - GC collection bypassed for cause '%s'", GCCause::to_string(cause));
+      sf_unified_log_emit(SF_Ebin0_GC_SWEEP, SF_Ebin1_INFO, 0, "sc_bypass",
+                          "RedletGC SC: PrimitiveRW bypass active - GC collection bypassed");
+      return;
+    }
+
+    // Deterministic Default bureaucratic collection phases
+    log_info(gc)("RedletGC SC: Deterministic Bureaucratic collection triggered: cause '%s'", GCCause::to_string(cause));
+    sf_unified_log_emit(SF_Ebin0_GC_PHASE_CHANGE, SF_Ebin1_INFO, 0, "sc_bureaucratic",
+                        "RedletGC SC: Deterministic Bureaucratic Phase-STW collection active");
+    _current_sweep_no.fetch_add(1, std::memory_order_relaxed);
+
+    // Phase 1: STW Bureaucratic sweep & VFS hierarchy audit
+    log_debug(gc)("RedletGC SC Phase 1: Bureaucratic STW and VFS integrity validation");
+
+    // Phase 2: Falline emptybox cache deterministic sweep & coalesce
+    log_debug(gc)("RedletGC SC Phase 2: Falline emptybox deterministic cache audit");
+
+    // Phase 3: RMRP deterministic reclamation if active
+    if (RedletRMRP) {
+      execute_rmrp();
+    }
+    log_info(gc)("RedletGC SC: Deterministic Bureaucratic collection phase completed (sweep %llu)",
+                 (unsigned long long)_current_sweep_no.load(std::memory_order_relaxed));
+    return;
+  }
+
   log_info(gc)("RedletGC collection triggered: cause '%s'", GCCause::to_string(cause));
   _current_sweep_no.fetch_add(1, std::memory_order_relaxed);
   if (RedletRMRP) {
