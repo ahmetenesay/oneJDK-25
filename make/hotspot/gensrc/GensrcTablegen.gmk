@@ -35,7 +35,7 @@ ifeq ($(call check-jvm-feature, compiler2), true)
   TG_MN_OBJS_DIR      := $(TG_MN_TOOL_DIR)/objs
   TG_MN_TOOL          := $(TG_MN_TOOL_DIR)/tg_mn$(EXE_SUFFIX)
 
-  # Target architecture in canonical form (X86, AArch64, RISCV, S390)
+  # Target architecture in canonical form (X86, AArch64, RISCV)
   ifeq ($(HOTSPOT_TARGET_CPU_ARCH), x86)
     TDLc_ARCH_NAME := X86
     TDLc_MAIN_TD := $(TDLc_CPU_DIR)/glue/X86Glue.td
@@ -45,9 +45,6 @@ ifeq ($(call check-jvm-feature, compiler2), true)
   else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), riscv)
     TDLc_ARCH_NAME := RISCV
     TDLc_MAIN_TD := $(TDLc_CPU_DIR)/glue/RISCVGlue.td
-  else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), s390)
-    TDLc_ARCH_NAME := S390
-    TDLc_MAIN_TD := $(TDLc_CPU_DIR)/glue/S390Glue.td
   endif
 
   # Fallback to main .td if glue not present
@@ -58,8 +55,6 @@ ifeq ($(call check-jvm-feature, compiler2), true)
       TDLc_MAIN_TD := $(TDLc_CPU_DIR)/AArch64.td
     else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), riscv)
       TDLc_MAIN_TD := $(TDLc_CPU_DIR)/RISCV.td
-    else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), s390)
-      TDLc_MAIN_TD := $(TDLc_CPU_DIR)/S390.td
     endif
   endif
 

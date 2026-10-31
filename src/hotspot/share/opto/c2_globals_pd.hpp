@@ -36,8 +36,6 @@
 #include "AArch64GenC2Globals.inc"
 #elif defined(TARGET_ARCH_riscv)
 #include "RISCVGenC2Globals.inc"
-#elif defined(TARGET_ARCH_s390)
-#include "S390GenC2Globals.inc"
 #else
 #include CPU_HEADER(c2_globals)
 #endif

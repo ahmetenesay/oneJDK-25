@@ -41,8 +41,13 @@ endif
 
 ifeq ($(call check-jvm-feature, compiler2), true)
   JVM_CFLAGS_FEATURES += -DCOMPILER2
-  JVM_SRC_DIRS += $(JVM_VARIANT_OUTPUTDIR)/gensrc/adfiles $(JVM_VARIANT_OUTPUTDIR)/gensrc/tablegen
-  JVM_CFLAGS_FEATURES += -I$(JVM_VARIANT_OUTPUTDIR)/gensrc/tablegen -I$(JVM_VARIANT_OUTPUTDIR)/gensrc
+  ifneq ($(filter $(HOTSPOT_TARGET_CPU_ARCH), x86 aarch64 riscv), )
+    JVM_SRC_DIRS += $(JVM_VARIANT_OUTPUTDIR)/gensrc/tablegen
+    JVM_CFLAGS_FEATURES += -I$(JVM_VARIANT_OUTPUTDIR)/gensrc/tablegen -I$(JVM_VARIANT_OUTPUTDIR)/gensrc
+  else
+    JVM_SRC_DIRS += $(JVM_VARIANT_OUTPUTDIR)/gensrc/adfiles
+    JVM_CFLAGS_FEATURES += -I$(JVM_VARIANT_OUTPUTDIR)/gensrc/adfiles -I$(JVM_VARIANT_OUTPUTDIR)/gensrc
+  endif
 else
   JVM_EXCLUDES += opto libadt
   JVM_EXCLUDE_FILES += bcEscapeAnalyzer.cpp ciTypeFlow.cpp

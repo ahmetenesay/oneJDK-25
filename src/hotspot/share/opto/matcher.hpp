@@ -58,9 +58,6 @@ public:
 #elif defined(TARGET_ARCH_riscv)
 #include "RISCVGenPatternMatching.inc"
 #include "RISCVGenCallingConv.inc"
-#elif defined(TARGET_ARCH_s390)
-#include "S390GenPatternMatching.inc"
-#include "S390GenCallingConv.inc"
 #else
 #include CPU_HEADER(matcher)
 #endif

@@ -47,8 +47,6 @@ class C2_MacroAssembler: public MacroAssembler {
 #include "AArch64GenMacroAssembler.inc"
 #elif defined(TARGET_ARCH_riscv)
 #include "RISCVGenMacroAssembler.inc"
-#elif defined(TARGET_ARCH_s390)
-#include "S390GenMacroAssembler.inc"
 #else
 #include CPU_HEADER(c2_MacroAssembler)
 #endif

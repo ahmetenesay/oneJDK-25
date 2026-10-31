@@ -36,9 +36,15 @@ include TextFileProcessing.gmk
 # The real work is done in these files
 
 include gensrc/GensrcJfr.gmk
-# oneJDK-25: adlc disabled in favor of tablegen (GensrcAdlc.gmk kept for reference)
-# include gensrc/GensrcAdlc.gmk
-include gensrc/GensrcTablegen.gmk
+
+# oneJDK-25: TableGen backend for modern consumer/cloud targets (x86, aarch64, riscv)
+# Legacy architectures (s390, ppc, etc.) continue using adlc
+ifneq ($(filter $(HOTSPOT_TARGET_CPU_ARCH), x86 aarch64 riscv), )
+  include gensrc/GensrcTablegen.gmk
+else
+  include gensrc/GensrcAdlc.gmk
+endif
+
 include gensrc/GensrcDtrace.gmk
 include gensrc/GensrcJvmti.gmk
 

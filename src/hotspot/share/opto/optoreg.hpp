@@ -35,8 +35,6 @@
 #include "AArch64GenRegisterInfo.inc"
 #elif defined(TARGET_ARCH_riscv)
 #include "RISCVGenRegisterInfo.inc"
-#elif defined(TARGET_ARCH_s390)
-#include "S390GenRegisterInfo.inc"
 #else
 #include CPU_HEADER(adfiles/adGlobals)
 #endif

@@ -38,9 +38,6 @@
 #elif defined(TARGET_ARCH_riscv)
 #include "RISCVGenMachNode.inc"
 #include "RISCVGenRegisterInfo.inc"
-#elif defined(TARGET_ARCH_s390)
-#include "S390GenMachNode.inc"
-#include "S390GenRegisterInfo.inc"
 #else
 #include CPU_HEADER(adfiles/ad)
 #endif

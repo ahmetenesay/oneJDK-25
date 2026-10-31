@@ -71,11 +71,6 @@ file(GLOB_RECURSE HOTSPOT_RISCV_SOURCES
     "src/hotspot/cpu/riscv/*.hpp"
 )
 
-file(GLOB_RECURSE HOTSPOT_S390_SOURCES
-    "src/hotspot/cpu/s390/*.cpp"
-    "src/hotspot/cpu/s390/*.hpp"
-)
-
 file(GLOB_RECURSE TDLc_SOURCES
     "src/hotspot/share/tdlc/backend/*.cpp"
     "src/hotspot/share/tdlc/backend/*.hpp"
@@ -87,6 +82,5 @@ add_library(onejdk_hotspot EXCLUDE_FROM_ALL
     ${HOTSPOT_X86_SOURCES}
     ${HOTSPOT_AARCH64_SOURCES}
     ${HOTSPOT_RISCV_SOURCES}
-    ${HOTSPOT_S390_SOURCES}
     ${TDLc_SOURCES}
 )
