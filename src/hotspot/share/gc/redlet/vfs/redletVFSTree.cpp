@@ -56,7 +56,7 @@ void RedletVFSTree::init() {
   mkdir_p("/heap/on_heap/runway/pitstop");
   mkdir_p("/heap/on_heap/runway/falline");
 
-  // 4. Puzzle Arena & Compaction
+  // 4. Puzzle(Coach) Arena & Compaction
   mkdir_p("/heap/on_heap/puzzle_arena/stagnant");
   mkdir_p("/heap/on_heap/puzzle_arena/eval");
 

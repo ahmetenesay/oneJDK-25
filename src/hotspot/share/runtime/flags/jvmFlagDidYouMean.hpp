@@ -11,17 +11,20 @@
 #include "utilities/globalDefinitions.hpp"
 
 // Represents a semantic intent keyword, abbreviation, or technical alias
-// mapped to a canonical HotSpot JVM flag along with developer documentation.
+// mapped to a canonical HotSpot JVM flag along with type info and developer documentation.
 struct HotSpotIntentEntry {
-  const char* alias;           // Search alias/intent keyword (e.g. "hugepages", "pretouch", "simd_gc")
-  const char* canonical_flag;  // Canonical HotSpot flag name (e.g. "UseLargePages", "AlwaysPreTouch")
-  const char* technical_doc;   // Technical rationale and human-readable hint explaining the flag
+  const char* alias;           // Search alias/intent keyword (e.g. "hugepages", "pretouch", "max_heap")
+  const char* canonical_flag;  // Canonical HotSpot flag name (e.g. "UseLargePages", "MaxHeapSize")
+  const char* flag_type;       // Flag type: "bool", "size_t", "uint", "int", "double", "ccstr"
+  const char* expected_value;  // Suggested default or example value (e.g. "true", "4g", "8", "80.0")
+  const char* technical_doc;   // Technical rationale and human-readable explanation
 };
 
 class JVMFlagDidYouMean : public AllStatic {
 private:
   static const HotSpotIntentEntry INTENT_REGISTRY[];
   static const size_t INTENT_REGISTRY_COUNT;
+  static char _formatted_hint_buffer[256];
 
 public:
   // Normalizes an input string: strips '_', '-', '+', ':', '=', and converts to lowercase

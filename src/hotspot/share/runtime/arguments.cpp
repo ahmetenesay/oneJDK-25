@@ -1171,19 +1171,34 @@ bool Arguments::process_argument(const char* arg,
     const char* hint = nullptr;
     JVMFlag* fuzzy_matched = JVMFlag::fuzzy_match((const char*)argname, arg_len, true, &hint);
     if (fuzzy_matched != nullptr) {
-      if (hint != nullptr && *hint != '\0') {
-        jio_fprintf(defaultStream::error_stream(),
-                    "Did you mean '%s%s%s'? (%s)\n",
-                    (fuzzy_matched->is_bool()) ? "(+/-)" : "",
-                    fuzzy_matched->name(),
-                    (fuzzy_matched->is_bool()) ? "" : "=<value>",
-                    hint);
+      if (fuzzy_matched->is_bool()) {
+        const char* prefix = has_plus_minus ? (*arg == '+' ? "+" : "-") : "(+/-)";
+        if (hint != nullptr && *hint != '\0') {
+          jio_fprintf(defaultStream::error_stream(),
+                      "Did you mean '%s%s'? (%s)\n",
+                      prefix,
+                      fuzzy_matched->name(),
+                      hint);
+        } else {
+          jio_fprintf(defaultStream::error_stream(),
+                      "Did you mean '%s%s'?\n",
+                      prefix,
+                      fuzzy_matched->name());
+        }
       } else {
-        jio_fprintf(defaultStream::error_stream(),
-                    "Did you mean '%s%s%s'?\n",
-                    (fuzzy_matched->is_bool()) ? "(+/-)" : "",
-                    fuzzy_matched->name(),
-                    (fuzzy_matched->is_bool()) ? "" : "=<value>");
+        const char* suffix = (equal_sign != nullptr) ? equal_sign : "=<value>";
+        if (hint != nullptr && *hint != '\0') {
+          jio_fprintf(defaultStream::error_stream(),
+                      "Did you mean '%s%s'? (%s)\n",
+                      fuzzy_matched->name(),
+                      suffix,
+                      hint);
+        } else {
+          jio_fprintf(defaultStream::error_stream(),
+                      "Did you mean '%s%s'?\n",
+                      fuzzy_matched->name(),
+                      suffix);
+        }
       }
     }
   }
