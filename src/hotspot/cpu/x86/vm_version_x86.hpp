@@ -285,21 +285,35 @@ class VM_Version : public Abstract_VM_Version {
   union SefCpuid7SubLeaf1Eax {
     uint32_t value;
     struct {
-      uint32_t    sha512   : 1,
-                           : 22,
-                  avx_ifma : 1,
-                           : 8;
+      uint32_t    sha512       : 1,
+                               : 3,
+                  avx_vnni     : 1,
+                  avx512_bf16  : 1,
+                               : 2,
+                  amx_complex  : 1,
+                               : 12,
+                  amx_fp16     : 1,
+                               : 1,
+                  avx_ifma     : 1,
+                               : 8;
     } bits;
   };
 
   union SefCpuid7SubLeaf1Edx {
     uint32_t value;
     struct {
-      uint32_t       : 19,
-              avx10  : 1,
-                     : 1,
-              apx_f  : 1,
-                     : 10;
+      uint32_t                 : 4,
+               avx_vnni_int8   : 1,
+               avx_ne_convert  : 1,
+                               : 13,
+               avx10           : 1,
+                               : 1,
+               apx_f           : 1,
+                               : 1,
+               avx_vnni_int16  : 1,
+               amx_transpose   : 1,
+                               : 6,
+               movrs           : 1;
     } bits;
   };
 
@@ -460,7 +474,12 @@ protected:
     decl(AVX512_BF16,       "avx512_bf16",       71) /* AVX-512 Bfloat16 */ \
     decl(AVX_VNNI,          "avx_vnni",          72) /* AVX (VEX-encoded) VNNI */ \
     decl(FMA4,              "fma4",              73) /* 4-operand FMA instructions */ \
-    decl(XOP,               "xop",               74) /* AMD eXtended Operations */
+    decl(XOP,               "xop",               74) /* AMD eXtended Operations */ \
+    decl(AVX_VNNI_INT8,     "avx_vnni_int8",     75) /* AVX-VNNI-INT8 */ \
+    decl(AVX_NE_CONVERT,    "avx_ne_convert",    76) /* AVX-NE-CONVERT */ \
+    decl(AVX_VNNI_INT16,    "avx_vnni_int16",    77) /* AVX-VNNI-INT16 */ \
+    decl(AMX_TRANSPOSE,     "amx_transpose",     78) /* AMX-TRANSPOSE */ \
+    decl(MOVRS,             "movrs",             79) /* MOVRS */
 
 #define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (bit),
     CPU_FEATURE_FLAGS(DECLARE_CPU_FEATURE_FLAG)
@@ -931,6 +950,11 @@ public:
   static bool supports_avx_vnni()     { return _features.supports_feature(CPU_AVX_VNNI); }
   static bool supports_fma4()         { return _features.supports_feature(CPU_FMA4); }
   static bool supports_xop()          { return _features.supports_feature(CPU_XOP); }
+  static bool supports_avx_vnni_int8() { return _features.supports_feature(CPU_AVX_VNNI_INT8); }
+  static bool supports_avx_ne_convert() { return _features.supports_feature(CPU_AVX_NE_CONVERT); }
+  static bool supports_avx_vnni_int16() { return _features.supports_feature(CPU_AVX_VNNI_INT16); }
+  static bool supports_amx_transpose() { return _features.supports_feature(CPU_AMX_TRANSPOSE); }
+  static bool supports_movrs()         { return _features.supports_feature(CPU_MOVRS); }
 
   //
   // Feature identification not affected by VM flags

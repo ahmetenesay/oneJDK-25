@@ -141,7 +141,12 @@ enum Ampere_CPU_Model {
     decl(I8MM,          i8mm,          34)    \
     decl(BF16,          bf16,          35)    \
     decl(DOTPROD,       dotprod,       36)    \
-    decl(APPLE_AMX,     apple_amx,     37)
+    decl(APPLE_AMX,     apple_amx,     37)    \
+    decl(CSSC,          cssc,          38)    \
+    decl(LRCPC3,        lrcpc3,        39)    \
+    decl(LSE2,          lse2,          40)    \
+    decl(SVE2_1,        sve2_1,        41)    \
+    decl(SME2_1,        sme2_1,        42)
 
   enum Feature_Flag {
 #define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (1ULL << bit),

@@ -2991,6 +2991,16 @@ VM_Version::VM_Features VM_Version::CpuidInfo::feature_flags() const {
       vm_features.set_feature(CPU_XOP);
     if ((ext_cpuid1_ecx.value & (1U << 16)) != 0)
       vm_features.set_feature(CPU_FMA4);
+    if (sefsl1_cpuid7_edx.bits.avx_vnni_int8 != 0)
+      vm_features.set_feature(CPU_AVX_VNNI_INT8);
+    if (sefsl1_cpuid7_edx.bits.avx_ne_convert != 0)
+      vm_features.set_feature(CPU_AVX_NE_CONVERT);
+    if (sefsl1_cpuid7_edx.bits.avx_vnni_int16 != 0)
+      vm_features.set_feature(CPU_AVX_VNNI_INT16);
+    if (sefsl1_cpuid7_edx.bits.amx_transpose != 0)
+      vm_features.set_feature(CPU_AMX_TRANSPOSE);
+    if (sefsl1_cpuid7_edx.bits.movrs != 0)
+      vm_features.set_feature(CPU_MOVRS);
     if (std_cpuid1_ecx.bits.f16c != 0)
       vm_features.set_feature(CPU_F16C);
     if (sef_cpuid7_ebx.bits.avx2 != 0) {
