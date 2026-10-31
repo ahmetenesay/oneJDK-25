@@ -36,7 +36,9 @@ include TextFileProcessing.gmk
 # The real work is done in these files
 
 include gensrc/GensrcJfr.gmk
-include gensrc/GensrcAdlc.gmk
+# oneJDK-25: adlc disabled in favor of tablegen (GensrcAdlc.gmk kept for reference)
+# include gensrc/GensrcAdlc.gmk
+include gensrc/GensrcTablegen.gmk
 include gensrc/GensrcDtrace.gmk
 include gensrc/GensrcJvmti.gmk
 

@@ -1,0 +1,132 @@
+#
+# Copyright (c) 2026, oneJDK-25 project. All rights reserved.
+#
+# oneJDK-25 TableGen build configuration.
+# Replaces adlc with tg_mn (TableGen MachNode Emitter) for C2 instruction selection.
+#
+# Runs ephemerally (ghost) during the build inside $(JVM_VARIANT_OUTPUTDIR):
+# - Host tool built to: $(JVM_VARIANT_OUTPUTDIR)/tools/tg_mn/
+# - Generated .inc files to: $(JVM_VARIANT_OUTPUTDIR)/gensrc/tablegen/
+# - Zero leftover files in the source tree!
+#
+
+include MakeIncludeStart.gmk
+ifeq ($(INCLUDE), true)
+
+################################################################################
+
+ifeq ($(call check-jvm-feature, compiler2), true)
+
+  ##############################################################################
+  # Ephemeral Paths (Ghost / Build-time outputs inside $(JVM_VARIANT_OUTPUTDIR))
+
+  TDLc_DIR := $(TOPDIR)/src/hotspot/share/tdlc
+  TDLc_BACKEND_DIR := $(TDLc_DIR)/backend
+  TDLc_LLVM_SRC := $(TDLc_DIR)/llvm_src
+  TDLc_GLUE_DIR := $(TDLc_DIR)/glue
+  TDLc_LLVM_INCLUDE := $(TDLc_GLUE_DIR)/targets/include/llvm
+
+  # CPU-specific .td directory (e.g., cpu/x86/x86/, cpu/aarch64/aarch64/)
+  TDLc_CPU_DIR := $(TOPDIR)/src/hotspot/cpu/$(HOTSPOT_TARGET_CPU_ARCH)/$(HOTSPOT_TARGET_CPU)
+
+  # Ghost directories: all inside $(JVM_VARIANT_OUTPUTDIR), nothing in source tree
+  TABLEGEN_OUTPUT_DIR := $(JVM_VARIANT_OUTPUTDIR)/gensrc/tablegen
+  TG_MN_TOOL_DIR      := $(JVM_VARIANT_OUTPUTDIR)/tools/tg_mn
+  TG_MN_OBJS_DIR      := $(TG_MN_TOOL_DIR)/objs
+  TG_MN_TOOL          := $(TG_MN_TOOL_DIR)/tg_mn$(EXE_SUFFIX)
+
+  # Target architecture in canonical form (X86, AArch64, RISCV, S390)
+  ifeq ($(HOTSPOT_TARGET_CPU_ARCH), x86)
+    TDLc_ARCH_NAME := X86
+    TDLc_MAIN_TD := $(TDLc_CPU_DIR)/glue/X86Glue.td
+  else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), aarch64)
+    TDLc_ARCH_NAME := AArch64
+    TDLc_MAIN_TD := $(TDLc_CPU_DIR)/glue/AArch64Glue.td
+  else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), riscv)
+    TDLc_ARCH_NAME := RISCV
+    TDLc_MAIN_TD := $(TDLc_CPU_DIR)/glue/RISCVGlue.td
+  else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), s390)
+    TDLc_ARCH_NAME := S390
+    TDLc_MAIN_TD := $(TDLc_CPU_DIR)/glue/S390Glue.td
+  endif
+
+  # Fallback to main .td if glue not present
+  ifeq ($(wildcard $(TDLc_MAIN_TD)), )
+    ifeq ($(HOTSPOT_TARGET_CPU_ARCH), x86)
+      TDLc_MAIN_TD := $(TDLc_CPU_DIR)/X86.td
+    else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), aarch64)
+      TDLc_MAIN_TD := $(TDLc_CPU_DIR)/AArch64.td
+    else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), riscv)
+      TDLc_MAIN_TD := $(TDLc_CPU_DIR)/RISCV.td
+    else ifeq ($(HOTSPOT_TARGET_CPU_ARCH), s390)
+      TDLc_MAIN_TD := $(TDLc_CPU_DIR)/S390.td
+    endif
+  endif
+
+  # All .td files affecting generation
+  TDLc_ALL_TD_FILES := $(wildcard $(TDLc_CPU_DIR)/*.td) \
+                       $(wildcard $(TDLc_CPU_DIR)/gc/*.td) \
+                       $(wildcard $(TDLc_CPU_DIR)/glue/*.td)
+
+  # Required .inc files expected by C2
+  TABLEGEN_INC_FILES := \
+      $(TABLEGEN_OUTPUT_DIR)/$(TDLc_ARCH_NAME)GenMachNode.inc \
+      $(TABLEGEN_OUTPUT_DIR)/$(TDLc_ARCH_NAME)GenRegisterInfo.inc \
+      $(TABLEGEN_OUTPUT_DIR)/$(TDLc_ARCH_NAME)GenPatternMatching.inc \
+      $(TABLEGEN_OUTPUT_DIR)/$(TDLc_ARCH_NAME)GenCallingConv.inc \
+      $(TABLEGEN_OUTPUT_DIR)/$(TDLc_ARCH_NAME)GenC2Globals.inc \
+      $(TABLEGEN_OUTPUT_DIR)/$(TDLc_ARCH_NAME)GenMacroAssembler.inc \
+      #
+
+  ##############################################################################
+  # Build tg_mn host tool (ephemerally in $(TG_MN_TOOL_DIR))
+  ##############################################################################
+
+  # Flags for building the host tg_mn tool
+  ifeq ($(call isBuildOs, windows), true)
+    TG_MN_CFLAGS := -nologo -EHsc -std:c++17 -O2 -W3 -D_CRT_SECURE_NO_WARNINGS
+    TG_MN_LIBS := ntdll.lib psapi.lib version.lib ole32.lib
+  else
+    TG_MN_CFLAGS := -std=c++17 -O2 -pthread
+    TG_MN_LIBS := -lpthread -ldl
+  endif
+
+  TG_MN_CFLAGS += -I$(TDLc_LLVM_SRC)/include
+
+  # If an external pre-installed TABLEGEN / tg_mn is supplied in environment, use it
+  ifneq ($(TG_MN), )
+    TG_MN_EXEC := $(TG_MN)
+  else
+    TG_MN_EXEC := $(TG_MN_TOOL)
+
+    $(TG_MN_TOOL): $(TDLc_BACKEND_DIR)/tg_mn.cpp
+	$(call LogInfo, Building ephemeral tg_mn host compiler tool)
+	$(call MakeDir, $(TG_MN_TOOL_DIR) $(TG_MN_OBJS_DIR))
+	$(BUILD_CXX) $(TG_MN_CFLAGS) $< $(TG_MN_LIBS) -o $@
+  endif
+
+  ##############################################################################
+  # Generate .inc files using the ephemeral tg_mn tool
+  ##############################################################################
+
+  $(TABLEGEN_INC_FILES): $(TG_MN_EXEC) $(TDLc_MAIN_TD) $(TDLc_ALL_TD_FILES)
+	$(call LogInfo, Generating $(TDLc_ARCH_NAME) C2 .inc files with TableGen MachNode backend)
+	$(call MakeDir, $(TABLEGEN_OUTPUT_DIR))
+	$(TG_MN_EXEC) \
+	    -I $(TDLc_CPU_DIR)/glue \
+	    -I $(TDLc_CPU_DIR) \
+	    -I $(TDLc_DIR)/glue/targets/include \
+	    -I $(TDLc_DIR)/glue \
+	    --target-arch=$(TDLc_ARCH_NAME) \
+	    --output-dir=$(TABLEGEN_OUTPUT_DIR) \
+	    --gen-all \
+	    $(TDLc_MAIN_TD)
+
+  TARGETS += $(TABLEGEN_INC_FILES)
+
+endif
+
+################################################################################
+
+endif # include guard
+include MakeIncludeEnd.gmk

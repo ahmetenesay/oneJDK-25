@@ -158,6 +158,51 @@ jobs:
         shell: pwsh
 
       # -----------------------------------------------------------------------
+      # 3b. Install LLVM & Build tg_mn for tablegen backend
+      # -----------------------------------------------------------------------
+      - name: Install LLVM & Build tg_mn (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang llvm llvm-dev
+          clang --version
+          llvm-tblgen --version
+          clang++ -std=c++17 -O2 $(llvm-config --cxxflags) jdk/src/hotspot/share/tdlc/backend/tg_mn.cpp \
+            $(llvm-config --ldflags --libs tablegen support) -lpthread -ldl -o /tmp/tg_mn || true
+          if [ -f /tmp/tg_mn ]; then
+            echo "TG_MN=/tmp/tg_mn" >> $GITHUB_ENV
+            echo "✅ Built tg_mn at /tmp/tg_mn"
+          fi
+          echo "LLVM_BIN=$(which clang | xargs dirname)" >> $GITHUB_ENV
+
+      - name: Install LLVM & Build tg_mn (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $llvmVersion = "18.1.8"
+          $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "win-arm64" } else { "win64-x64" }
+          $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvmVersion/LLVM-$llvmVersion-$arch.msi"
+          Write-Host "Downloading LLVM $llvmVersion for $arch..."
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\llvm.msi"
+          msiexec /i "$env:TEMP\llvm.msi" /qn /norestart
+          $llvmPath = "C:\Program Files\LLVM\bin"
+          if (-not (Test-Path $llvmPath)) {
+            $llvmPath = "C:\Program Files (x86)\LLVM\bin"
+          }
+          Write-Host "LLVM installed at: $llvmPath"
+          & "$llvmPath\clang-cl.exe" --version
+          & "$llvmPath\llvm-tblgen.exe" --version
+          $tgMnExe = "$env:RUNNER_TEMP\tg_mn.exe"
+          & "$llvmPath\clang++.exe" -std=c++17 -O2 -I "$llvmPath\..\include" "jdk\src\hotspot\share\tdlc\backend\tg_mn.cpp" -L "$llvmPath\..\lib" -lLLVMTableGen -lLLVMTableGenBasic -lLLVMSupport -lntdll -lpsapi -lversion -lole32 -o $tgMnExe
+          if (Test-Path $tgMnExe) {
+            echo "TG_MN=$tgMnExe" >> $env:GITHUB_ENV
+            Write-Host "✅ Built tg_mn.exe at $tgMnExe"
+          }
+          echo "LLVM_BIN=$llvmPath" >> $env:GITHUB_ENV
+          echo "CLANG_CL=$llvmPath\clang-cl.exe" >> $env:GITHUB_ENV
+          echo "LLVM_TBLGEN=$llvmPath\llvm-tblgen.exe" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      # -----------------------------------------------------------------------
       # 4. Build/Install static TBB
       # -----------------------------------------------------------------------
       - name: Install TBB (Linux)
@@ -170,7 +215,8 @@ jobs:
           git clone --depth 1 --branch v2021.12.0 https://github.com/uxlfoundation/oneTBB.git tbb-src
           mkdir -p tbb-src/build && cd tbb-src/build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF \
-            -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow"
+            -DCMAKE_CXX_FLAGS="-Wno-error=stringop-overflow" \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           make -j$(nproc)
           cd ../..
 
@@ -332,6 +378,7 @@ jobs:
             --with-jvm-variants=server \
             --with-zlib=system \
             --with-jmod-compress=zip-1 \
+            --with-toolchain-type=clang \
             --disable-javac-server \
             --disable-warnings-as-errors \
             $EXTRA_FEATURES
@@ -344,8 +391,11 @@ jobs:
           echo "# oneJDK-25: TBB static linking variables" >> build/onejdk-25/spec.gmk
           echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
           echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
-          echo "✅ TBB variables injected into spec.gmk"
-          tail -5 build/onejdk-25/spec.gmk
+          if [ -n "$TG_MN" ]; then
+            echo "TG_MN := $TG_MN" >> build/onejdk-25/spec.gmk
+          fi
+          echo "✅ TBB and TG_MN variables injected into spec.gmk"
+          tail -6 build/onejdk-25/spec.gmk
 
       - name: Configure JDK (macOS)
         if: runner.os == 'macOS'
@@ -362,6 +412,7 @@ jobs:
             --with-boot-jdk="$BOOT_JDK" \
             --with-jvm-variants=server \
             --with-jmod-compress=zip-1 \
+            --with-toolchain-type=clang \
             --disable-javac-server \
             --disable-warnings-as-errors
 
@@ -369,8 +420,11 @@ jobs:
           echo "# oneJDK-25: TBB static linking variables" >> build/onejdk-25/spec.gmk
           echo "TBB_STATIC_LIB_DIR := $TBB_STATIC_LIB_DIR" >> build/onejdk-25/spec.gmk
           echo "TBB_INCLUDE_DIR := $TBB_INCLUDE_DIR" >> build/onejdk-25/spec.gmk
-          echo "✅ TBB variables injected into spec.gmk"
-          tail -5 build/onejdk-25/spec.gmk
+          if [ -n "$TG_MN" ]; then
+            echo "TG_MN := $TG_MN" >> build/onejdk-25/spec.gmk
+          fi
+          echo "✅ TBB and TG_MN variables injected into spec.gmk"
+          tail -6 build/onejdk-25/spec.gmk
 
       - name: Configure JDK (Windows)
         if: runner.os == 'Windows'
@@ -400,8 +454,12 @@ jobs:
           echo "# oneJDK-25: TBB static linking variables" >> build/onejdk-25/spec.gmk
           echo "TBB_STATIC_LIB_DIR := $TBB_LIB_DIR" >> build/onejdk-25/spec.gmk
           echo "TBB_INCLUDE_DIR := $TBB_INC_DIR" >> build/onejdk-25/spec.gmk
-          echo "✅ TBB variables injected into spec.gmk"
-          tail -5 build/onejdk-25/spec.gmk
+          if [ -n "$TG_MN" ]; then
+            TG_MN_UNIX=$(cygpath -u "$TG_MN")
+            echo "TG_MN := $TG_MN_UNIX" >> build/onejdk-25/spec.gmk
+          fi
+          echo "✅ TBB and TG_MN variables injected into spec.gmk"
+          tail -6 build/onejdk-25/spec.gmk
 
         env:
           MSYS2_PATH_TYPE: minimal

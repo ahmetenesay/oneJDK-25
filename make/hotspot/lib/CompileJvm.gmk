@@ -81,7 +81,9 @@ JVM_LIBS += \
 # oneJDK-25: TBB variables are injected into spec.gmk by the build workflow.
 # spec.gmk is included by all sub-makes, so TBB variables are available everywhere.
 
-# Add TBB include path so that #include <oneapi/tbb/...> resolves correctly
+# Add TBB in-tree include path so that #include <oneapi/tbb/...> resolves correctly everywhere
+TBB_IN_TREE_INCLUDE := $(TOPDIR)/src/hotspot/share/tbb/oneTBB-2023.2.0/include
+JVM_CFLAGS += -I$(TBB_IN_TREE_INCLUDE)
 ifneq ($(TBB_INCLUDE_DIR),)
   JVM_CFLAGS += -I$(TBB_INCLUDE_DIR)
 endif

@@ -28,7 +28,19 @@
 #include "runtime/globals_shared.hpp"
 #include "utilities/macros.hpp"
 
+// TableGen-generated C2 globals
+// Replaces legacy adlc-generated CPU_HEADER(c2_globals)
+#if defined(TARGET_ARCH_x86)
+#include "X86GenC2Globals.inc"
+#elif defined(TARGET_ARCH_aarch64)
+#include "AArch64GenC2Globals.inc"
+#elif defined(TARGET_ARCH_riscv)
+#include "RISCVGenC2Globals.inc"
+#elif defined(TARGET_ARCH_s390)
+#include "S390GenC2Globals.inc"
+#else
 #include CPU_HEADER(c2_globals)
+#endif
 #include OS_HEADER(c2_globals)
 
 #endif // SHARE_OPTO_C2_GLOBALS_PD_HPP

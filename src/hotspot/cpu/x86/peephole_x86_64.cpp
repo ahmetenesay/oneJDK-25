@@ -25,7 +25,9 @@
 #ifdef COMPILER2
 
 #include "peephole_x86_64.hpp"
-#include "adfiles/ad_x86.hpp"
+// TableGen-generated MachNode classes
+// Replaces adlc-generated adfiles/ad_x86.hpp
+#include "X86GenMachNode.inc"
 
 // This function transforms the shapes
 // mov d, s1; add d, s2 into

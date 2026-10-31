@@ -48,7 +48,22 @@ class Matcher : public PhaseTransform {
 public:
 
   // Machine-dependent definitions
+  // Replaces legacy adlc-generated CPU_HEADER(matcher) with TableGen .inc files
+#if defined(TARGET_ARCH_x86)
+#include "X86GenPatternMatching.inc"
+#include "X86GenCallingConv.inc"
+#elif defined(TARGET_ARCH_aarch64)
+#include "AArch64GenPatternMatching.inc"
+#include "AArch64GenCallingConv.inc"
+#elif defined(TARGET_ARCH_riscv)
+#include "RISCVGenPatternMatching.inc"
+#include "RISCVGenCallingConv.inc"
+#elif defined(TARGET_ARCH_s390)
+#include "S390GenPatternMatching.inc"
+#include "S390GenCallingConv.inc"
+#else
 #include CPU_HEADER(matcher)
+#endif
 
   // State and MStack class used in xform() and find_shared() iterative methods.
   enum Node_State { Pre_Visit,  // node has to be pre-visited

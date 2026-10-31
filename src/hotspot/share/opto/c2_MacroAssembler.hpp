@@ -39,7 +39,19 @@ class C2_MacroAssembler: public MacroAssembler {
   // creation
   C2_MacroAssembler(CodeBuffer* code) : MacroAssembler(code) {}
 
+  // TableGen-generated MacroAssembler extensions
+  // Replaces legacy adlc-generated CPU_HEADER(c2_MacroAssembler)
+#if defined(TARGET_ARCH_x86)
+#include "X86GenMacroAssembler.inc"
+#elif defined(TARGET_ARCH_aarch64)
+#include "AArch64GenMacroAssembler.inc"
+#elif defined(TARGET_ARCH_riscv)
+#include "RISCVGenMacroAssembler.inc"
+#elif defined(TARGET_ARCH_s390)
+#include "S390GenMacroAssembler.inc"
+#else
 #include CPU_HEADER(c2_MacroAssembler)
+#endif
 
 };
 

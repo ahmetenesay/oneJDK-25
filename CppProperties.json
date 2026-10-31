@@ -1,0 +1,31 @@
+{
+  "configurations": [
+    {
+      "name": "x64-Release",
+      "includePath": [
+        "${workspaceRoot}/src/hotspot/share",
+        "${workspaceRoot}/src/hotspot/share/precompiled",
+        "${workspaceRoot}/src/hotspot/share/tbb/oneTBB-2023.2.0/include",
+        "${workspaceRoot}/src/hotspot/share/tdlc/llvm_src/include",
+        "${workspaceRoot}/src/hotspot/cpu/x86",
+        "${workspaceRoot}/src/hotspot/os/windows",
+        "${workspaceRoot}/src/hotspot/os_cpu/windows_x86",
+        "${workspaceRoot}/src/java.base/share/native/include",
+        "${workspaceRoot}/src/java.base/windows/native/include",
+        "${workspaceRoot}/build/*/gensrc/tablegen"
+      ],
+      "defines": [
+        "_WINDOWS",
+        "WIN32",
+        "HOTSPOT_BUILD_TARGET=\"server\"",
+        "COMPILER2",
+        "ALL_GCS_NAMES",
+        "INCLUDE_SHENANDOAHGC=1",
+        "INCLUDE_ZGC=1",
+        "INCLUDE_G1GC=1"
+      ],
+      "intelliSenseMode": "windows-msvc-x64",
+      "compilerSwitches": "/std:c++17 /EHsc"
+    }
+  ]
+}

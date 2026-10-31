@@ -25,9 +25,24 @@
 #ifndef SHARE_OPTO_AD_HPP
 #define SHARE_OPTO_AD_HPP
 
-
 #include "utilities/macros.hpp"
 
+// TableGen-generated instruction and register info
+// Replaces legacy adlc-generated adfiles/ad
+#if defined(TARGET_ARCH_x86)
+#include "X86GenMachNode.inc"
+#include "X86GenRegisterInfo.inc"
+#elif defined(TARGET_ARCH_aarch64)
+#include "AArch64GenMachNode.inc"
+#include "AArch64GenRegisterInfo.inc"
+#elif defined(TARGET_ARCH_riscv)
+#include "RISCVGenMachNode.inc"
+#include "RISCVGenRegisterInfo.inc"
+#elif defined(TARGET_ARCH_s390)
+#include "S390GenMachNode.inc"
+#include "S390GenRegisterInfo.inc"
+#else
 #include CPU_HEADER(adfiles/ad)
+#endif
 
 #endif // SHARE_OPTO_AD_HPP

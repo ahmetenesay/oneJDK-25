@@ -27,9 +27,19 @@
 
 #include "utilities/macros.hpp"
 
-// AdGlobals contains c2 specific register handling code as specified
-// in the .ad files.
+// TableGen-generated register info
+// Replaces legacy adlc-generated CPU_HEADER(adfiles/adGlobals)
+#if defined(TARGET_ARCH_x86)
+#include "X86GenRegisterInfo.inc"
+#elif defined(TARGET_ARCH_aarch64)
+#include "AArch64GenRegisterInfo.inc"
+#elif defined(TARGET_ARCH_riscv)
+#include "RISCVGenRegisterInfo.inc"
+#elif defined(TARGET_ARCH_s390)
+#include "S390GenRegisterInfo.inc"
+#else
 #include CPU_HEADER(adfiles/adGlobals)
+#endif
 
 //------------------------------OptoReg----------------------------------------
 // We eventually need Registers for the Real World.  Registers are essentially
