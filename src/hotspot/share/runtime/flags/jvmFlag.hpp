@@ -174,7 +174,7 @@ public:
     return find_declared_flag(name, strlen(name));
   }
 
-  static JVMFlag* fuzzy_match(const char* name, size_t length, bool allow_locked = false);
+  static JVMFlag* fuzzy_match(const char* name, size_t length, bool allow_locked = false, const char** out_hint = nullptr);
 
   static void assert_valid_flag_enum(JVMFlagsEnum i) NOT_DEBUG_RETURN;
   static void check_all_flag_declarations() NOT_DEBUG_RETURN;

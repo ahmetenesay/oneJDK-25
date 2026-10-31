@@ -28,6 +28,7 @@
 #include "runtime/arguments.hpp"
 #include "runtime/flags/jvmFlag.hpp"
 #include "runtime/flags/jvmFlagAccess.hpp"
+#include "runtime/flags/jvmFlagDidYouMean.hpp"
 #include "runtime/flags/jvmFlagLookup.hpp"
 #include "runtime/globals_extension.hpp"
 #include "utilities/bitMap.hpp"
@@ -568,35 +569,8 @@ JVMFlag* JVMFlag::find_flag(const char* name, size_t length, bool allow_locked, 
   return nullptr;
 }
 
-JVMFlag* JVMFlag::fuzzy_match(const char* name, size_t length, bool allow_locked) {
-  double VMOptionsFuzzyMatchSimilarity = 0.7;
-  JVMFlag* match = nullptr;
-  double score;
-  double max_score = -1;
-
-  for (JVMFlag* current = &flagTable[0]; current->_name != nullptr; current++) {
-    score = StringUtils::similarity(current->_name, strlen(current->_name), name, length);
-    if (score > max_score) {
-      max_score = score;
-      match = current;
-    }
-  }
-
-  if (match == nullptr) {
-    return nullptr;
-  }
-
-  if (!(match->is_unlocked() || match->is_unlocker())) {
-    if (!allow_locked) {
-      return nullptr;
-    }
-  }
-
-  if (max_score < VMOptionsFuzzyMatchSimilarity) {
-    return nullptr;
-  }
-
-  return match;
+JVMFlag* JVMFlag::fuzzy_match(const char* name, size_t length, bool allow_locked, const char** out_hint) {
+  return JVMFlagDidYouMean::resolve(name, length, allow_locked, out_hint);
 }
 
 bool JVMFlag::is_default(JVMFlagsEnum flag) {
