@@ -24,7 +24,7 @@ ifeq ($(call check-jvm-feature, compiler2), true)
   TDLc_BACKEND_DIR := $(TDLc_DIR)/backend
   TDLc_LLVM_SRC := $(TDLc_DIR)/llvm_src
   TDLc_GLUE_DIR := $(TDLc_DIR)/glue
-  TDLc_LLVM_INCLUDE := $(TDLc_GLUE_DIR)/targets/include/llvm
+  TDLc_LLVM_INCLUDE := $(TDLc_LLVM_SRC)/include
 
   # CPU-specific .td directory (e.g., cpu/x86/x86/, cpu/aarch64/aarch64/)
   TDLc_CPU_DIR := $(TOPDIR)/src/hotspot/cpu/$(HOTSPOT_TARGET_CPU_ARCH)/$(HOTSPOT_TARGET_CPU)
@@ -110,7 +110,7 @@ ifeq ($(call check-jvm-feature, compiler2), true)
 	$(TG_MN_EXEC) \
 	    -I $(TDLc_CPU_DIR)/glue \
 	    -I $(TDLc_CPU_DIR) \
-	    -I $(TDLc_DIR)/glue/targets/include \
+	    -I $(TDLc_LLVM_SRC)/include \
 	    -I $(TDLc_DIR)/glue \
 	    --target-arch=$(TDLc_ARCH_NAME) \
 	    --output-dir=$(TABLEGEN_OUTPUT_DIR) \
