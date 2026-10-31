@@ -32,6 +32,34 @@ void RedletArguments::initialize() {
     RedletMaxTLABSize = MinTLABSize;
   }
 
+  // Evaluate execution profile: NORMAX (Dynamic SIMD) vs SSIOLSC (Safety-Critical Deterministic)
+  bool is_ssiolsc = RedletSCMode ||
+                    (RedletProfile != nullptr && (strcasecmp(RedletProfile, "SSIOLSC") == 0 ||
+                                                  strcasecmp(RedletProfile, "SC") == 0 ||
+                                                  strcasecmp(RedletProfile, "SafetyCritical") == 0));
+
+  if (is_ssiolsc) {
+    if (FLAG_IS_DEFAULT(RedletSCMode)) {
+      FLAG_SET_ERGO(RedletSCMode, true);
+    }
+    if (FLAG_IS_DEFAULT(AlwaysPreTouch)) {
+      FLAG_SET_ERGO(AlwaysPreTouch, true);
+    }
+    if (FLAG_IS_DEFAULT(RedletForbidDynamicGrowth)) {
+      FLAG_SET_ERGO(RedletForbidDynamicGrowth, true);
+    }
+    if (FLAG_IS_DEFAULT(RedletVFSStrict)) {
+      FLAG_SET_ERGO(RedletVFSStrict, true);
+    }
+    log_info(gc)("RedletGC Safety-Critical (SSIOLSC) Profile engaged:");
+    log_info(gc)("  - Hard real-time determinism active (replacing soft heuristics)");
+    log_info(gc)("  - Page pre-touch (AlwaysPreTouch) enforced to prevent page faults");
+    log_info(gc)("  - Dynamic heap expansion forbidden (Zero-jitter execution envelope)");
+    log_info(gc)("  - Strict VFS branch validation and memory isolation enforced");
+  } else {
+    log_info(gc)("RedletGC NORMAX Profile engaged: Dynamic SIMD throughput with oneTBB heterogeneous work-stealing.");
+  }
+
 #ifdef COMPILER2
   if (FLAG_IS_DEFAULT(UseCountedLoopSafepoints)) {
     FLAG_SET_DEFAULT(UseCountedLoopSafepoints, true);

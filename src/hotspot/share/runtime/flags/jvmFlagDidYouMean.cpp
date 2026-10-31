@@ -200,6 +200,14 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "trim",                     "RedletRMRP",              "bool", "true", "Intent: Reduce Memory Resident Set Reclamation (RMRP)" },
   { "hetero_arenas",            "RedletHeteroArenas",      "bool", "true", "Intent: Enable P-Core and E-Core heterogeneous task arenas via oneTBB" },
   { "elastic_tlab",             "RedletElasticTLAB",       "bool", "true", "Intent: Use elastic policy to dynamically manage Redlet TLAB sizes" },
+  { "ssiolsc",                  "RedletSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time deterministic profile (replaces G1 soft heuristics)" },
+  { "sc",                       "RedletSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time deterministic profile with zero-jitter envelope" },
+  { "sc_mode",                  "RedletSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time bounded latency deterministic mode" },
+  { "safety_critical",          "RedletSCMode",            "bool", "true", "Intent: Mission-critical hard real-time bounded latency mode" },
+  { "realtime_gc",              "RedletSCMode",            "bool", "true", "Intent: Hard real-time deterministic microsecond GC mode" },
+  { "deterministic_gc",         "RedletSCMode",            "bool", "true", "Intent: Deterministic bounded pause profile eliminating dynamic scheduling jitter" },
+  { "forbid_dynamic_growth",    "RedletForbidDynamicGrowth","bool","true", "Intent: Forbid runtime heap growth to guarantee bounded execution envelope" },
+  { "forbid_growth",            "RedletForbidDynamicGrowth","bool","true", "Intent: Forbid runtime heap growth to guarantee bounded execution envelope" },
 
   // =========================================================================
   // GROUP 2: Memory Sizing & Capacities (size_t)
@@ -358,6 +366,10 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "jfr_options",              "FlightRecorderOptions",   "ccstr",  "stackdepth=128",   "Intent: Configuration options for Java Flight Recorder" },
   { "compile_only",             "CompileOnly",             "ccstr",  "pkg/Class.method", "Intent: Restrict compilation to matching method signature pattern" },
   { "compile_command",          "CompileCommand",          "ccstrlist","dontinline,Foo.bar","Intent: Prepend JIT compilation directive commands" },
+  { "normax",                   "RedletProfile",           "ccstr",  "NORMAX", "Intent: Normal maximum high-throughput SIMD execution profile" },
+  { "ssiolsc_profile",          "RedletProfile",           "ccstr",  "SSIOLSC","Intent: Safety-Critical execution profile (replaces G1 soft heuristics)" },
+  { "sc_profile",               "RedletProfile",           "ccstr",  "SSIOLSC","Intent: Safety-Critical execution profile (replaces G1 soft heuristics)" },
+  { "scgc_type",                "RedletSCGCType",          "ccstr",  "Default","Intent: Safety-Critical GC type: Default (bureaucratic STW) or PrimitiveRW" },
   { "redlet_options",           "RedletOptions",           "ccstr",  "turbo,trim",       "Intent: RedletGC direct comma-separated intent sequence" },
   { "turbo",                    "RedletOptions",           "ccstr",  "turbo",            "Intent: Engage hardware performance governor boost during GC" },
   { "boost",                    "RedletOptions",           "ccstr",  "boost",            "Intent: Engage hardware performance governor boost during GC" },

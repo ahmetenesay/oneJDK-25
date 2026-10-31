@@ -55,7 +55,9 @@ static const char* const REDLET_KNOWN_FLAGS[] = {
   "UseMLTCSolver", "Use_MLTC_Solver", "MLTCSolver", "MLTC_Solver", "USE_MLTC_SOLVER",
   "Code_Arena_Bytes", "CodeArenaBytes", "Code_Arena_Size", "Code_Heap_Size", "CODE_ARENA_BYTES",
   "Heat_Decay_Factor", "HeatDecayFactor", "HEAT_DECAY_FACTOR",
-  "Heat_Gain_Weight", "HeatGainWeight", "HEAT_GAIN_WEIGHT"
+  "Heat_Gain_Weight", "HeatGainWeight", "HEAT_GAIN_WEIGHT",
+  "NORMAX", "SSIOLSC", "Profile", "PROFILE", "RedletProfile", "RedletSCMode",
+  "SCGC_Type", "SCGCType", "SCGC_TYPE"
 };
 
 struct RedletCLIIntentEntry {
@@ -135,7 +137,17 @@ static const RedletCLIIntentEntry REDLET_INTENT_REGISTRY[] = {
   // 9. Hardware & System
   {"strict_ring3",     "Strict_Ring3_Only",            "true", "Lock execution to safe Ring 3 APIs"},
   {"strict_flags",     "Strict_Flags",                 "true", "Fail-fast on unknown flags or conflicts"},
-  {"mltc_solver",      "UseMLTCSolver",                "true", "Engage MLTC upward trend solver"}
+  {"mltc_solver",      "UseMLTCSolver",                "true", "Engage MLTC upward trend solver"},
+
+  // 10. Operational Profile & Determinism (NORMAX vs SSIOLSC)
+  {"normax",           "Profile", "NORMAX",  "Normal maximum high-throughput SIMD execution profile"},
+  {"standard",         "Profile", "NORMAX",  "Standard high-throughput execution profile"},
+  {"ssiolsc",          "Profile", "SC",      "Safety-critical isolated hard real-time deterministic profile"},
+  {"sc",               "Profile", "SC",      "Safety-critical isolated hard real-time deterministic profile"},
+  {"safety_critical",  "Profile", "SC",      "Mission-critical hard real-time bounded latency mode"},
+  {"realtime",         "Profile", "SC",      "Hard real-time bounded latency deterministic mode"},
+  {"deterministic",    "Profile", "SC",      "Deterministic bounded pause profile eliminating scheduling jitter"},
+  {"zero_jitter",      "Profile", "SC",      "Zero-jitter deterministic execution envelope"}
 };
 
 int RedletFlags::damerau_levenshtein_distance(const char* s1, const char* s2) {
@@ -520,6 +532,32 @@ bool RedletFlags::parse_single_flag_internal(RedletConfig& cfg, const char* key,
   } else if (strcasecmp(key, "Strict_Flags") == 0) {
     bool en = (!val[0] || strcasecmp(val, "1") == 0 || strcasecmp(val, "true") == 0 || strcasecmp(val, "yes") == 0);
     cfg.strings.strict_flags = en;
+  } else if (strcasecmp(key, "Profile") == 0 || strcasecmp(key, "RedletProfile") == 0) {
+    strncpy(cfg.strings.profile_raw, val, sizeof(cfg.strings.profile_raw) - 1);
+    if (strcasecmp(val, "SC") == 0 || strcasecmp(val, "SSIOLSC") == 0 ||
+        strcasecmp(val, "SafetyCritical") == 0 || strcasecmp(val, "Safety_Critical") == 0) {
+      cfg.strings.profile = RedletProfile::SSIOLSC;
+      cfg.strings.is_safety_critical = true;
+      cfg.forbid_dynamic_growth = true;
+      cfg.strings.advance_payment = true; // AlwaysPreTouch
+      cfg.strings.allow_operation_dispatchings = false; // eliminate scheduling jitter
+      cfg.strings.gc_heuristic = RedletGCHeuristic::BUREAUCRATIC; // predictable phase STW
+    } else {
+      cfg.strings.profile = RedletProfile::NORMAX;
+      cfg.strings.is_safety_critical = false;
+      cfg.forbid_dynamic_growth = false;
+    }
+  } else if (strcasecmp(key, "SCGC_Type") == 0 || strcasecmp(key, "SCGCType") == 0) {
+    strncpy(cfg.strings.scgc_type_raw, val, sizeof(cfg.strings.scgc_type_raw) - 1);
+    if (strcasecmp(val, "PrimitiveRW") == 0 || strcasecmp(val, "Primitive_RW") == 0) {
+      cfg.strings.scgc_type = RedletSCGCType::PRIMITIVE_RW;
+      cfg.strings.no_sfgc_overwrite_mode = true;
+      cfg.strings.gc_heuristic = RedletGCHeuristic::DISABLED;
+    } else {
+      cfg.strings.scgc_type = RedletSCGCType::DEFAULT;
+      cfg.strings.no_sfgc_overwrite_mode = false;
+      cfg.strings.gc_heuristic = RedletGCHeuristic::BUREAUCRATIC;
+    }
   } else {
     return false;
   }

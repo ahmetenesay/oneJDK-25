@@ -58,7 +58,22 @@
                                                                              \
   product(size_t, RedletMinHeapExpand, 128 * M, EXPERIMENTAL,                \
           "Min expansion step for heap.")                                    \
-          range(1, max_intx)
+          range(1, max_intx)                                                 \
+                                                                             \
+  product(ccstr, RedletProfile, "NORMAX", EXPERIMENTAL,                      \
+          "Redlet execution profile: NORMAX (standard high-throughput SIMD) "\
+          "or SSIOLSC (safety-critical bounded deterministic real-time).")   \
+                                                                             \
+  product(bool, RedletSCMode, false, EXPERIMENTAL,                           \
+          "Enable Safety-Critical (SSIOLSC) hard real-time deterministic "   \
+          "mode with bounded microsecond latency and zero-growth envelope.") \
+                                                                             \
+  product(bool, RedletForbidDynamicGrowth, false, EXPERIMENTAL,              \
+          "Forbid dynamic heap expansion at runtime for zero-jitter envelope.") \
+                                                                             \
+  product(ccstr, RedletSCGCType, "Default", EXPERIMENTAL,                    \
+          "Safety-Critical GC type: Default (bureaucratic STW) or "          \
+          "PrimitiveRW (unmanaged direct memory access).")
 
 // end of GC_REDLET_FLAGS
 

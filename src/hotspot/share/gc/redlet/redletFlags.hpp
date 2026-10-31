@@ -64,6 +64,16 @@ enum class RedletExecutionFocus : uint8_t {
   DUAL_HYBRID = 9
 };
 
+enum class RedletProfile : uint8_t {
+  NORMAX  = 0,
+  SSIOLSC = 1
+};
+
+enum class RedletSCGCType : uint8_t {
+  DEFAULT      = 0,
+  PRIMITIVE_RW = 1
+};
+
 struct RedletStringArgs {
   char                      gc_mode_raw[32]               = "Heuristic";
   char                      gc_operation_facility_raw[32] = "CYCLES";
@@ -73,6 +83,8 @@ struct RedletStringArgs {
   char                      gc_heuristic_raw[32]          = "Adaptive";
   char                      rmrp_method_raw[32]           = "Plump";
   char                      execution_focus_raw[32]       = "Auto";
+  char                      profile_raw[32]               = "NORMAX";
+  char                      scgc_type_raw[32]             = "Default";
 
   RedletGCMode              gc_mode               = RedletGCMode::HEURISTIC;
   RedletGCOperationFacility gc_operation_facility = RedletGCOperationFacility::CYCLES;
@@ -81,6 +93,10 @@ struct RedletStringArgs {
   RedletGCHeuristic         gc_heuristic          = RedletGCHeuristic::ADAPTIVE;
   RedletRMRPMethod          rmrp_method           = RedletRMRPMethod::PLUMP;
   RedletExecutionFocus      execution_focus       = RedletExecutionFocus::AUTO;
+  RedletProfile             profile               = RedletProfile::NORMAX;
+  RedletSCGCType            scgc_type             = RedletSCGCType::DEFAULT;
+
+  bool is_safety_critical                = false;
 
   bool critical_simd_explicit            = false;
   bool enable_huge_pages                 = false;
