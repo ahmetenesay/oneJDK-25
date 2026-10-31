@@ -697,6 +697,7 @@
   declare_constant(CollectedHeap::Epsilon)                                \
   declare_constant(CollectedHeap::Z)                                      \
   declare_constant(CollectedHeap::Shenandoah)                             \
+  declare_constant(CollectedHeap::Redlet)                                 \
                                                                           \
   declare_constant(vmIntrinsics::FIRST_MH_SIG_POLY)                       \
   declare_constant(vmIntrinsics::LAST_MH_SIG_POLY)                        \
