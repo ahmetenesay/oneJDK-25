@@ -1,7 +1,25 @@
 /*
- * Copyright (c) 2026, oneJDK-25 project. All rights reserved.
- * RedletGC: High-Performance Generative & Vectorized Garbage Collector.
- * Ported from SacFor_VM.cpp:7238-7320.
+ * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+ * if you need additional information or have any questions.
  */
 
 #ifndef SHARE_GC_REDLET_REDLETENTANGLE_HPP
@@ -23,8 +41,8 @@
 
 /* ========================================================================= */
 /* 0. TENSOR DATA STRUCTURE (SacFor_VM.cpp:3092-3110)                        */
-/* ========================================================================= */
-
+#ifndef SF_TENSOR_T_DEFINED
+#define SF_TENSOR_T_DEFINED
 typedef struct SF_custominiVm_tensor_t {
     void*   data{ nullptr };
     size_t  byte_size{ 0 };
@@ -32,6 +50,7 @@ typedef struct SF_custominiVm_tensor_t {
     int32_t ndim{ 0 };
     int32_t shape[8]{ 0 };
 } SF_custominiVm_tensor_t;
+#endif
 
 /* ========================================================================= */
 /* 1. DAG NODE & TRACE CACHE STRUCTURES                                      */

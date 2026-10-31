@@ -1,5 +1,6 @@
 //
-// Copyright (c) 2026, oneJDK-25 project. All rights reserved.
+// Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+// https://github.com/ahmetenesay/oneJDK-25
 //
 // RISCV_Shenandoah.td — Shenandoah GC Barrier Instructions for RISC-V
 // ===================================================================

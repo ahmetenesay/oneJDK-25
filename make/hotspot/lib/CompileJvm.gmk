@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2013, 2025, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -116,8 +117,9 @@ endif
 JVM_CFLAGS += -I$(TOPDIR)/src/java.base/share/native/libzip/zstd/lib
 
 # These files and directories are always excluded
-JVM_EXCLUDE_FILES += args.cc
-JVM_EXCLUDES += adlc
+JVM_EXCLUDE_FILES += args.cc SacFor_VM.cpp
+JVM_EXCLUDES += adlc .code_references
+JVM_EXCLUDE_PATTERNS += /.code_references/
 
 # Needed by abstract_vm_version.cpp
 ifeq ($(call isTargetCpu, x86_64), true)
@@ -425,7 +427,8 @@ ifneq ($(GENERATE_COMPILE_COMMANDS_ONLY), true)
       TARGETS += $1.op_check
     endef
 
-    $(foreach o, $(BUILD_LIBJVM_ALL_OBJS), $(eval $(call SetupOperatorNewDeleteCheck,$o)))
+    REDLET_OP_CHECK_EXCLUDE := %/tbb_jni$(OBJ_SUFFIX) %/SacFor_VM$(OBJ_SUFFIX) %/redlet%$(OBJ_SUFFIX)
+    $(foreach o, $(filter-out $(REDLET_OP_CHECK_EXCLUDE), $(BUILD_LIBJVM_ALL_OBJS)), $(eval $(call SetupOperatorNewDeleteCheck,$o)))
   endif
 endif
 

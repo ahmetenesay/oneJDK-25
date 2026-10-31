@@ -1,5 +1,6 @@
 //
-// Copyright (c) 2026, oneJDK-25 project. All rights reserved.
+// Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+// https://github.com/ahmetenesay/oneJDK-25
 //
 // AArch64_Z.td — Z Garbage Collector (ZGC) Barrier Instructions for AArch64 (ARM64)
 // =================================================================================

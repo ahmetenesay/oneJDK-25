@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2013, 2025, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -53,6 +54,12 @@ ifneq ($(FDLIBM_CFLAGS), )
   LIBJVM_FDLIBM_COPY_OPT_FLAG := $(CXX_O_FLAG_NORM)
 endif
 
+# oneJDK-25: RedletGC & MSIMD C++20 / SIMD / OS-native translation units.
+# Excluded from HotSpot C++14 precompiled.hpp and compiled with C++20 support.
+REDLET_ENGINE_SRC := $(filter-out SacFor_VM.cpp, $(notdir \
+    $(filter-out %/.code_references/%, \
+    $(call FindFiles, $(TOPDIR)/src/hotspot/share/gc/redlet, *.cpp))))
+
 ifeq ($(call isTargetOs, linux), true)
   BUILD_LIBJVM_sharedRuntimeTrig.cpp_CXXFLAGS := $(FDLIBM_CFLAGS) $(LIBJVM_FDLIBM_COPY_OPT_FLAG)
   BUILD_LIBJVM_sharedRuntimeTrans.cpp_CXXFLAGS := $(FDLIBM_CFLAGS) $(LIBJVM_FDLIBM_COPY_OPT_FLAG)
@@ -61,6 +68,7 @@ ifeq ($(call isTargetOs, linux), true)
       sharedRuntimeTrig.cpp \
       sharedRuntimeTrans.cpp \
       tbb_jni.cpp \
+      $(REDLET_ENGINE_SRC) \
       $(OPT_SPEED_SRC) \
       #
 
@@ -107,6 +115,7 @@ else ifeq ($(call isTargetOs, macosx), true)
         loopTransform.cpp \
         jvmciCompilerToVM.cpp \
         tbb_jni.cpp \
+        $(REDLET_ENGINE_SRC) \
         $(OPT_SPEED_SRC) \
         #
   endif
@@ -134,6 +143,7 @@ else ifeq ($(call isTargetOs, aix), true)
       sharedRuntimeTrans.cpp \
       synchronizer.cpp \
       tbb_jni.cpp \
+      $(REDLET_ENGINE_SRC) \
       $(OPT_SPEED_SRC) \
       #
 
@@ -145,12 +155,22 @@ else ifeq ($(call isTargetOs, windows), true)
       osThread_windows.cpp \
       jvmciCompilerToVMInit.cpp \
       tbb_jni.cpp \
+      $(REDLET_ENGINE_SRC) \
       $(OPT_SPEED_SRC) \
       #
 
   # Workaround for jvmciCompilerToVM.cpp long compilation time
   BUILD_LIBJVM_jvmciCompilerToVMInit.cpp_OPTIMIZATION := NONE
 
+endif
+
+# oneJDK-25: Enable C++20 for all RedletGC & MSIMD translation units (and suppress
+# MSVC 14.51 <xlocale> C4996 interaction with HotSpot forbiddenFunctions.hpp + oneTBB).
+ifeq ($(TOOLCHAIN_TYPE), microsoft)
+  $(foreach f, $(REDLET_ENGINE_SRC), $(eval BUILD_LIBJVM_$f_CXXFLAGS += -std:c++20 -wd4996))
+  BUILD_LIBJVM_tbb_jni.cpp_CXXFLAGS += -wd4996
+else ifneq ($(findstring $(TOOLCHAIN_TYPE), gcc clang), )
+  $(foreach f, $(REDLET_ENGINE_SRC), $(eval BUILD_LIBJVM_$f_CXXFLAGS += -std=c++20))
 endif
 
 ################################################################################

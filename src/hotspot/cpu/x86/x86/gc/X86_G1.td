@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2026, oneJDK-25 project. All rights reserved.
+// Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 //
 // X86_G1.td — G1 Garbage Collector Barrier Instructions for x86_64
 // ================================================================

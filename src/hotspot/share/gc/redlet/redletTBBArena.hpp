@@ -1,7 +1,25 @@
 /*
- * Copyright (c) 2026, oneJDK-25 project. All rights reserved.
- * RedletGC: High-Performance Generative & Vectorized Garbage Collector.
- * Ported from SacFor_VM.cpp:6904-6971.
+ * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+ * if you need additional information or have any questions.
  */
 
 #ifndef SHARE_GC_REDLET_REDLETTBBARENA_HPP
@@ -20,11 +38,14 @@
 #endif
 #endif
 
+#ifndef SF_CORE_TIER_DEFINED
+#define SF_CORE_TIER_DEFINED
 typedef enum SF_custominiVm_core_tier_t {
     SF_CORE_TIER_ANY         = 0,
     SF_CORE_TIER_PERFORMANCE = 1,
     SF_CORE_TIER_EFFICIENCY  = 2
 } SF_custominiVm_core_tier_t;
+#endif
 
 extern thread_local SF_custominiVm_core_tier_t tl_sf_core_tier;
 

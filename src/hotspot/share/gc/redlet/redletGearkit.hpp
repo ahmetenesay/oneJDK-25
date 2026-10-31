@@ -1,7 +1,25 @@
 /*
- * Copyright (c) 2026, oneJDK-25 project. All rights reserved.
- * RedletGC: High-Performance Generative & Vectorized Garbage Collector.
- * Ported from SacFor_VM.cpp core architecture.
+ * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+ * if you need additional information or have any questions.
  */
 
 #ifndef SHARE_GC_REDLET_REDLETGEARKIT_HPP
@@ -13,6 +31,70 @@
 #include <cstdio>
 #include <atomic>
 
+#include <chrono>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
+#ifndef SF_COMPILER_BARRIER
+#if defined(_MSC_VER)
+#define SF_COMPILER_BARRIER(p) do { (void)(p); _ReadWriteBarrier(); } while (0)
+#elif defined(__GNUC__) || defined(__clang__)
+#define SF_COMPILER_BARRIER(p) __asm__ __volatile__("" : : "r"(p) : "memory")
+#else
+#define SF_COMPILER_BARRIER(p) ((void)(p))
+#endif
+#endif
+
+#ifndef SF_DISABLE_OPT_BEGIN
+#if defined(__clang__)
+#define SF_DISABLE_OPT_BEGIN _Pragma("clang optimize off")
+#define SF_DISABLE_OPT_END   _Pragma("clang optimize on")
+#elif defined(__GNUC__)
+#define SF_DISABLE_OPT_BEGIN _Pragma("GCC push_options") _Pragma("GCC optimize(\"O0\")")
+#define SF_DISABLE_OPT_END   _Pragma("GCC pop_options")
+#elif defined(_MSC_VER)
+#define SF_DISABLE_OPT_BEGIN __pragma(optimize("", off))
+#define SF_DISABLE_OPT_END   __pragma(optimize("", on))
+#else
+#define SF_DISABLE_OPT_BEGIN
+#define SF_DISABLE_OPT_END
+#endif
+#endif
+
+#ifndef SACCULUS_NOW_NS_DEFINED
+#define SACCULUS_NOW_NS_DEFINED
+static inline uint64_t sacculus_now_ns() noexcept {
+    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+}
+#endif
+
+#ifndef SACCULUS_RDTSC_DEFINED
+#define SACCULUS_RDTSC_DEFINED
+static inline uint64_t sacculus_rdtsc() noexcept {
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
+#if defined(_MSC_VER)
+    return __rdtsc();
+#else
+    uint32_t lo, hi;
+    __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+#endif
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    uint64_t val;
+#if defined(_MSC_VER)
+    val = _ReadStatusReg(ARM64_CNTVCT);
+#else
+    asm volatile("mrs %0, cntvct_el0" : "=r"(val));
+#endif
+    return val;
+#else
+    return sacculus_now_ns();
+#endif
+}
+#endif
+
 #ifndef MSIMD_API
 #if defined(_WIN32)
 #define MSIMD_API __declspec(dllexport)
@@ -23,6 +105,43 @@
 
 #ifndef SACFOR_ALIGN_CL
 #define SACFOR_ALIGN_CL alignas(64)
+#endif
+
+#ifndef SF_TICKET_LOCK_T_DEFINED
+#define SF_TICKET_LOCK_T_DEFINED
+static inline void sf_ring_cpu_pause() noexcept {
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
+    _mm_pause();
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#if defined(_MSC_VER)
+    __yield();
+#else
+    __asm__ __volatile__("yield" ::: "memory");
+#endif
+#endif
+}
+
+struct SACFOR_ALIGN_CL sf_ticket_lock_t {
+    alignas(64) std::atomic<uint32_t> next_ticket{ 0 };
+    alignas(64) std::atomic<uint32_t> now_serving{ 0 };
+
+    void lock() noexcept {
+        uint32_t my_ticket = next_ticket.fetch_add(1, std::memory_order_relaxed);
+        while (now_serving.load(std::memory_order_acquire) != my_ticket) {
+            sf_ring_cpu_pause();
+        }
+    }
+
+    void unlock() noexcept {
+        now_serving.fetch_add(1, std::memory_order_release);
+    }
+};
+
+struct sf_ticket_guard_t {
+    sf_ticket_lock_t& l;
+    explicit sf_ticket_guard_t(sf_ticket_lock_t& lock_ref) noexcept : l(lock_ref) { l.lock(); }
+    ~sf_ticket_guard_t() noexcept { l.unlock(); }
+};
 #endif
 
 #ifdef __cplusplus

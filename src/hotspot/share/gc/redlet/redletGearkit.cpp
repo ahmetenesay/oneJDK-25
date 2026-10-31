@@ -1,15 +1,37 @@
 /*
- * Copyright (c) 2026, oneJDK-25 project. All rights reserved.
- * RedletGC: High-Performance Generative & Vectorized Garbage Collector.
- * Ported from SacFor_VM.cpp core architecture.
+ * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+ * if you need additional information or have any questions.
  */
 
+#include <chrono>
+#include <mutex>
 #include "gc/redlet/redletGearkit.hpp"
 #include "gc/redlet/redletMotherline.hpp"
 #include "gc/redlet/redletSIMD.hpp"
 #ifndef REDLET_STANDALONE_BUILD
 #include "gc/redlet/redlet_globals.hpp"
 #include "logging/log.hpp"
+#include "runtime/globals.hpp"
+#include "runtime/globals_extension.hpp"
 #else
 #define log_info(...) if (false) printf
 #define log_trace(...) if (false) printf
@@ -17,8 +39,6 @@
 #define log_error(...) if (false) printf
 #define FLAG_SET_ERGO(flag, value) ((void)0)
 #endif
-#include <chrono>
-#include <mutex>
 
 static std::atomic<msimd_profile_mode_t> g_gearkit_mode{ MSIMD_PROFILE_STANDARD };
 static std::atomic<SF_custominiVm_scgc_type_t> g_scgc_type{ SF_SCGC_TYPE_DEFAULT };
@@ -50,11 +70,6 @@ static inline const char* sf_lookup_hotlog_ext_string(uint16_t slot) noexcept {
     if ((slot & SF_HOTLOG_EXT_SLOT_FLAG) == 0) return nullptr;
     uint32_t idx = slot & SF_HOTLOG_EXT_SLOT_MASK;
     return g_sf_hotlog_ext_strings[idx][0] ? g_sf_hotlog_ext_strings[idx] : nullptr;
-}
-
-static inline uint64_t sacculus_now_ns() noexcept {
-    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 }
 
 /* ========================================================================= */
@@ -254,24 +269,24 @@ MSIMD_API void sf_hotlog_emit(SF_custominiVm_event_category_e ev,
 
     switch (sev) {
     case SF_Ebin1_TRACE:
-        log_trace(gc, telemetry)("[%s] fn=%u slot=%u gen=%u reg=%u core=%u sweep=%llu heap=%uKB: %s",
-                                 sf_event_category_name((uint8_t)ev), fn_id, slot, gen, reg, core,
-                                 (unsigned long long)sweep_no, heap_kb, display_msg);
+        log_trace(gc)("[%s] fn=%u slot=%u gen=%u reg=%u core=%u sweep=%llu heap=%uKB: %s",
+                      sf_event_category_name((uint8_t)ev), fn_id, slot, gen, reg, core,
+                      (unsigned long long)sweep_no, heap_kb, display_msg);
         break;
     case SF_Ebin1_INFO:
-        log_info(gc, telemetry)("[%s] fn=%u gen=%u reg=%u sweep=%llu heap=%uKB: %s",
-                                sf_event_category_name((uint8_t)ev), fn_id, gen, reg,
-                                (unsigned long long)sweep_no, heap_kb, display_msg);
+        log_info(gc)("[%s] fn=%u gen=%u reg=%u sweep=%llu heap=%uKB: %s",
+                     sf_event_category_name((uint8_t)ev), fn_id, gen, reg,
+                     (unsigned long long)sweep_no, heap_kb, display_msg);
         break;
     case SF_Ebin1_WARN:
-        log_warning(gc, telemetry)("[%s] fn=%u sweep=%llu: %s",
-                                   sf_event_category_name((uint8_t)ev), fn_id,
-                                   (unsigned long long)sweep_no, display_msg);
+        log_warning(gc)("[%s] fn=%u sweep=%llu: %s",
+                        sf_event_category_name((uint8_t)ev), fn_id,
+                        (unsigned long long)sweep_no, display_msg);
         break;
     case SF_Ebin1_ERROR:
     case SF_Ebin1_FATAL:
-        log_error(gc, telemetry)("[%s] fn=%u: %s",
-                                 sf_event_category_name((uint8_t)ev), fn_id, display_msg);
+        log_error(gc)("[%s] fn=%u: %s",
+                      sf_event_category_name((uint8_t)ev), fn_id, display_msg);
         break;
     }
 }

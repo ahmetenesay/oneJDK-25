@@ -1,16 +1,91 @@
 /*
- * Copyright (c) 2026, oneJDK-25 project. All rights reserved.
- * RedletGC: High-Performance Generative & Vectorized Garbage Collector.
+ * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+ * if you need additional information or have any questions.
  */
 
 #ifndef SHARE_GC_REDLET_REDLETFLAGS_HPP
 #define SHARE_GC_REDLET_REDLETFLAGS_HPP
 
+#ifdef REDLET_STANDALONE_BUILD
+#include <cstdint>
+#include <cstring>
+#include <cstddef>
+#include <cstdio>
+#include <algorithm>
+
+#ifndef MIN2
+#define MIN2(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX2
+#define MAX2(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
+#if defined(_MSC_VER)
+#ifndef strcasecmp
+#define strcasecmp _stricmp
+#endif
+#ifndef strncasecmp
+#define strncasecmp _strnicmp
+#endif
+#endif
+
+#ifndef OUTPUTSTREAM_FALLBACK_DEFINED
+#define OUTPUTSTREAM_FALLBACK_DEFINED
+class outputStream {
+public:
+  template<typename... Args>
+  void print(const char* fmt, Args... args) {
+    printf(fmt, args...);
+  }
+  template<typename... Args>
+  void print_cr(const char* fmt, Args... args) {
+    printf(fmt, args...);
+    printf("\n");
+  }
+};
+#endif
+
+struct DummyLog {
+  template<typename... Args>
+  void operator()(const char*, Args...) const {}
+};
+#ifndef log_info
+#define log_info(...) DummyLog()
+#endif
+#ifndef log_warning
+#define log_warning(...) DummyLog()
+#endif
+#ifndef log_error
+#define log_error(...) DummyLog()
+#endif
+
+class AllStatic {};
+#else
 #include "memory/allStatic.hpp"
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/ostream.hpp"
 #include <cstdint>
 #include <cstring>
+#endif
 
 enum class RedletGCMode : uint8_t {
   HEURISTIC = 0,
@@ -91,10 +166,10 @@ struct RedletStringArgs {
   RedletCriticalSIMD        critical_simd_mode    = RedletCriticalSIMD::AUTO;
   RedletSnatchRebateMode    snatch_rebate_mode    = RedletSnatchRebateMode::AUTO;
   RedletGCHeuristic         gc_heuristic          = RedletGCHeuristic::ADAPTIVE;
-  RedletRMRPMethod          rmrp_method           = RedletRMRPMethod::PLUMP;
+  enum RedletRMRPMethod     rmrp_method           = RedletRMRPMethod::PLUMP;
   RedletExecutionFocus      execution_focus       = RedletExecutionFocus::AUTO;
-  RedletProfile             profile               = RedletProfile::NORMAX;
-  RedletSCGCType            scgc_type             = RedletSCGCType::DEFAULT;
+  enum RedletProfile        profile               = RedletProfile::NORMAX;
+  enum RedletSCGCType       scgc_type             = RedletSCGCType::DEFAULT;
 
   bool is_safety_critical                = false;
 
