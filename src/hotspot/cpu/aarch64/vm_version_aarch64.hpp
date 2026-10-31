@@ -135,10 +135,16 @@ enum Ampere_CPU_Model {
     /* flags above must follow Linux HWCAP */ \
     decl(SVEBITPERM,    svebitperm,    27)    \
     decl(SVE2,          sve2,          28)    \
-    decl(A53MAC,        a53mac,        31)
+    decl(A53MAC,        a53mac,        31)    \
+    decl(SME,           sme,           32)    \
+    decl(SME2,          sme2,          33)    \
+    decl(I8MM,          i8mm,          34)    \
+    decl(BF16,          bf16,          35)    \
+    decl(DOTPROD,       dotprod,       36)    \
+    decl(APPLE_AMX,     apple_amx,     37)
 
   enum Feature_Flag {
-#define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (1 << bit),
+#define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (1ULL << bit),
     CPU_FEATURE_FLAGS(DECLARE_CPU_FEATURE_FLAG)
 #undef DECLARE_CPU_FEATURE_FLAG
   };

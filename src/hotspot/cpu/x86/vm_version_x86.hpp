@@ -450,7 +450,17 @@ protected:
     decl(SHA512,            "sha512",            61) /* SHA512 instructions*/ \
     decl(AVX512_FP16,       "avx512_fp16",       62) /* AVX512 FP16 ISA support*/ \
     decl(AVX10_1,           "avx10_1",           63) /* AVX10 512 bit vector ISA Version 1 support*/ \
-    decl(AVX10_2,           "avx10_2",           64) /* AVX10 512 bit vector ISA Version 2 support*/
+    decl(AVX10_2,           "avx10_2",           64) /* AVX10 512 bit vector ISA Version 2 support*/ \
+    decl(AMX_TILE,          "amx_tile",          65) /* Advanced Matrix Extensions Tile architecture */ \
+    decl(AMX_INT8,          "amx_int8",          66) /* Advanced Matrix Extensions 8-bit Integer multiply */ \
+    decl(AMX_BF16,          "amx_bf16",          67) /* Advanced Matrix Extensions Bfloat16 multiply */ \
+    decl(AMX_FP16,          "amx_fp16",          68) /* Advanced Matrix Extensions FP16 multiply */ \
+    decl(AMX_COMPLEX,       "amx_complex",       69) /* Advanced Matrix Extensions Complex multiply */ \
+    decl(AVX512_VP2INTERSECT,"avx512_vp2intersect",70)/* AVX-512 Intersect */ \
+    decl(AVX512_BF16,       "avx512_bf16",       71) /* AVX-512 Bfloat16 */ \
+    decl(AVX_VNNI,          "avx_vnni",          72) /* AVX (VEX-encoded) VNNI */ \
+    decl(FMA4,              "fma4",              73) /* 4-operand FMA instructions */ \
+    decl(XOP,               "xop",               74) /* AMD eXtended Operations */
 
 #define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (bit),
     CPU_FEATURE_FLAGS(DECLARE_CPU_FEATURE_FLAG)
@@ -911,6 +921,16 @@ public:
   // by all the versions above it.
   static bool supports_avx10_1()      { return _features.supports_feature(CPU_AVX10_1);}
   static bool supports_avx10_2()      { return _features.supports_feature(CPU_AVX10_2);}
+  static bool supports_amx_tile()     { return _features.supports_feature(CPU_AMX_TILE); }
+  static bool supports_amx_int8()     { return _features.supports_feature(CPU_AMX_INT8); }
+  static bool supports_amx_bf16()     { return _features.supports_feature(CPU_AMX_BF16); }
+  static bool supports_amx_fp16()     { return _features.supports_feature(CPU_AMX_FP16); }
+  static bool supports_amx_complex()  { return _features.supports_feature(CPU_AMX_COMPLEX); }
+  static bool supports_avx512_vp2intersect() { return _features.supports_feature(CPU_AVX512_VP2INTERSECT); }
+  static bool supports_avx512_bf16()  { return _features.supports_feature(CPU_AVX512_BF16); }
+  static bool supports_avx_vnni()     { return _features.supports_feature(CPU_AVX_VNNI); }
+  static bool supports_fma4()         { return _features.supports_feature(CPU_FMA4); }
+  static bool supports_xop()          { return _features.supports_feature(CPU_XOP); }
 
   //
   // Feature identification not affected by VM flags

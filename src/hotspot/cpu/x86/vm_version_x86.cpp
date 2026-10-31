@@ -2971,6 +2971,26 @@ VM_Version::VM_Features VM_Version::CpuidInfo::feature_flags() const {
     vm_features.set_feature(CPU_VZEROUPPER);
     if (sefsl1_cpuid7_eax.bits.sha512 != 0)
       vm_features.set_feature(CPU_SHA512);
+    if ((sefsl1_cpuid7_eax.value & (1U << 4)) != 0)
+      vm_features.set_feature(CPU_AVX_VNNI);
+    if ((sefsl1_cpuid7_eax.value & (1U << 5)) != 0)
+      vm_features.set_feature(CPU_AVX512_BF16);
+    if ((sef_cpuid7_edx.value & (1U << 8)) != 0)
+      vm_features.set_feature(CPU_AVX512_VP2INTERSECT);
+    if ((sef_cpuid7_edx.value & (1U << 24)) != 0)
+      vm_features.set_feature(CPU_AMX_TILE);
+    if ((sef_cpuid7_edx.value & (1U << 25)) != 0)
+      vm_features.set_feature(CPU_AMX_INT8);
+    if ((sef_cpuid7_edx.value & (1U << 22)) != 0)
+      vm_features.set_feature(CPU_AMX_BF16);
+    if ((sefsl1_cpuid7_eax.value & (1U << 8)) != 0)
+      vm_features.set_feature(CPU_AMX_COMPLEX);
+    if ((sefsl1_cpuid7_eax.value & (1U << 21)) != 0)
+      vm_features.set_feature(CPU_AMX_FP16);
+    if ((ext_cpuid1_ecx.value & (1U << 11)) != 0)
+      vm_features.set_feature(CPU_XOP);
+    if ((ext_cpuid1_ecx.value & (1U << 16)) != 0)
+      vm_features.set_feature(CPU_FMA4);
     if (std_cpuid1_ecx.bits.f16c != 0)
       vm_features.set_feature(CPU_F16C);
     if (sef_cpuid7_ebx.bits.avx2 != 0) {

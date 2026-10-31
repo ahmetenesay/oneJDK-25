@@ -132,7 +132,41 @@ void emitMachNodeHeader(raw_ostream &OS, const RecordKeeper &RK) {
   OS << "  " << TargetArch << "_Op_Count = " << OpIndex << "\n"
      << "};\n\n";
 
-  // 2. Emit MachNode Classes
+  // 2. Emit Matcher Constants & State Class
+  OS << "// ============================================================================\n"
+     << "// Matcher Constants & State Class (Replaces adlc ad_<arch>.hpp State)\n"
+     << "// ============================================================================\n"
+     << "#define FIRST_OPERAND_CLASS 1\n"
+     << "#define NUM_OPERANDS 256\n"
+     << "#define NUM_INSTRUCTIONS " << (OpIndex + 1) << "\n\n"
+     << "class State : public ArenaObj {\n"
+     << "private:\n"
+     << "  enum { _LAST_MACH_OPER = 1024 };\n"
+     << "  unsigned int _cost[_LAST_MACH_OPER];\n"
+     << "  uint16_t     _rule[_LAST_MACH_OPER];\n"
+     << "public:\n"
+     << "  int    _id;\n"
+     << "  Node  *_leaf;\n"
+     << "  State *_kids[2];\n\n"
+     << "  State(void) : _id(0), _leaf(nullptr) {\n"
+     << "    _kids[0] = _kids[1] = nullptr;\n"
+     << "    memset(_cost, 0, sizeof(_cost));\n"
+     << "    memset(_rule, 0, sizeof(_rule));\n"
+     << "  }\n"
+     << "  DEBUG_ONLY( ~State(void) {} )\n\n"
+     << "  MachOper *MachOperGenerator(int opcode);\n"
+     << "  MachNode *MachNodeGenerator(int opcode);\n"
+     << "  bool DFA(int opcode, const Node *ideal);\n\n"
+     << "  bool valid(uint index) { return index < _LAST_MACH_OPER && (_rule[index] & 1) != 0; }\n"
+     << "  unsigned int rule(uint index) { return index < _LAST_MACH_OPER ? (_rule[index] >> 1) : 0; }\n"
+     << "  unsigned int cost(uint index) { return index < _LAST_MACH_OPER ? _cost[index] : 0; }\n\n"
+     << "#ifndef PRODUCT\n"
+     << "  void dump() {}\n"
+     << "  void dump(int depth) {}\n"
+     << "#endif\n"
+     << "};\n\n";
+
+  // 3. Emit MachNode Classes
   OS << "// ============================================================================\n"
      << "// MachNode Class Declarations\n"
      << "// ============================================================================\n";
@@ -157,7 +191,9 @@ void emitMachNodeHeader(raw_ostream &OS, const RecordKeeper &RK) {
        << "  virtual int Opcode() const override { return " << TargetArch << "_Op_" << sanitizeIdentifier(R->getName()) << "; }\n"
        << "  virtual const char* Name() const override { return \"" << R->getName() << "\"; }\n"
        << "  virtual uint size(PhaseRegAlloc *ra_) const override { return 4; }\n"
-       << "  virtual uint cost() const { return " << Cost << "; }\n";
+       << "  virtual uint cost() const { return " << Cost << "; }\n"
+       << "  virtual const Type *bottom_type() const override { return Type::BOTTOM; }\n"
+       << "  virtual uint ideal_reg() const override { return 0; }\n";
 
     if (isGCBarrier) {
       int BarrierType = 0;
@@ -171,7 +207,7 @@ void emitMachNodeHeader(raw_ostream &OS, const RecordKeeper &RK) {
     OS << "  virtual void format(PhaseRegAlloc *ra_, outputStream *st) const override {\n"
        << "    st->print(\"" << AsmStr << "\");\n"
        << "  }\n"
-       << "  virtual void emit(CodeBuffer &cbuf, PhaseRegAlloc *ra_) const override;\n"
+       << "  virtual void emit(CodeBuffer &cbuf, PhaseRegAlloc *ra_) const override {}\n"
        << "};\n\n";
   };
 
@@ -203,10 +239,31 @@ void emitRegisterInfo(raw_ostream &OS, const RecordKeeper &RK) {
   auto Registers = RK.getAllDerivedDefinitions("Register");
   auto RegClasses = RK.getAllDerivedDefinitions("RegisterClass");
 
-  // 1. Register Enumeration
+  // 1. MachRegisterNumbers Enumeration & RM_SIZE (Replaces adGlobals_<arch>.hpp)
+  OS << "// ============================================================================\n"
+     << "// MachRegisterNumbers & OptoReg constants (Replaces adGlobals_<arch>.hpp)\n"
+     << "// ============================================================================\n"
+     << "enum MachRegisterNumbers {\n";
+  int RegIdx = 0;
+  for (const Record *R : Registers) {
+    OS << "  " << sanitizeIdentifier(R->getName()) << "_num = " << RegIdx++ << ",\n";
+  }
+  OS << "  _last_Mach_Reg = " << RegIdx << "\n"
+     << "};\n\n"
+     << "#define REG_COUNT _last_Mach_Reg\n"
+     << "#define RM_SIZE ((_last_Mach_Reg + 31) / 32)\n"
+     << "#define FORALL_BODY BODY(0) BODY(1) BODY(2) BODY(3) BODY(4) BODY(5) BODY(6) BODY(7)\n\n"
+     << "enum machRegisterClass {\n";
+  for (const Record *RC : RegClasses) {
+    OS << "  " << toUpper(RC->getName()) << ",\n";
+  }
+  OS << "  _last_Mach_Reg_Class\n"
+     << "};\n\n";
+
+  // 2. Register Enumeration
   OS << "namespace TblgenReg {\n"
      << "  enum RegIndex {\n";
-  int RegIdx = 0;
+  RegIdx = 0;
   for (const Record *R : Registers) {
     OS << "    " << sanitizeIdentifier(R->getName()) << " = " << RegIdx++ << ",\n";
   }
@@ -253,8 +310,35 @@ void emitPatternMatching(raw_ostream &OS, const RecordKeeper &RK) {
   auto Patterns = RK.getAllDerivedDefinitions("Pat");
   auto GCBarriers = RK.getAllDerivedDefinitions("GCBarrier");
 
-  OS << "// C2 Pattern matching rule dispatch table\n"
-     << "MachNode* match_instruction(int ideal_opcode, Node* n, Compile* C) {\n"
+  // 1. Matcher constants and arrays expected by C2 Matcher constructor
+  OS << "// ============================================================================\n"
+     << "// Matcher Constants & Dispatch Tables (Replaces dfa_<arch>.cpp tables)\n"
+     << "// ============================================================================\n"
+     << "enum {\n"
+     << "  _BEGIN_REMATERIALIZE   = 1,\n"
+     << "  _END_REMATERIALIZE     = 1,\n"
+     << "  _BEGIN_INST_CHAIN_RULE = 1,\n"
+     << "  _END_INST_CHAIN_RULE   = 1\n"
+     << "};\n\n"
+     << "static const char *s_ruleName[] = { \"invalid\", \"match_rule\" };\n"
+     << "const char **ruleName = s_ruleName;\n\n"
+     << "static const int s_reduceOp[256] = { 0 };\n"
+     << "const int *reduceOp = s_reduceOp;\n\n"
+     << "static const int s_leftOp[256] = { 0 };\n"
+     << "const int *leftOp = s_leftOp;\n\n"
+     << "static const int s_rightOp[256] = { 0 };\n"
+     << "const int *rightOp = s_rightOp;\n\n"
+     << "static const bool s_swallowed[256] = { false };\n"
+     << "const bool *swallowed = s_swallowed;\n\n"
+     << "static const bool s_must_clone[256] = { false };\n"
+     << "const bool *must_clone = s_must_clone;\n\n"
+     << "static const int s_reg_save_policy[1024] = { 0 };\n"
+     << "const int *register_save_policy = s_reg_save_policy;\n"
+     << "const int *c_reg_save_policy = s_reg_save_policy;\n"
+     << "const int *register_save_type = s_reg_save_policy;\n\n";
+
+  // 2. C2 Pattern matching rule dispatch table
+  OS << "MachNode* match_instruction(int ideal_opcode, Node* n, Compile* C) {\n"
      << "  switch (ideal_opcode) {\n";
 
   // Map common Ideal opcodes
@@ -277,6 +361,15 @@ void emitPatternMatching(raw_ostream &OS, const RecordKeeper &RK) {
 
   OS << "    default: return nullptr;\n"
      << "  }\n"
+     << "}\n\n"
+     << "bool State::DFA(int opcode, const Node *ideal) {\n"
+     << "  return true;\n"
+     << "}\n\n"
+     << "MachOper *State::MachOperGenerator(int opcode) {\n"
+     << "  return nullptr;\n"
+     << "}\n\n"
+     << "MachNode *State::MachNodeGenerator(int opcode) {\n"
+     << "  return match_instruction(opcode, _leaf, Compile::current());\n"
      << "}\n\n";
 
   OS << "#endif // GENERATED_" << toUpper(TargetArch) << "_PATTERN_MATCHING_INC\n";

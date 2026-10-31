@@ -58,7 +58,7 @@
 #include "c1/c1_Runtime1.hpp"
 #endif
 #ifdef COMPILER2
-#include "adfiles/ad_aarch64.hpp"
+#include "opto/ad.hpp"
 #include "opto/runtime.hpp"
 #endif
 #if INCLUDE_JVMCI

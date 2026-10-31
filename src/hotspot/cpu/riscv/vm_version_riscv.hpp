@@ -197,6 +197,8 @@ class VM_Version : public Abstract_VM_Version {
   decl(ext_Zvfh         , "Zvfh"           , RV_NO_FLAG_BIT, true , UPDATE_DEFAULT_DEP(UseZvfh, ext_V)) \
   decl(ext_Zvkn         , "Zvkn"           , RV_NO_FLAG_BIT, true , UPDATE_DEFAULT_DEP(UseZvkn, ext_V)) \
   decl(ext_Zicond       , "Zicond"         , RV_NO_FLAG_BIT, true , UPDATE_DEFAULT(UseZicond))          \
+  decl(ext_esperanto    , "EsperantoETMax" , RV_NO_FLAG_BIT, true , NO_UPDATE_DEFAULT)                  \
+  decl(ext_tenstorrent  , "TenstorrentTensix", RV_NO_FLAG_BIT, true , NO_UPDATE_DEFAULT)                \
   decl(mvendorid        , "VendorId"       , RV_NO_FLAG_BIT, false, NO_UPDATE_DEFAULT)                  \
   decl(marchid          , "ArchId"         , RV_NO_FLAG_BIT, false, NO_UPDATE_DEFAULT)                  \
   decl(mimpid           , "ImpId"          , RV_NO_FLAG_BIT, false, NO_UPDATE_DEFAULT)                  \
