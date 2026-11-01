@@ -61,4 +61,11 @@ def redlet_cas_n         : SDNode<"HotSpotISD::REDLET_CAS_N", SDTHotspotGCOut1>;
 def redlet_xchg_p        : SDNode<"HotSpotISD::REDLET_XCHG_P", SDTHotspotGCOut1>;
 def redlet_xchg_n        : SDNode<"HotSpotISD::REDLET_XCHG_N", SDTHotspotGCOut1>;
 
+// Redlet SFVM 4-Point Coordination & SIMD Dispatch SDNodes
+def redlet_safepoint_poll   : SDNode<"HotSpotISD::REDLET_SAFEPOINT_POLL", SDTHotspotGC>;
+def redlet_pausepoint_poll  : SDNode<"HotSpotISD::REDLET_PAUSEPOINT_POLL", SDTHotspotGC>;
+def redlet_hookpoint_pin    : SDNode<"HotSpotISD::REDLET_HOOKPOINT_PIN", SDTHotspotGCOut1>;
+def redlet_controlpoint_chk : SDNode<"HotSpotISD::REDLET_CONTROLPOINT_CHK", SDTHotspotGCOut1>;
+def redlet_simd_dispatch    : SDNode<"HotSpotISD::REDLET_SIMD_DISPATCH", SDTHotspotGCOut1>;
+
 #endif // HOTSPOT_SDNODES_TD

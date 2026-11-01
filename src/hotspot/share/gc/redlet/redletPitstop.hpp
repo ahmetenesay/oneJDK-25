@@ -59,6 +59,7 @@ struct sacculus_pitstop_entry_t {
     size_t                     slot_bytes{ 0 };
     sf_puzzler_morph_e         mode{ sf_puzzler_morph_e::SHADOW_RCU };
     std::atomic<bool>          is_busy{ false };
+    std::atomic<bool>          pause_engaged{ false };
     std::atomic<uint32_t>      ref_count{ 1 };
     std::mutex                 wait_mtx;
     std::condition_variable    wait_cv;
@@ -89,6 +90,8 @@ private:
     sf_ticket_lock_t          _lock;
     std::atomic<size_t>       _total_morphed{ 0 };
 
+    static sf_puzzler_morph_e resolve_morph_mode() noexcept;
+
 public:
     RedletPitstop();
     ~RedletPitstop();
@@ -98,6 +101,7 @@ public:
     sacculus_pitstop_entry_t* admit(sfLiveHeader* obj);
     void                      evict(sfLiveHeader* obj);
     bool restore_return(sacculus_pitstop_entry_t* entry, sfLiveHeader** out_restored = nullptr);
+    bool morph_isa_to_fledgling(sfLiveHeader* obj, uint16_t target_simd_idx, uint64_t cycles_gained = 0);
     sacculus_pitstop_entry_t* find_by_slot(void* slot_or_body, bool retain_ref = false);
     bool is_busy(const void* ptr);
     int await_ready(void* ptr, uint32_t timeout_ms = 0);

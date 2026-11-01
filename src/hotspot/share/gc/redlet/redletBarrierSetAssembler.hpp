@@ -25,6 +25,7 @@
 #ifndef SHARE_GC_REDLET_REDLETBARRIERSETASSEMBLER_HPP
 #define SHARE_GC_REDLET_REDLETBARRIERSETASSEMBLER_HPP
 
+#include "memory/allocation.hpp"
 #include "utilities/macros.hpp"
 
 #include CPU_HEADER(gc/redlet/redletBarrierSetAssembler)

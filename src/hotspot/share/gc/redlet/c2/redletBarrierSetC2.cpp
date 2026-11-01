@@ -23,8 +23,27 @@
  */
 
 #include "gc/redlet/c2/redletBarrierSetC2.hpp"
+#include "gc/redlet/c2/redletSupport.hpp"
 #ifndef REDLET_STANDALONE_BUILD
+#include "gc/redlet/redletPointCoordinator.hpp"
+#include "gc/shared/gc_globals.hpp"
+#include "opto/connode.hpp"
 #include "opto/graphKit.hpp"
+#include "opto/type.hpp"
+#endif
+
+#ifndef REDLET_STANDALONE_BUILD
+static const TypeFunc* redlet_hookpoint_Type() {
+  const Type** fields = TypeTuple::fields(3);
+  fields[TypeFunc::Parms + 0] = TypeRawPtr::NOTNULL; // JavaThread* thread
+  fields[TypeFunc::Parms + 1] = TypePtr::BOTTOM;     // void* target_oop
+  fields[TypeFunc::Parms + 2] = TypeInt::INT;        // uint32_t fn_id
+  const TypeTuple* domain = TypeTuple::make(TypeFunc::Parms + 3, fields);
+
+  fields = TypeTuple::fields(0);
+  const TypeTuple* range = TypeTuple::make(TypeFunc::Parms + 0, fields);
+  return TypeFunc::make(domain, range);
+}
 #endif
 
 Node* RedletBarrierSetC2::store_at_resolved(C2Access& access, C2AccessValue& val) const {
@@ -59,4 +78,58 @@ Node* RedletBarrierSetC2::atomic_add_at_resolved(C2AtomicParseAccess& access,
                                                  Node* new_val,
                                                  const Type* val_type) const {
   return BarrierSetC2::atomic_add_at_resolved(access, new_val, val_type);
+}
+
+void RedletBarrierSetC2::emit_hookpoint_pin_enter(GraphKit* kit, Node* target_oop, uint32_t fn_id) {
+#ifndef REDLET_STANDALONE_BUILD
+  if (!UseRedletGC || kit == nullptr || kit->stopped()) {
+    return;
+  }
+  Node* thread = kit->gvn().transform(new ThreadLocalNode());
+  Node* oop_arg = (target_oop != nullptr) ? target_oop : kit->makecon(TypeRawPtr::NULL_PTR);
+  Node* id_arg = kit->intcon(static_cast<jint>(fn_id));
+  kit->make_runtime_call(GraphKit::RC_LEAF,
+                         redlet_hookpoint_Type(),
+                         CAST_FROM_FN_PTR(address, redlet_rt_hookpoint_enter),
+                         "redlet_hookpoint_enter",
+                         nullptr,
+                         thread,
+                         oop_arg,
+                         id_arg);
+#else
+  (void)kit;
+  (void)target_oop;
+  (void)fn_id;
+#endif
+}
+
+void RedletBarrierSetC2::emit_hookpoint_pin_exit(GraphKit* kit, Node* target_oop, uint32_t fn_id) {
+#ifndef REDLET_STANDALONE_BUILD
+  if (!UseRedletGC || kit == nullptr || kit->stopped()) {
+    return;
+  }
+  Node* thread = kit->gvn().transform(new ThreadLocalNode());
+  Node* oop_arg = (target_oop != nullptr) ? target_oop : kit->makecon(TypeRawPtr::NULL_PTR);
+  Node* id_arg = kit->intcon(static_cast<jint>(fn_id));
+  kit->make_runtime_call(GraphKit::RC_LEAF,
+                         redlet_hookpoint_Type(),
+                         CAST_FROM_FN_PTR(address, redlet_rt_hookpoint_exit),
+                         "redlet_hookpoint_exit",
+                         nullptr,
+                         thread,
+                         oop_arg,
+                         id_arg);
+#else
+  (void)kit;
+  (void)target_oop;
+  (void)fn_id;
+#endif
+}
+
+void RedletBarrierSetC2::emit_pausepoint_poll(GraphKit* kit) {
+  RedletSupport::emit_pausepoint_fast_poll(kit);
+}
+
+bool RedletBarrierSetC2::is_accelerated_kernel(ciMethod* method) {
+  return RedletSupport::is_redlet_accelerated_method(method);
 }

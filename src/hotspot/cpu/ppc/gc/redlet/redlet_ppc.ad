@@ -26,7 +26,13 @@ source_hpp %{
 
 #include "gc/shared/gc_globals.hpp"
 #include "gc/redlet/c2/redletBarrierSetC2.hpp"
+#include "gc/redlet/c2/redletSupport.hpp"
 #include "gc/redlet/redletBarrierSetAssembler.hpp"
+#include "gc/redlet/redletPointCoordinator.hpp"
+
+void redlet_ppc_emit_pausepoint_poll(MacroAssembler* masm, Register gate_addr, Register scratch);
+void redlet_ppc_emit_safepoint_poll(MacroAssembler* masm, Register flag_addr, Register scratch);
+void redlet_ppc_emit_hookpoint_xchg(MacroAssembler* masm, Register dst_prev, Register pin_addr, Register new_state);
 
 %}
 
@@ -34,6 +40,26 @@ source %{
 
 #include "gc/redlet/redletBarrierSet.hpp"
 #include "gc/redlet/redletBarrierSetAssembler.hpp"
+
+void redlet_ppc_emit_pausepoint_poll(MacroAssembler* masm, Register gate_addr, Register scratch) {
+  Label fast_done;
+  masm->lwarx(scratch, gate_addr);
+  masm->stwcx_(scratch, 0, gate_addr);
+  masm->bind(fast_done);
+}
+
+void redlet_ppc_emit_safepoint_poll(MacroAssembler* masm, Register flag_addr, Register scratch) {
+  masm->lwarx(scratch, flag_addr);
+  masm->stwcx_(scratch, 0, flag_addr);
+}
+
+void redlet_ppc_emit_hookpoint_xchg(MacroAssembler* masm, Register dst_prev, Register pin_addr, Register new_state) {
+  Label retry;
+  masm->bind(retry);
+  masm->lwarx(dst_prev, pin_addr);
+  masm->stwcx_(new_state, 0, pin_addr);
+  masm->bne(CR0, retry);
+}
 
 %}
 

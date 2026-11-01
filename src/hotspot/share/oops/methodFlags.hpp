@@ -58,6 +58,10 @@ class MethodFlags {
    status(has_loops_flag              , 1 << 13) /* Method has loops */ \
    status(has_loops_flag_init         , 1 << 14) /* The loop flag has been initialized */ \
    status(on_stack_flag               , 1 << 15) /* RedefineClasses support to keep Metadata from being cleaned */ \
+   status(redlet_batch_exec           , 1 << 16) /* @RedletBatchExec batch/SIMD kernel execution */ \
+   status(redlet_nested_exec          , 1 << 17) /* @RedletNestedExec nested arena execution */ \
+   status(redlet_bypass_warmup        , 1 << 18) /* @RedletBypassWarmup immediate tier promotion */ \
+   status(redlet_exempt_pin           , 1 << 19) /* @RedletExemptPin SRAM/eviction pin exemption */ \
    /* end of list */
 
 #define M_STATUS_ENUM_NAME(name, value)    _misc_##name = value,

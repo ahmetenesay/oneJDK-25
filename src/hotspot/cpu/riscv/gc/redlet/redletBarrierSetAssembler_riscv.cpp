@@ -24,6 +24,8 @@
 
 #include "asm/macroAssembler.inline.hpp"
 #include "gc/redlet/redletBarrierSetAssembler_riscv.hpp"
+#include "gc/redlet/redletPointCoordinator.hpp"
+#include "gc/redlet/redletThreadLocalData.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/gc_globals.hpp"
 
@@ -57,6 +59,45 @@ void RedletBarrierSetAssembler::store_at(MacroAssembler* masm, DecoratorSet deco
 void RedletBarrierSetAssembler::try_resolve_jobject_in_native(MacroAssembler* masm, Register jni_env,
                                                               Register obj, Register tmp, Label& slowpath) {
   BarrierSetAssembler::try_resolve_jobject_in_native(masm, jni_env, obj, tmp, slowpath);
+}
+
+void RedletBarrierSetAssembler::emit_pausepoint_poll(MacroAssembler* masm, Register tmp1) {
+  Register scratch = (tmp1 != noreg) ? tmp1 : t0;
+  Label done;
+  ExternalAddress gate_addr((address)RedletPointCoordinator::pausepoint_gate_address());
+  __ la(scratch, gate_addr);
+  __ lwu(scratch, Address(scratch, 0));
+  __ beqz(scratch, done);
+
+  __ push_call_clobbered_registers();
+  __ mv(c_rarg0, xthread);
+  __ mv(c_rarg1, zr);
+  __ super_call_VM_leaf(CAST_FROM_FN_PTR(address, redlet_rt_pausepoint_poll_slow), c_rarg0, c_rarg1);
+  __ pop_call_clobbered_registers();
+
+  __ bind(done);
+}
+
+void RedletBarrierSetAssembler::emit_safepoint_poll(MacroAssembler* masm, Register tmp1) {
+  Register scratch = (tmp1 != noreg) ? tmp1 : t0;
+  Label done;
+  ExternalAddress flag_addr((address)RedletPointCoordinator::safepoint_flag_address());
+  __ la(scratch, flag_addr);
+  __ lwu(scratch, Address(scratch, 0));
+  __ beqz(scratch, done);
+
+  __ push_call_clobbered_registers();
+  __ super_call_VM_leaf(CAST_FROM_FN_PTR(address, redlet_rt_safepoint_poll_slow), xthread);
+  __ pop_call_clobbered_registers();
+
+  __ bind(done);
+}
+
+void RedletBarrierSetAssembler::clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr) {
+  assert(aligned64_addr != noreg, "valid base register required");
+  for (int offset = 0; offset < 64; offset += 8) {
+    __ sd(zr, Address(aligned64_addr, offset));
+  }
 }
 
 #ifdef COMPILER1

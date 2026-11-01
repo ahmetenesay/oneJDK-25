@@ -25,8 +25,27 @@
 #ifndef CPU_PPC_GC_REDLET_REDLETBARRIERSETASSEMBLER_PPC_HPP
 #define CPU_PPC_GC_REDLET_REDLETBARRIERSETASSEMBLER_PPC_HPP
 
+#include "asm/macroAssembler.hpp"
 #include "gc/shared/barrierSetAssembler.hpp"
 
-class RedletBarrierSetAssembler: public BarrierSetAssembler {};
+class RedletBarrierSetAssembler: public BarrierSetAssembler {
+public:
+  RedletBarrierSetAssembler() = default;
+
+  void emit_pausepoint_poll(MacroAssembler* masm, Register tmp1) {
+    (void)masm;
+    (void)tmp1;
+  }
+
+  void emit_safepoint_poll(MacroAssembler* masm, Register tmp1) {
+    (void)masm;
+    (void)tmp1;
+  }
+
+  void clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr) {
+    (void)masm;
+    (void)aligned64_addr;
+  }
+};
 
 #endif // CPU_PPC_GC_REDLET_REDLETBARRIERSETASSEMBLER_PPC_HPP

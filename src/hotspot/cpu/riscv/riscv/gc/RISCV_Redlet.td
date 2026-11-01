@@ -127,5 +127,49 @@ class RISCV_RedletGetAndSetN : GCBarrier<"amoswap.w\t$res, $newval, ($mem)\t# re
 def RISCV_RedletGetAndSetN_node : RISCV_RedletGetAndSetN;
 
 // ============================================================================
+// Redlet 4-Point Coordination & SIMD Dispatch Instructions (RISC-V / RVV 1.0)
+// ============================================================================
+
+// Redlet SafepointPoll — Check global STW safepoint active flag
+class RISCV_RedletSafepointPoll : GCBarrier<"lwu\tzero, 0($mem)\t# redlet safepoint poll", "Redlet GC Safepoint Poll (RISC-V)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(redlet_safepoint_poll GPR:$mem)];
+}
+
+def RISCV_RedletSafepointPoll_node : RISCV_RedletSafepointPoll;
+
+// Redlet PausepointPoll — Non-STW Pitstop ISA hot-swap gate poll
+class RISCV_RedletPausepointPoll : GCBarrier<"lwu\tzero, 0($mem)\t# redlet pausepoint poll", "Redlet GC Pausepoint Poll (RISC-V)", 40, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(redlet_pausepoint_poll GPR:$mem)];
+}
+
+def RISCV_RedletPausepointPoll_node : RISCV_RedletPausepointPoll;
+
+// Redlet HookpointPin — Atomic pin increment for JNI/FFM/SIMD critical region
+class RISCV_RedletHookpointPin : GCBarrier<"amoadd.w.aqrl\t$res, $delta, ($mem)\t# redlet hookpoint pin", "Redlet GC Hookpoint Pin (RISC-V)", 80, "pipe_cmpxchg"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GPR:$res, (redlet_hookpoint_pin GPR:$mem, GPR:$delta))];
+}
+
+def RISCV_RedletHookpointPin_node : RISCV_RedletHookpointPin;
+
+// Redlet ControlpointCheck — Host GC arbitration state load & test
+class RISCV_RedletControlpointCheck : GCBarrier<"lwu\t$res, 0($mem)\t# redlet controlpoint check", "Redlet GC Controlpoint Check (RISC-V)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GPR:$res, (redlet_controlpoint_chk GPR:$mem))];
+}
+
+def RISCV_RedletControlpointCheck_node : RISCV_RedletControlpointCheck;
+
+// Redlet SimdDispatch — RVV 1.0 vector fused multiply-accumulate dispatch
+class RISCV_RedletSimdDispatch : GCBarrier<"vfmacc.vv\t$dst, $src1, $src2\t# redlet rvv simd dispatch", "Redlet RVV SIMD Dispatch (RISC-V)", 60, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GPR:$dst, (redlet_simd_dispatch GPR:$dst, GPR:$src1, GPR:$src2))];
+}
+
+def RISCV_RedletSimdDispatch_node : RISCV_RedletSimdDispatch;
+
+// ============================================================================
 // End of RISCV_Redlet.td
 // ============================================================================

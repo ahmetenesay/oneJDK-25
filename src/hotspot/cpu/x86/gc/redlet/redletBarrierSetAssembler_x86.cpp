@@ -24,8 +24,11 @@
 
 #include "asm/macroAssembler.inline.hpp"
 #include "gc/redlet/redletBarrierSetAssembler_x86.hpp"
+#include "gc/redlet/redletPointCoordinator.hpp"
+#include "gc/redlet/redletThreadLocalData.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/gc_globals.hpp"
+#include "runtime/vm_version.hpp"
 
 #ifdef COMPILER1
 #include "c1/c1_LIRAssembler.hpp"
@@ -84,6 +87,55 @@ void RedletBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
   } else {
     __ setb(Assembler::equal, res);
     __ movzbl(res, res);
+  }
+}
+
+void RedletBarrierSetAssembler::emit_pausepoint_poll(MacroAssembler* masm, Register tmp1) {
+  assert(tmp1 != noreg, "pausepoint poll requires scratch register");
+  Label done;
+  ExternalAddress gate_addr((address)RedletPointCoordinator::pausepoint_gate_address());
+  __ lea(tmp1, gate_addr);
+  __ movl(tmp1, Address(tmp1, 0));
+  __ testl(tmp1, tmp1);
+  __ jcc(Assembler::zero, done);
+
+  __ push_call_clobbered_registers(true /* save_fpu */);
+  __ xorptr(c_rarg1, c_rarg1);
+  __ super_call_VM_leaf(CAST_FROM_FN_PTR(address, redlet_rt_pausepoint_poll_slow), r15_thread, c_rarg1);
+  __ pop_call_clobbered_registers(true /* restore_fpu */);
+
+  __ bind(done);
+}
+
+void RedletBarrierSetAssembler::emit_safepoint_poll(MacroAssembler* masm, Register tmp1) {
+  assert(tmp1 != noreg, "safepoint poll requires scratch register");
+  Label done;
+  ExternalAddress flag_addr((address)RedletPointCoordinator::safepoint_flag_address());
+  __ lea(tmp1, flag_addr);
+  __ movl(tmp1, Address(tmp1, 0));
+  __ testl(tmp1, tmp1);
+  __ jcc(Assembler::zero, done);
+
+  __ push_call_clobbered_registers(true /* save_fpu */);
+  __ super_call_VM_leaf(CAST_FROM_FN_PTR(address, redlet_rt_safepoint_poll_slow), r15_thread);
+  __ pop_call_clobbered_registers(true /* restore_fpu */);
+
+  __ bind(done);
+}
+
+void RedletBarrierSetAssembler::clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr) {
+  assert(aligned64_addr != noreg, "valid base register required");
+  if (VM_Version::supports_evex() && UseAVX >= 3) {
+    __ evpxorq(xmm0, xmm0, xmm0, Assembler::AVX_512bit);
+    __ evmovdquq(Address(aligned64_addr, 0), xmm0, Assembler::AVX_512bit);
+  } else if (UseAVX >= 2) {
+    __ vpxor(xmm0, xmm0, xmm0, Assembler::AVX_256bit);
+    __ vmovdqu(Address(aligned64_addr, 0), xmm0, Assembler::AVX_256bit);
+    __ vmovdqu(Address(aligned64_addr, 32), xmm0, Assembler::AVX_256bit);
+  } else {
+    for (int offset = 0; offset < 64; offset += 8) {
+      __ movq(Address(aligned64_addr, offset), (int32_t)0);
+    }
   }
 }
 

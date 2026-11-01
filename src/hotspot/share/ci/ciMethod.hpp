@@ -201,6 +201,10 @@ class ciMethod : public ciMetadata {
   bool is_static_initializer()  const { return get_Method()->is_static_initializer();  }
   bool changes_current_thread() const { return get_Method()->changes_current_thread(); }
   bool deprecated()             const { return is_loaded() && get_Method()->deprecated(); }
+  bool redlet_batch_exec()      const { return is_loaded() && get_Method()->redlet_batch_exec(); }
+  bool redlet_nested_exec()     const { return is_loaded() && get_Method()->redlet_nested_exec(); }
+  bool redlet_bypass_warmup()   const { return is_loaded() && get_Method()->redlet_bypass_warmup(); }
+  bool redlet_exempt_pin()      const { return is_loaded() && get_Method()->redlet_exempt_pin(); }
 
   bool check_intrinsic_candidate() const {
     if (intrinsic_id() == vmIntrinsics::_blackhole) {

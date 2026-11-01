@@ -52,6 +52,9 @@ protected:
 };
 #endif
 
+class ciMethod;
+class GraphKit;
+
 class RedletBarrierSetC2 : public BarrierSetC2 {
 protected:
   Node* store_at_resolved(C2Access& access, C2AccessValue& val) const override;
@@ -77,6 +80,12 @@ protected:
 
 public:
   RedletBarrierSetC2() = default;
+
+  // Hookpoint pinning helpers for C2 native/SIMD critical regions
+  static void emit_hookpoint_pin_enter(GraphKit* kit, Node* target_oop, uint32_t fn_id);
+  static void emit_hookpoint_pin_exit(GraphKit* kit, Node* target_oop, uint32_t fn_id);
+  static void emit_pausepoint_poll(GraphKit* kit);
+  static bool is_accelerated_kernel(ciMethod* method);
 };
 
 #endif // SHARE_GC_REDLET_C2_REDLETBARRIERSETC2_HPP

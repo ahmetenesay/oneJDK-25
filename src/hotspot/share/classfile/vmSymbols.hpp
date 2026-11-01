@@ -305,6 +305,13 @@ class SerializeClosure;
   template(jdk_internal_vm_annotation_ChangesCurrentThread_signature,  "Ljdk/internal/vm/annotation/ChangesCurrentThread;")  \
   template(jdk_internal_vm_annotation_JvmtiHideEvents_signature,       "Ljdk/internal/vm/annotation/JvmtiHideEvents;")  \
   template(jdk_internal_vm_annotation_JvmtiMountTransition_signature,  "Ljdk/internal/vm/annotation/JvmtiMountTransition;")  \
+                                                                                                   \
+  /* Redlet SFVM Heritage Execution & Pinning Annotations */                                       \
+  template(org_wlft_sfvm_annotation_RedletBatchExec_signature,         "Lorg/wlft/sfvm/annotation/RedletBatchExec;")    \
+  template(org_wlft_sfvm_annotation_RedletNestedExec_signature,        "Lorg/wlft/sfvm/annotation/RedletNestedExec;")   \
+  template(org_wlft_sfvm_annotation_RedletBypassWarmup_signature,      "Lorg/wlft/sfvm/annotation/RedletBypassWarmup;") \
+  template(org_wlft_sfvm_annotation_RedletExemptPin_signature,         "Lorg/wlft/sfvm/annotation/RedletExemptPin;")    \
+  template(bypassWarmup_name,                                          "bypassWarmup")                                  \
                                                                                                   \
   template(java_lang_ref_SoftReference_signature,         "Ljava/lang/ref/SoftReference;")        \
   template(java_security_ProtectionDomain_signature,      "Ljava/security/ProtectionDomain;")     \

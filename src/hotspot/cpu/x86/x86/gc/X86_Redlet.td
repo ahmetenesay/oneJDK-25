@@ -118,5 +118,49 @@ class X86_RedletGetAndSetN : GCBarrier<"xchgl\t$res, $mem\t# redlet xchg", "Redl
 def X86_RedletGetAndSetN_node : X86_RedletGetAndSetN;
 
 // ============================================================================
+// Redlet 4-Point Coordination & SIMD Dispatch Instructions (x86_64 / AVX-512)
+// ============================================================================
+
+// Redlet SafepointPoll — Check global STW safepoint active flag
+class X86_RedletSafepointPoll : GCBarrier<"cmpl\t$mem, $$0\t# redlet safepoint poll", "Redlet GC Safepoint Poll (x86_64)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(redlet_safepoint_poll i32mem:$mem)];
+}
+
+def X86_RedletSafepointPoll_node : X86_RedletSafepointPoll;
+
+// Redlet PausepointPoll — Non-STW Pitstop ISA hot-swap gate poll
+class X86_RedletPausepointPoll : GCBarrier<"cmpl\t$mem, $$0\t# redlet pausepoint poll", "Redlet GC Pausepoint Poll (x86_64)", 40, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(redlet_pausepoint_poll i32mem:$mem)];
+}
+
+def X86_RedletPausepointPoll_node : X86_RedletPausepointPoll;
+
+// Redlet HookpointPin — Atomic pin increment for JNI/FFM/SIMD critical region
+class X86_RedletHookpointPin : GCBarrier<"lock\n\txaddl\t$res, $mem\t# redlet hookpoint pin", "Redlet GC Hookpoint Pin (x86_64)", 80, "pipe_cmpxchg"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GR32:$res, (redlet_hookpoint_pin i32mem:$mem, GR32:$delta))];
+}
+
+def X86_RedletHookpointPin_node : X86_RedletHookpointPin;
+
+// Redlet ControlpointCheck — Host GC arbitration state load & test
+class X86_RedletControlpointCheck : GCBarrier<"movl\t$res, $mem\t# redlet controlpoint check", "Redlet GC Controlpoint Check (x86_64)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GR32:$res, (redlet_controlpoint_chk i32mem:$mem))];
+}
+
+def X86_RedletControlpointCheck_node : X86_RedletControlpointCheck;
+
+// Redlet SimdDispatch — AVX-512 / AVX10.2 fused multiply-add vector kernel dispatch
+class X86_RedletSimdDispatch : GCBarrier<"vfmadd231pd\t$src2, $src1, $dst\t# redlet avx512 simd dispatch", "Redlet AVX-512 SIMD Dispatch (x86_64)", 60, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GR64:$dst, (redlet_simd_dispatch GR64:$dst, GR64:$src1, GR64:$src2))];
+}
+
+def X86_RedletSimdDispatch_node : X86_RedletSimdDispatch;
+
+// ============================================================================
 // End of X86_Redlet.td
 // ============================================================================

@@ -54,6 +54,11 @@ public:
                    Register res, Address addr, Register oldval, Register newval,
                    bool exchange, Register tmp1, Register tmp2);
 
+  // Redlet SFVM 4-Point Polling & 64-Byte Cacheline TLAB/Egg Vector Zeroing
+  void emit_pausepoint_poll(MacroAssembler* masm, Register tmp1);
+  void emit_safepoint_poll(MacroAssembler* masm, Register tmp1);
+  void clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr);
+
 #ifdef COMPILER1
   void generate_c1_pre_barrier_runtime_stub(StubAssembler* sasm);
   void generate_c1_post_barrier_runtime_stub(StubAssembler* sasm);

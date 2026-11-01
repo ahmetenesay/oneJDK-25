@@ -50,6 +50,11 @@ public:
   void try_resolve_jobject_in_native(MacroAssembler* masm, Register jni_env,
                                      Register obj, Register tmp, Label& slowpath) override;
 
+  // Redlet SFVM 4-Point Polling & 64-Byte Cacheline TLAB/Egg Zeroing
+  void emit_pausepoint_poll(MacroAssembler* masm, Register tmp1);
+  void emit_safepoint_poll(MacroAssembler* masm, Register tmp1);
+  void clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr);
+
 #ifdef COMPILER1
   void generate_c1_pre_barrier_runtime_stub(StubAssembler* sasm);
   void generate_c1_post_barrier_runtime_stub(StubAssembler* sasm);

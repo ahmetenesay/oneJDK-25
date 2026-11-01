@@ -46,6 +46,11 @@ public:
 };
 #endif
 
+class ciMethod;
+class Compilation;
+class LIRGenerator;
+
+// C++14-clean header included by standard HotSpot C1 compiler units.
 class RedletBarrierSetC1 : public BarrierSetC1 {
 protected:
   LIR_Opr resolve_address(LIRAccess& access, bool resolve_in_register) override;
@@ -55,6 +60,15 @@ public:
 
   void load_at_resolved(LIRAccess& access, LIR_Opr result) override;
   void store_at_resolved(LIRAccess& access, LIR_Opr value) override;
+
+  // Returns true when RedletGC is active and the target method is annotated
+  // with @RedletBatchExec, @RedletNestedExec, or @RedletBypassWarmup, allowing
+  // C1 backward-branch loop safepoints to be suppressed for zero-jitter loops.
+  static bool should_suppress_loop_safepoint(ciMethod* method);
+
+  // Computes iterative bytecode/LIR loop depth and arithmetic/SIMD density
+  // weights during C1 LIR generation and feeds heat telemetry into RedletMotherline.
+  static void report_iterative_bytecode_lir_heat(Compilation* comp, LIRGenerator* gen);
 };
 
 #endif // SHARE_GC_REDLET_C1_REDLETBARRIERSETC1_HPP

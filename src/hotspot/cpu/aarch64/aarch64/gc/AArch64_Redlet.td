@@ -127,5 +127,49 @@ class AArch64_RedletGetAndSetN : GCBarrier<"swpal\t$newval, $res, [$mem]\t# redl
 def AArch64_RedletGetAndSetN_node : AArch64_RedletGetAndSetN;
 
 // ============================================================================
+// Redlet 4-Point Coordination & SIMD Dispatch Instructions (AArch64 / SVE2)
+// ============================================================================
+
+// Redlet SafepointPoll — Check global STW safepoint active flag
+class AArch64_RedletSafepointPoll : GCBarrier<"ldr\twzr, [$mem]\t# redlet safepoint poll", "Redlet GC Safepoint Poll (AArch64)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(redlet_safepoint_poll GPR64sp:$mem)];
+}
+
+def AArch64_RedletSafepointPoll_node : AArch64_RedletSafepointPoll;
+
+// Redlet PausepointPoll — Non-STW Pitstop ISA hot-swap gate poll
+class AArch64_RedletPausepointPoll : GCBarrier<"ldar\twzr, [$mem]\t# redlet pausepoint poll", "Redlet GC Pausepoint Poll (AArch64)", 40, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(redlet_pausepoint_poll GPR64sp:$mem)];
+}
+
+def AArch64_RedletPausepointPoll_node : AArch64_RedletPausepointPoll;
+
+// Redlet HookpointPin — Atomic pin increment for JNI/FFM/SIMD critical region
+class AArch64_RedletHookpointPin : GCBarrier<"ldaddal\t$delta, $res, [$mem]\t# redlet hookpoint pin", "Redlet GC Hookpoint Pin (AArch64)", 80, "pipe_cmpxchg"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GPR32:$res, (redlet_hookpoint_pin GPR64sp:$mem, GPR32:$delta))];
+}
+
+def AArch64_RedletHookpointPin_node : AArch64_RedletHookpointPin;
+
+// Redlet ControlpointCheck — Host GC arbitration state load & test
+class AArch64_RedletControlpointCheck : GCBarrier<"ldar\t$res, [$mem]\t# redlet controlpoint check", "Redlet GC Controlpoint Check (AArch64)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GPR32:$res, (redlet_controlpoint_chk GPR64sp:$mem))];
+}
+
+def AArch64_RedletControlpointCheck_node : AArch64_RedletControlpointCheck;
+
+// Redlet SimdDispatch — SVE2 / NEON predicated fused multiply-add vector dispatch
+class AArch64_RedletSimdDispatch : GCBarrier<"fmla\t$dst.d, p0/m, $src1.d, $src2.d\t# redlet sve2 simd dispatch", "Redlet SVE2 SIMD Dispatch (AArch64)", 60, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redlet
+  list<dag> Pattern = [(set GPR64:$dst, (redlet_simd_dispatch GPR64:$dst, GPR64:$src1, GPR64:$src2))];
+}
+
+def AArch64_RedletSimdDispatch_node : AArch64_RedletSimdDispatch;
+
+// ============================================================================
 // End of AArch64_Redlet.td
 // ============================================================================

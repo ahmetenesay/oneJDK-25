@@ -547,6 +547,14 @@ public:
   M_STATUS_DO(M_STATUS_GET_SET)
 #undef M_STATUS_GET_SET
 
+  // Redlet SFVM annotation query helpers (individual getters/setters generated via M_STATUS_DO above)
+  bool is_redlet_accelerated() const {
+    return redlet_batch_exec() || redlet_nested_exec() || redlet_bypass_warmup() || redlet_exempt_pin();
+  }
+  bool should_redlet_bypass_safepoint() const {
+    return redlet_batch_exec() || redlet_nested_exec() || redlet_bypass_warmup();
+  }
+
   // returns true if the method has any backward branches.
   bool has_loops() {
     return has_loops_flag_init() ? has_loops_flag() : compute_has_loops_flag();

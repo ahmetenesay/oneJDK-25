@@ -37,6 +37,9 @@
 #include "compiler/compilerOracle.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/c1/barrierSetC1.hpp"
+#if INCLUDE_REDLETGC
+#include "gc/redlet/c1/redletBarrierSetC1.hpp"
+#endif
 #include "oops/klass.inline.hpp"
 #include "oops/methodCounters.hpp"
 #include "runtime/sharedRuntime.hpp"
@@ -2521,6 +2524,11 @@ void LIRGenerator::profile_parameters(Base* x) {
 }
 
 void LIRGenerator::do_Base(Base* x) {
+#if INCLUDE_REDLETGC
+  if (UseRedletGC) {
+    RedletBarrierSetC1::report_iterative_bytecode_lir_heat(compilation(), this);
+  }
+#endif
   __ std_entry(LIR_OprFact::illegalOpr);
   // Emit moves from physical registers / stack slots to virtual registers
   CallingConvention* args = compilation()->frame_map()->incoming_arguments();

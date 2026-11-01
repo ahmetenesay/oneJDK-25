@@ -940,6 +940,10 @@ public:
     _jdk_internal_ValueBased,
     _java_lang_Deprecated,
     _java_lang_Deprecated_for_removal,
+    _annotation_RedletBatchExec,
+    _annotation_RedletNestedExec,
+    _annotation_RedletBypassWarmup,
+    _annotation_RedletExemptPin,
     _annotation_LIMIT
   };
   const Location _location;
@@ -1204,6 +1208,29 @@ static void parse_annotations(const ConstantPool* const cp,
       }
       coll->set_contended_group(group_index);
       continue; // proceed to next annotation
+    }
+
+    if (AnnotationCollector::_annotation_RedletBatchExec == id) {
+      // Inspect @RedletBatchExec member-value pairs for bypassWarmup=true.
+      int cur_off = index0 + member_off;
+      for (int i = 0; i < count && cur_off + 3 <= index; ++i) {
+        const int m_idx = Bytes::get_Java_u2((address)(buffer + cur_off));
+        cur_off += 2;
+        const Symbol* const m_sym = check_symbol_at(cp, m_idx);
+        if (m_sym == vmSymbols::bypassWarmup_name() &&
+            cur_off + 3 <= index &&
+            buffer[cur_off] == b_tag_val) {
+          const u2 bool_cp_idx = Bytes::get_Java_u2((address)(buffer + cur_off + 1));
+          if (cp->is_within_bounds(bool_cp_idx) &&
+              cp->tag_at(bool_cp_idx).is_int() &&
+              cp->int_at(bool_cp_idx) != 0) {
+            coll->set_annotation(AnnotationCollector::_annotation_RedletBypassWarmup);
+          }
+          break;
+        }
+        cur_off = skip_annotation_value(buffer, index, cur_off);
+      }
+      continue;
     }
   }
 }
@@ -1895,6 +1922,22 @@ AnnotationCollector::annotation_index(const ClassLoaderData* loader_data,
     case VM_SYMBOL_ENUM_NAME(java_lang_Deprecated): {
       return _java_lang_Deprecated;
     }
+    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletBatchExec_signature): {
+      if (_location != _in_method && _location != _in_class) break;
+      return _annotation_RedletBatchExec;
+    }
+    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletNestedExec_signature): {
+      if (_location != _in_method && _location != _in_class) break;
+      return _annotation_RedletNestedExec;
+    }
+    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletBypassWarmup_signature): {
+      if (_location != _in_method && _location != _in_class) break;
+      return _annotation_RedletBypassWarmup;
+    }
+    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletExemptPin_signature): {
+      if (_location != _in_method && _location != _in_class) break;
+      return _annotation_RedletExemptPin;
+    }
     default: {
       break;
     }
@@ -1945,6 +1988,18 @@ void MethodAnnotationCollector::apply_to(const methodHandle& m) {
     m->set_deprecated();
   if (has_annotation(_java_lang_Deprecated_for_removal))
     m->set_deprecated_for_removal();
+  if (has_annotation(_annotation_RedletBatchExec))
+    m->set_redlet_batch_exec(true);
+  if (has_annotation(_annotation_RedletNestedExec))
+    m->set_redlet_nested_exec(true);
+  if (has_annotation(_annotation_RedletBypassWarmup)) {
+    m->set_redlet_bypass_warmup(true);
+    if (!m->dont_inline()) {
+      m->set_force_inline(true);
+    }
+  }
+  if (has_annotation(_annotation_RedletExemptPin))
+    m->set_redlet_exempt_pin(true);
 }
 
 void ClassFileParser::ClassAnnotationCollector::apply_to(InstanceKlass* ik) {
@@ -1972,6 +2027,32 @@ void ClassFileParser::ClassAnnotationCollector::apply_to(InstanceKlass* ik) {
     for (int i = 0; i < length; i++) {
       Method* m = methods->at(i);
       m->set_deprecated_for_removal();
+    }
+  }
+  if (has_annotation(_annotation_RedletBatchExec) ||
+      has_annotation(_annotation_RedletNestedExec) ||
+      has_annotation(_annotation_RedletBypassWarmup) ||
+      has_annotation(_annotation_RedletExemptPin)) {
+    Array<Method*>* methods = ik->methods();
+    int length = methods->length();
+    const bool is_batch  = has_annotation(_annotation_RedletBatchExec);
+    const bool is_nested = has_annotation(_annotation_RedletNestedExec);
+    const bool is_bypass = has_annotation(_annotation_RedletBypassWarmup);
+    const bool is_exempt = has_annotation(_annotation_RedletExemptPin);
+    for (int i = 0; i < length; i++) {
+      Method* m = methods->at(i);
+      if (m->is_static_initializer()) {
+        continue;
+      }
+      if (is_batch)  m->set_redlet_batch_exec(true);
+      if (is_nested) m->set_redlet_nested_exec(true);
+      if (is_bypass) {
+        m->set_redlet_bypass_warmup(true);
+        if (!m->dont_inline()) {
+          m->set_force_inline(true);
+        }
+      }
+      if (is_exempt) m->set_redlet_exempt_pin(true);
     }
   }
 }
