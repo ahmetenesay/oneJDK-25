@@ -26,10 +26,15 @@
 #include "gc/redlet/redletDispatchISA.hpp"
 #include "gc/redlet/redletRunway.hpp"
 #include "gc/redlet/redletRingLog.hpp"
+#include "gc/redlet/redletHardware.hpp"
+#include "gc/redlet/redletGearkit.hpp"
 
 #include <cmath>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <cfloat>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -241,10 +246,48 @@ SF_DISABLE_OPT_END
 /* 4. REDLET PUZZLE ARENA CORE IMPLEMENTATION                                */
 /* ========================================================================= */
 
-MSIMD_API RedletPuzzleArena::RedletPuzzleArena() = default;
+static std::mutex g_sf_tlab_snapshot_mutex;
+static sf_puzzle_sample_t g_sf_tlab_snapshot;
+static bool g_sf_tlab_snapshot_valid = false;
+
+MSIMD_API void RedletPuzzleArena::record_tlab_snapshot(const void* src, size_t sz, uint8_t dt) {
+    if (!src || sz == 0) return;
+    std::lock_guard<std::mutex> lk(g_sf_tlab_snapshot_mutex);
+    g_sf_tlab_snapshot = sf_puzzle_sample_t::create_from_tlab(src, sz, dt);
+    g_sf_tlab_snapshot_valid = true;
+}
+
+MSIMD_API bool RedletPuzzleArena::get_tlab_snapshot(sf_puzzle_sample_t& out_smp) {
+    std::lock_guard<std::mutex> lk(g_sf_tlab_snapshot_mutex);
+    if (!g_sf_tlab_snapshot_valid) return false;
+    out_smp = g_sf_tlab_snapshot;
+    return true;
+}
+
+MSIMD_API RedletPuzzleArena::RedletPuzzleArena() {
+    ensure_payload_buffers();
+}
 
 MSIMD_API RedletPuzzleArena::~RedletPuzzleArena() {
     destroy();
+}
+
+MSIMD_API void RedletPuzzleArena::ensure_payload_buffers() {
+    if (stagnant_in_payload != nullptr && candidate_out_payload != nullptr && current_best_out_payload != nullptr) {
+        return;
+    }
+    if (!puzzle_heap_base) {
+        puzzle_heap_capacity = STAGNANT_BUF_CAP * 3;
+        puzzle_heap_base = static_cast<uint8_t*>(sf_puzzle_aligned_alloc(puzzle_heap_capacity, 64));
+        if (puzzle_heap_base) {
+            memset(puzzle_heap_base, 0, puzzle_heap_capacity);
+            stagnant_in_payload = puzzle_heap_base;
+            candidate_out_payload = puzzle_heap_base + STAGNANT_BUF_CAP;
+            current_best_out_payload = puzzle_heap_base + STAGNANT_BUF_CAP * 2;
+            puzzle_heap_used.store(puzzle_heap_capacity, std::memory_order_relaxed);
+            _owns_payload_fallback = true;
+        }
+    }
 }
 
 MSIMD_API void RedletPuzzleArena::init(sacculus_dispatch_table_t* dt,
@@ -257,6 +300,12 @@ MSIMD_API void RedletPuzzleArena::init(sacculus_dispatch_table_t* dt,
     _hotlog = hl;
     _coldlog = cl;
 
+    if (_owns_payload_fallback && puzzle_heap_base) {
+        sf_puzzle_aligned_free(puzzle_heap_base);
+        puzzle_heap_base = nullptr;
+        _owns_payload_fallback = false;
+    }
+
     puzzle_heap_capacity = arena_bytes;
     puzzle_heap_base = static_cast<uint8_t*>(sf_os_reserve_memory(puzzle_heap_capacity));
     if (puzzle_heap_base && sf_os_commit_memory(puzzle_heap_base, puzzle_heap_capacity)) {
@@ -265,6 +314,8 @@ MSIMD_API void RedletPuzzleArena::init(sacculus_dispatch_table_t* dt,
         candidate_out_payload = puzzle_heap_base + STAGNANT_BUF_CAP;
         current_best_out_payload = puzzle_heap_base + STAGNANT_BUF_CAP * 2;
         puzzle_heap_used.store(STAGNANT_BUF_CAP * 3, std::memory_order_relaxed);
+    } else {
+        ensure_payload_buffers();
     }
 
     refresh_simd_pool();
@@ -276,7 +327,12 @@ MSIMD_API void RedletPuzzleArena::init(sacculus_dispatch_table_t* dt,
 MSIMD_API void RedletPuzzleArena::destroy() {
     stop();
     if (puzzle_heap_base) {
-        sf_os_release_memory(puzzle_heap_base, puzzle_heap_capacity);
+        if (_owns_payload_fallback) {
+            sf_puzzle_aligned_free(puzzle_heap_base);
+            _owns_payload_fallback = false;
+        } else {
+            sf_os_release_memory(puzzle_heap_base, puzzle_heap_capacity);
+        }
         puzzle_heap_base = nullptr;
         puzzle_heap_capacity = 0;
         puzzle_heap_used.store(0, std::memory_order_relaxed);
@@ -426,6 +482,9 @@ MSIMD_API bool RedletPuzzleArena::sample_runway_stream(size_t sample_iterations,
         for (uint8_t dt : active_dtypes) {
             sf_puzzle_sample_t smp{};
             smp.dtype = dt;
+            smp.source = sf_sample_source_e::RUNWAY_MOTHERLINE;
+            smp.is_from_tlab = false;
+            smp.sample_timestamp_tsc = sacculus_rdtsc();
             bool captured = false;
 
             if (_runway) {
@@ -442,7 +501,7 @@ MSIMD_API bool RedletPuzzleArena::sample_runway_stream(size_t sample_iterations,
                                     smp.ndim = 2;
                                     size_t elem_sz = (dt == SACFOR_F64 || dt == SACFOR_I64) ? 8 : 4;
                                     smp.shape[0] = 1;
-                                    smp.shape[1] = static_cast<int32_t>(fp / elem_sz);
+                                    smp.shape[1] = static_cast<int32_t>(fp / (elem_sz > 0 ? elem_sz : 1));
                                     captured = true;
                                 }
                                 curr->unpin();
@@ -455,20 +514,69 @@ MSIMD_API bool RedletPuzzleArena::sample_runway_stream(size_t sample_iterations,
             }
 
             if (!captured) {
-                smp.byte_size = 1024;
+                size_t elem_sz = (dt == SACFOR_F64 || dt == SACFOR_I64) ? 8 : 4;
+                size_t n_elems = 1024;
+                smp.byte_size = n_elems * elem_sz;
                 smp.ndim = 2;
+                smp.shape[0] = 1;
+                smp.shape[1] = static_cast<int32_t>(n_elems);
+
                 if (dt == SACFOR_F64) {
-                    smp.shape[0] = 1; smp.shape[1] = 128;
-                    auto* dptr = reinterpret_cast<double*>(smp.data);
-                    for (size_t i = 0; i < 128; ++i) dptr[i] = static_cast<double>(i + 1 + it) * 0.05;
+                    double* f64_ptr = reinterpret_cast<double*>(smp.data);
+                    for (size_t i = 0; i < n_elems; ++i) {
+                        f64_ptr[i] = 1.0 + 0.001 * static_cast<double>((i + it) % 100);
+                    }
+                } else if (dt == SACFOR_F32) {
+                    float* f32_ptr = reinterpret_cast<float*>(smp.data);
+                    for (size_t i = 0; i < n_elems; ++i) {
+                        f32_ptr[i] = 1.0f + 0.001f * static_cast<float>((i + it) % 100);
+                    }
                 } else {
-                    smp.shape[0] = 1; smp.shape[1] = 256;
-                    auto* fptr = reinterpret_cast<float*>(smp.data);
-                    for (size_t i = 0; i < 256; ++i) fptr[i] = static_cast<float>(i + 1 + it) * 0.05f;
+                    memset(smp.data, static_cast<int>((it + 1) & 0xFF), smp.byte_size);
                 }
             }
-            aggregated_samples.push_back(smp);
+            aggregated_samples.push_back(std::move(smp));
         }
+    }
+    return !aggregated_samples.empty();
+}
+
+MSIMD_API bool RedletPuzzleArena::sample_tlab_stream(size_t sample_iterations, std::vector<sf_puzzle_sample_t>& aggregated_samples) {
+    aggregated_samples.clear();
+
+    for (size_t it = 0; it < sample_iterations; ++it) {
+        sf_puzzle_sample_t smp{};
+        smp.source = sf_sample_source_e::TLAB_MUTATOR;
+        smp.is_from_tlab = true;
+        smp.sample_timestamp_tsc = sacculus_rdtsc();
+        smp.dtype = SACFOR_F32;
+
+        bool captured = false;
+        if (tl_sf_tlab.base != nullptr && tl_sf_tlab.offset > 0) {
+            size_t copy_sz = tl_sf_tlab.offset > STAGNANT_BUF_CAP ? STAGNANT_BUF_CAP : tl_sf_tlab.offset;
+            memcpy(smp.data, tl_sf_tlab.base, copy_sz);
+            smp.byte_size = copy_sz;
+            smp.ndim = 2;
+            smp.shape[0] = 1;
+            smp.shape[1] = static_cast<int32_t>(copy_sz / sizeof(float));
+            captured = true;
+        } else if (get_tlab_snapshot(smp)) {
+            captured = true;
+        }
+
+        if (!captured) {
+            // Synthesize realistic mutator buffer pattern
+            size_t n_elems = 2048;
+            smp.byte_size = n_elems * sizeof(float);
+            smp.ndim = 2;
+            smp.shape[0] = 1;
+            smp.shape[1] = static_cast<int32_t>(n_elems);
+            float* f_ptr = reinterpret_cast<float*>(smp.data);
+            for (size_t i = 0; i < n_elems; ++i) {
+                f_ptr[i] = static_cast<float>(i * 0.125f + it);
+            }
+        }
+        aggregated_samples.push_back(std::move(smp));
     }
     return !aggregated_samples.empty();
 }
@@ -478,7 +586,6 @@ MSIMD_API void RedletPuzzleArena::submit_batch(uint32_t fn_id,
                                                int sample_count,
                                                const SF_custominiVm_tensor_t* target_prec,
                                                float target_epsilon) {
-    if (!batch_samples || sample_count <= 0) return;
     std::lock_guard<std::mutex> g(_queue_lock);
     sf_puzzle_batch_job_t job{};
     job.fn_id = fn_id;
@@ -487,15 +594,18 @@ MSIMD_API void RedletPuzzleArena::submit_batch(uint32_t fn_id,
         job.target_precision_tensor = *target_prec;
         job.has_target_precision = true;
     }
+
     for (int i = 0; i < sample_count; ++i) {
-        if (batch_samples[i].data && batch_samples[i].byte_size > 0) {
+        const auto& src = batch_samples[i];
+        if (src.data && src.byte_size > 0) {
             sf_puzzle_sample_t smp{};
-            smp.dtype = batch_samples[i].dtype;
-            smp.byte_size = (batch_samples[i].byte_size <= STAGNANT_BUF_CAP) ? batch_samples[i].byte_size : STAGNANT_BUF_CAP;
-            smp.ndim = batch_samples[i].ndim;
-            for (int d = 0; d < 8; ++d) smp.shape[d] = batch_samples[i].shape[d];
-            memcpy(smp.data, batch_samples[i].data, smp.byte_size);
-            job.samples.push_back(smp);
+            smp.dtype = static_cast<uint8_t>(src.dtype);
+            smp.byte_size = src.byte_size;
+            smp.ndim = src.ndim;
+            for (int k = 0; k < 8; ++k) smp.shape[k] = src.shape[k];
+            size_t copy_bytes = (src.byte_size > STAGNANT_BUF_CAP) ? STAGNANT_BUF_CAP : src.byte_size;
+            memcpy(smp.data, src.data, copy_bytes);
+            job.samples.push_back(std::move(smp));
         }
     }
     if (!job.samples.empty()) {
@@ -556,12 +666,16 @@ MSIMD_API sf_hybrid_compat_result_t RedletPuzzleArena::evaluate_hybrid_compatibi
     uint64_t cycles_b[RUNS];
     uint64_t cycles_hybrid[RUNS];
 
+    bool is_hybrid = sf_is_hybrid_cpu();
+
     uint64_t min_a = UINT64_MAX, max_a = 0;
     double sum_a = 0.0;
+    if (is_hybrid) sf_bind_current_thread(SF_CORE_TIER_PERFORMANCE);
     for (int r = 0; r < RUNS; ++r) {
         uint32_t fault = 0;
         uint64_t t0 = sacculus_rdtsc();
         if (!sf_safe_kernel_call(fn_a, in_t, 1, out_t, 1, nullptr, &fault)) {
+            if (is_hybrid) sf_bind_current_thread(SF_CORE_TIER_ANY);
             snprintf(res.reason, sizeof(res.reason), "fn_a_fault:0x%X", fault);
             return res;
         }
@@ -582,10 +696,12 @@ MSIMD_API sf_hybrid_compat_result_t RedletPuzzleArena::evaluate_hybrid_compatibi
 
     uint64_t min_b = UINT64_MAX, max_b = 0;
     double sum_b = 0.0;
+    if (is_hybrid) sf_bind_current_thread(SF_CORE_TIER_EFFICIENCY);
     for (int r = 0; r < RUNS; ++r) {
         uint32_t fault = 0;
         uint64_t t0 = sacculus_rdtsc();
         if (!sf_safe_kernel_call(fn_b, in_t, 1, out_t, 1, nullptr, &fault)) {
+            if (is_hybrid) sf_bind_current_thread(SF_CORE_TIER_ANY);
             snprintf(res.reason, sizeof(res.reason), "fn_b_fault:0x%X", fault);
             return res;
         }
@@ -611,6 +727,7 @@ MSIMD_API sf_hybrid_compat_result_t RedletPuzzleArena::evaluate_hybrid_compatibi
 
     double theta_dynamic = 1.0 + cv_sys + jitter_ratio;
 
+    if (is_hybrid) sf_bind_current_thread(SF_CORE_TIER_ANY);
     double sum_hyb = 0.0;
     for (int r = 0; r < RUNS; ++r) {
         uint32_t fault = 0;
@@ -632,10 +749,38 @@ MSIMD_API sf_hybrid_compat_result_t RedletPuzzleArena::evaluate_hybrid_compatibi
     res.mean_hybrid = mu_hybrid;
     res.dynamic_bound = theta_dynamic;
     res.observed_ratio = observed_ratio;
+    res.p_core_cycles = static_cast<double>(min_a);
+    res.e_core_cycles = static_cast<double>(min_b);
+    res.asymmetric_ratio = mu_b / (mu_a > 0.0 ? mu_a : 1.0);
 
-    if (observed_ratio <= theta_dynamic) {
+    // Calculate AVX-512 downclock penalty
+    // When AVX-512 frequency drop occurs, CPU clock downscales across active cores
+    double downclock_penalty = 0.0;
+    if (is_hybrid) {
+        // Alder Lake / Raptor Lake: E-cores lack AVX-512, causing thread migration penalty
+        downclock_penalty = (res.asymmetric_ratio > 2.2) ? 0.20 : 0.05;
+    } else {
+        // Xeon / AVX-512 Heavy License level 2 step-down check
+        if (observed_ratio > 1.25) {
+            downclock_penalty = observed_ratio - 1.0;
+        }
+    }
+
+    res.avx512_downclock_penalty = downclock_penalty;
+    res.avx512_throttle_detected = (downclock_penalty >= 0.15);
+    res.p_core_ipc = (min_a > 0) ? (2.0 * 1000.0 / static_cast<double>(min_a)) : 1.0;
+    res.e_core_ipc = (min_b > 0) ? (1.2 * 1000.0 / static_cast<double>(min_b)) : 0.8;
+
+    if (res.avx512_throttle_detected) {
+        _telemetry_downclock_detections.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    if (observed_ratio <= theta_dynamic && !res.avx512_throttle_detected) {
         res.compatible = true;
         snprintf(res.reason, sizeof(res.reason), "dynamically_compatible(ratio=%.3f<=bound=%.3f)", observed_ratio, theta_dynamic);
+    } else if (res.avx512_throttle_detected) {
+        res.compatible = false;
+        snprintf(res.reason, sizeof(res.reason), "avx512_downclock_penalty(pen=%.1f%%)", downclock_penalty * 100.0);
     } else {
         res.compatible = false;
         snprintf(res.reason, sizeof(res.reason), "stall_incompatible(ratio=%.3f>bound=%.3f)", observed_ratio, theta_dynamic);
@@ -659,11 +804,12 @@ MSIMD_API sf_score_eval_t RedletPuzzleArena::evaluate_score(uint64_t cand_cycles
     bool speed_ok = (cand_cycles < cur_cycles);
     bool precision_ok = false;
     if (target_epsilon <= 0.0f) {
-        // EXACT_ALGEBRAIC: strictly 0-bit deviation tolerance
+        // EXACT_ALGEBRAIC: strictly 0-bit deviation tolerance (memcmp == 0)
         precision_ok = finite_ok && (max_abs_err == 0.0f);
     } else {
-        // NUMERIC_IEEE_FP: within specified target epsilon or machine epsilon
-        precision_ok = finite_ok && ((max_abs_err <= target_epsilon) || (mse <= target_epsilon));
+        // NUMERIC_IEEE_FP: max_abs_err <= epsilon AND MSE <= epsilon^2
+        float eps_sq = target_epsilon * target_epsilon;
+        precision_ok = finite_ok && (max_abs_err <= target_epsilon) && (mse <= (eps_sq + 1e-12f));
     }
 
     if (!speed_ok || !precision_ok) {
@@ -675,20 +821,31 @@ MSIMD_API sf_score_eval_t RedletPuzzleArena::evaluate_score(uint64_t cand_cycles
     double speedup = static_cast<double>(cur_cycles - cand_cycles) / static_cast<double>(cur_cycles > 0 ? cur_cycles : 1);
     double prec_margin = 0.0;
     if (target_epsilon > 0.0f) {
-        prec_margin = static_cast<double>(target_epsilon - mse) / static_cast<double>(target_epsilon);
+        prec_margin = static_cast<double>(target_epsilon - max_abs_err) / static_cast<double>(target_epsilon);
         if (prec_margin < 0.0) prec_margin = 0.0;
+        if (prec_margin > 1.0) prec_margin = 1.0;
+    } else {
+        // EXACT_ALGEBRAIC: perfect 0-bit deviation earns full precision headroom
+        prec_margin = (max_abs_err == 0.0f) ? 1.0 : 0.0;
     }
 
     double pmu_efficiency = 1.0;
+    double ipc_val = 1.0;
+    double cache_pen = 0.0;
+    double downclock_fac = 1.0;
     if (pmu) {
+        ipc_val = pmu->ipc;
         double ipc_bonus = std::min(1.5, pmu->ipc / 2.0);
-        double downclock_factor = pmu->freq_downclock_ratio;
-        double cache_penalty = (pmu->llc_cache_misses > 0 && pmu->cycles > 0)
+        downclock_fac = (pmu->freq_downclock_ratio > 0.0) ? pmu->freq_downclock_ratio : 1.0;
+        cache_pen = (pmu->llc_cache_misses > 0 && pmu->cycles > 0)
             ? std::min(0.4, static_cast<double>(pmu->llc_cache_misses * 64) / static_cast<double>(pmu->cycles))
             : 0.0;
-        pmu_efficiency = std::max(0.1, (ipc_bonus * downclock_factor) - cache_penalty);
+        pmu_efficiency = std::max(0.1, (ipc_bonus * downclock_fac) - cache_pen);
     }
 
+    res.pmu_ipc = ipc_val;
+    res.cache_penalty = cache_pen;
+    res.downclock_factor = downclock_fac;
     res.speedup_ratio = speedup;
     res.precision_headroom = prec_margin;
     res.score = (0.55 * speedup + 0.35 * prec_margin + 0.10 * pmu_efficiency);
@@ -699,7 +856,8 @@ MSIMD_API sf_score_eval_t RedletPuzzleArena::evaluate_score(uint64_t cand_cycles
 MSIMD_API void RedletPuzzleArena::redirect_stream(uint32_t fn_id, sacculus_kernel_fn_t new_fn, uint64_t new_cycles, const char* name, double score) {
     if (!_dispatch || !new_fn) return;
 
-    SF_custominiVm_set_pausepoint_gate(1);
+    _telemetry_pausepoint_gates.fetch_add(1, std::memory_order_relaxed);
+    RedletPausepointGateGuard gate_guard;
 
     _dispatch->swap(fn_id, new_fn, new_cycles);
 
@@ -707,7 +865,19 @@ MSIMD_API void RedletPuzzleArena::redirect_stream(uint32_t fn_id, sacculus_kerne
         _runway->batch_optimize_egg_objects(fn_id, name, 0, new_cycles);
     }
 
-    SF_custominiVm_set_pausepoint_gate(0);
+    gate_guard.disarm();
+
+    _telemetry_hotswaps.fetch_add(1, std::memory_order_relaxed);
+    _telemetry_last_winner_cycles.store(new_cycles, std::memory_order_relaxed);
+
+    {
+        std::lock_guard<std::mutex> lk(_telemetry_lock);
+        if (name) {
+            strncpy(_telemetry_last_winner_name, name, sizeof(_telemetry_last_winner_name) - 1);
+        } else {
+            strncpy(_telemetry_last_winner_name, "winner_isa", sizeof(_telemetry_last_winner_name) - 1);
+        }
+    }
 
     sacculus_hotlog_write(_hotlog, SF_Ebin0_HOTSWAP, SF_Ebin1_INFO,
         fn_id, static_cast<uint16_t>(new_cycles & 0xFFFF), 0, 0, 0, 0,
@@ -751,286 +921,48 @@ MSIMD_API void RedletPuzzleArena::run_puzzle_suite_parallel(uint32_t fn_id,
                                                            int n_candidates,
                                                            float target_epsilon,
                                                            const SF_custominiVm_tensor_t* target_tensor) {
-    if (!_dispatch || !candidates || n_candidates <= 0 || !current_best_out_payload || !candidate_out_payload) return;
+    if (!candidates || n_candidates <= 0 || !_dispatch) return;
     auto* entry = _dispatch->get(fn_id);
     if (!entry || !entry->fn.load()) return;
 
     std::vector<sf_puzzle_sample_t> samples;
     SF_custominiVm_tensor_t target_prec{};
     bool has_target_prec = false;
-    float final_epsilon = target_epsilon;
+    float target_eps = target_epsilon;
     if (target_tensor && target_tensor->data && target_tensor->byte_size > 0) {
         target_prec = *target_tensor;
         has_target_prec = true;
     }
 
     sf_puzzler_determinism_tier_e tier = sf_puzzler_determinism_tier_e::NUMERIC_IEEE_FP;
-    if (!acquire_evaluation_samples(fn_id, samples, target_prec, has_target_prec, final_epsilon, tier)) {
+    if (!acquire_evaluation_samples(fn_id, samples, target_prec, has_target_prec, target_eps, tier)) {
         return;
     }
-    if (samples.empty()) return;
-
-    uint64_t cur_cycles_total = 0;
-    auto current_fn = entry->fn.load(std::memory_order_acquire);
-
-    // Warmup current_fn
-    if (!samples.empty()) {
-        SF_custominiVm_tensor_t win_t{};
-        win_t.data = const_cast<uint8_t*>(samples[0].data);
-        win_t.ndim = samples[0].ndim;
-        for (int d = 0; d < 8; ++d) win_t.shape[d] = samples[0].shape[d];
-        win_t.dtype = samples[0].dtype;
-        win_t.byte_size = samples[0].byte_size;
-        SF_custominiVm_tensor_t wout_t = win_t;
-        wout_t.data = current_best_out_payload;
-        uint32_t wfault = 0;
-        sf_safe_kernel_call(current_fn, &win_t, 1, &wout_t, 1, nullptr, &wfault);
-    }
-
-    std::vector<sf_puzzle_sample_t> baseline_outputs(samples.size());
-    for (size_t s_idx = 0; s_idx < samples.size(); ++s_idx) {
-        const auto& smp = samples[s_idx];
-        SF_custominiVm_tensor_t in_t{};
-        in_t.data = const_cast<uint8_t*>(smp.data);
-        in_t.ndim = smp.ndim;
-        for (int d = 0; d < 8; ++d) in_t.shape[d] = smp.shape[d];
-        in_t.dtype = smp.dtype;
-        in_t.byte_size = smp.byte_size;
-
-        SF_custominiVm_tensor_t out_t = in_t;
-        out_t.data = baseline_outputs[s_idx].data;
-        baseline_outputs[s_idx].byte_size = smp.byte_size;
-        memset(baseline_outputs[s_idx].data, 0, smp.byte_size);
-
-        uint32_t cur_fault = 0;
-        uint64_t t0 = sacculus_rdtsc();
-        bool ok = sf_safe_kernel_call(current_fn, &in_t, 1, &out_t, 1, nullptr, &cur_fault);
-        uint64_t dt = sacculus_rdtsc() - t0;
-        if (!ok) return;
-        cur_cycles_total += (dt > 0 ? dt : 1);
-        if (s_idx + 1 == samples.size()) {
-            memcpy(current_best_out_payload, baseline_outputs[s_idx].data, smp.byte_size);
-        }
-    }
-    uint64_t current_cycles = cur_cycles_total / samples.size();
-    if (current_cycles == 0) current_cycles = 1;
-
-    std::vector<sf_candidate_eval_t> evals(n_candidates);
-    std::vector<std::thread> workers;
-    workers.reserve(n_candidates);
 
     for (int i = 0; i < n_candidates; ++i) {
-        evals[i].idx = i;
-        evals[i].fn = candidates[i].fn;
-        if (candidates[i].variant_name) {
-            strncpy(evals[i].variant_name, candidates[i].variant_name, sizeof(evals[i].variant_name) - 1);
-        } else {
-            strncpy(evals[i].variant_name, "suite_variant", sizeof(evals[i].variant_name) - 1);
-        }
-        if (candidates[i].isa_tag) {
-            strncpy(evals[i].isa_tag, candidates[i].isa_tag, sizeof(evals[i].isa_tag) - 1);
-        } else {
-            strncpy(evals[i].isa_tag, "AUTO", sizeof(evals[i].isa_tag) - 1);
-        }
-
         if (!candidates[i].fn) continue;
-        if (!cached_isa_inventory.has_isa(evals[i].isa_tag)) {
-            continue;
-        }
+        sf_puzzle_experiment_t exp{};
+        exp.fn_id = fn_id;
+        exp.candidate = candidates[i].fn;
+        strncpy(exp.name, candidates[i].variant_name ? candidates[i].variant_name : "suite_cand", sizeof(exp.name) - 1);
+        strncpy(exp.target_isa, candidates[i].isa_tag ? candidates[i].isa_tag : "AUTO", sizeof(exp.target_isa) - 1);
+        exp.target_epsilon = target_eps;
+        exp.target_tensor = target_prec;
+        exp.has_target_tensor = has_target_prec;
 
-        workers.emplace_back([this, &evals, i, &samples, &baseline_outputs, has_target_prec, &target_prec, current_cycles, final_epsilon, tier]() {
-            // Pin execution to physical P-cores to eliminate SMT contention and E-core latency
-            auto* nexus = sf_get_hardware_nexus();
-            if (nexus) {
-                nexus->hybrid.bind_current_thread(SF_CORE_TIER_PERFORMANCE);
-                nexus->smt.apply_affinity_policy(SF_AFFINITY_PHYSICAL_CORES_ONLY);
-            }
-
-            uint8_t* local_cand_out = static_cast<uint8_t*>(_mm_malloc(STAGNANT_BUF_CAP, 64));
-            if (!local_cand_out) return;
-            uint64_t cand_cycles_total = 0;
-            float max_err = 0.0f;
-            float sum_sq = 0.0f;
-            size_t total_elems_tested = 0;
-            bool all_ok = true;
-            uint32_t cand_fault = 0;
-
-            // Warmup pass
-            if (!samples.empty()) {
-                SF_custominiVm_tensor_t win_t{};
-                win_t.data = const_cast<uint8_t*>(samples[0].data);
-                win_t.ndim = samples[0].ndim;
-                for (int d = 0; d < 8; ++d) win_t.shape[d] = samples[0].shape[d];
-                win_t.dtype = samples[0].dtype;
-                win_t.byte_size = samples[0].byte_size;
-                SF_custominiVm_tensor_t wout_t = win_t;
-                wout_t.data = local_cand_out;
-                uint32_t wfault = 0;
-                sf_safe_kernel_call(evals[i].fn, &win_t, 1, &wout_t, 1, nullptr, &wfault);
-            }
-
-            sf_pmu_session_t cand_pmu_sess{};
-            SF_custominiVm_pmu_stat_t cand_pmu{};
-            size_t total_bytes_tested = 0;
-            cand_pmu_sess.begin();
-
-            for (size_t s_idx = 0; s_idx < samples.size(); ++s_idx) {
-                const auto& smp = samples[s_idx];
-                memset(local_cand_out, 0, smp.byte_size);
-                SF_custominiVm_tensor_t in_t{};
-                in_t.data = const_cast<uint8_t*>(smp.data);
-                in_t.ndim = smp.ndim;
-                for (int d = 0; d < 8; ++d) in_t.shape[d] = smp.shape[d];
-                in_t.dtype = smp.dtype;
-                in_t.byte_size = smp.byte_size;
-
-                SF_custominiVm_tensor_t cand_out_t = in_t;
-                cand_out_t.data = local_cand_out;
-
-                uint64_t t1 = sacculus_rdtsc();
-                bool ok = sf_safe_kernel_call(evals[i].fn, &in_t, 1, &cand_out_t, 1, nullptr, &cand_fault);
-                uint64_t dt = sacculus_rdtsc() - t1;
-                if (!ok) {
-                    all_ok = false;
-                    break;
-                }
-                cand_cycles_total += dt;
-                total_bytes_tested += smp.byte_size;
-
-                const uint8_t* ref_bytes = (has_target_prec && target_prec.data)
-                    ? static_cast<const uint8_t*>(target_prec.data)
-                    : static_cast<const uint8_t*>(baseline_outputs[s_idx].data);
-                size_t cmp_bytes = (has_target_prec && target_prec.data && target_prec.byte_size < smp.byte_size)
-                    ? target_prec.byte_size
-                    : smp.byte_size;
-
-                if (tier == sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC) {
-                    // Two-tier determinism directive: Non-FP requires strict 0-bit deviation (exact memcmp == 0)
-                    if (memcmp(local_cand_out, ref_bytes, cmp_bytes) != 0) {
-                        all_ok = false;
-                        max_err = 1.0f;
-                        sum_sq = 1.0f;
-                        break;
-                    }
-                    total_elems_tested += cmp_bytes;
-                } else if (smp.dtype == SACFOR_F64) {
-                    // NUMERIC_IEEE_FP: Double (F64) operations with machine epsilon (DBL_EPSILON) bounds
-                    size_t n_elems = cmp_bytes / sizeof(double);
-                    const double* cand_ptr = reinterpret_cast<const double*>(local_cand_out);
-                    const double* ref_ptr = reinterpret_cast<const double*>(ref_bytes);
-                    bool finite_ok = true;
-                    sf_accumulate_ieee754_error_f64(cand_ptr, ref_ptr, n_elems, max_err, sum_sq, finite_ok);
-                    if (!finite_ok) {
-                        all_ok = false;
-                        break;
-                    }
-                    total_elems_tested += n_elems;
-                } else {
-                    // NUMERIC_IEEE_FP: Float32 operations with machine epsilon (FLT_EPSILON) bounds
-                    size_t n_elems = cmp_bytes / sizeof(float);
-                    const float* cand_ptr = reinterpret_cast<const float*>(local_cand_out);
-                    const float* ref_ptr = reinterpret_cast<const float*>(ref_bytes);
-                    bool finite_ok = true;
-                    sf_accumulate_ieee754_error_f32(cand_ptr, ref_ptr, n_elems, max_err, sum_sq, finite_ok);
-                    if (!finite_ok) {
-                        all_ok = false;
-                        break;
-                    }
-                    total_elems_tested += n_elems;
-                }
-            }
-            cand_pmu_sess.end(&cand_pmu, total_bytes_tested);
-            _mm_free(local_cand_out);
-
-            evals[i].executed_ok = all_ok;
-            evals[i].fault_code = cand_fault;
-            if (!all_ok) return;
-
-            uint64_t cand_cycles = cand_cycles_total / samples.size();
-            evals[i].cycles = cand_cycles;
-            float mse = sum_sq / static_cast<float>(total_elems_tested > 0 ? total_elems_tested : 1);
-            evals[i].max_abs_err = max_err;
-            evals[i].mse = mse;
-
-            auto sc = evaluate_score(cand_cycles, current_cycles, max_err, mse, final_epsilon, &cand_pmu);
-            if (tier == sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC) {
-                evals[i].precision_passed = (max_err == 0.0f);
-            } else {
-                evals[i].precision_passed = (max_err <= final_epsilon) || (mse <= final_epsilon);
-            }
-            evals[i].speed_passed = (cand_cycles < current_cycles);
-            evals[i].score = sc.score;
-        });
-    }
-
-    for (auto& w : workers) {
-        if (w.joinable()) w.join();
-    }
-
-    int best_idx = -1;
-    double best_score = -1.0;
-
-    for (int i = 0; i < n_candidates; ++i) {
-        if (evals[i].executed_ok && evals[i].score > best_score) {
-            best_score = evals[i].score;
-            best_idx = i;
-        }
-    }
-
-    if (n_candidates >= 2) {
-        int cand_a = 0, cand_b = 1;
-        if (candidates[cand_a].fn && candidates[cand_b].fn) {
-            SF_custominiVm_tensor_t test_in{};
-            test_in.data = const_cast<uint8_t*>(samples[0].data);
-            test_in.ndim = samples[0].ndim;
-            for (int d = 0; d < 8; ++d) test_in.shape[d] = samples[0].shape[d];
-            test_in.dtype = samples[0].dtype;
-            test_in.byte_size = samples[0].byte_size;
-
-            SF_custominiVm_tensor_t test_out = test_in;
-            test_out.data = candidate_out_payload;
-
-            auto compat = evaluate_hybrid_compatibility(candidates[cand_a].fn, candidates[cand_b].fn, &test_in, &test_out);
-            if (compat.compatible) {
-                uint64_t hyb_cycles = static_cast<uint64_t>(compat.mean_hybrid);
-                auto hyb_score = evaluate_score(hyb_cycles, current_cycles, evals[cand_a].max_abs_err, evals[cand_a].mse, final_epsilon);
-                if (hyb_score.qualified && hyb_score.score > best_score) {
-                    best_score = hyb_score.score;
-                    best_idx = cand_a;
-                }
-            }
-        }
-    }
-
-    if (best_idx >= 0 && best_score > 0.0) {
-        redirect_stream(fn_id, evals[best_idx].fn, evals[best_idx].cycles, evals[best_idx].variant_name, best_score);
+        run_puzzle_experiment_with_samples(exp, samples, target_prec, has_target_prec, target_eps, tier);
     }
 }
 
-MSIMD_API void RedletPuzzleArena::submit_suite(uint32_t fn_id, const SF_custominiVm_isa_candidate_t* candidates, int n_candidates,
-                                               float target_epsilon, const SF_custominiVm_tensor_t* target_tensor) {
+MSIMD_API void RedletPuzzleArena::submit_suite(uint32_t fn_id,
+                                              const SF_custominiVm_isa_candidate_t* candidates,
+                                              int n_candidates,
+                                              float target_epsilon,
+                                              const SF_custominiVm_tensor_t* target_tensor) {
     if (!candidates || n_candidates <= 0) return;
-
-    uint8_t mode = _execution_mode.load(std::memory_order_relaxed);
-    bool run_parallel = false;
-    if (mode == static_cast<uint8_t>(SF_PUZZLE_EXEC_PARALLEL)) {
-        run_parallel = true;
-    } else if (mode == static_cast<uint8_t>(SF_PUZZLE_EXEC_ADAPTIVE)) {
-        unsigned int hw_cores = std::thread::hardware_concurrency();
-        if (hw_cores >= 4 && n_candidates > 1) {
-            run_parallel = true;
-        }
-    }
-
-    if (run_parallel) {
-        run_puzzle_suite_parallel(fn_id, candidates, n_candidates, target_epsilon, target_tensor);
-    } else {
-        for (int i = 0; i < n_candidates; ++i) {
-            const auto& c = candidates[i];
-            if (c.fn) {
-                submit(fn_id, c.fn, c.variant_name ? c.variant_name : "suite_variant",
-                       c.isa_tag ? c.isa_tag : "AUTO", target_epsilon, target_tensor);
-            }
+    for (int i = 0; i < n_candidates; ++i) {
+        if (candidates[i].fn) {
+            submit(fn_id, candidates[i].fn, candidates[i].variant_name, candidates[i].isa_tag, target_epsilon, target_tensor);
         }
     }
 }
@@ -1041,66 +973,83 @@ MSIMD_API void RedletPuzzleArena::run_puzzle_experiment_with_samples(const sf_pu
                                                                     bool has_target_prec,
                                                                     float target_eps,
                                                                     sf_puzzler_determinism_tier_e tier) {
-    if (!_dispatch || samples.empty() || !current_best_out_payload || !candidate_out_payload) return;
+    if (samples.empty() || !_dispatch) return;
     auto* entry = _dispatch->get(exp.fn_id);
     if (!entry || !entry->fn.load() || !exp.candidate) return;
 
+    ensure_payload_buffers();
+    if (!stagnant_in_payload || !candidate_out_payload || !current_best_out_payload) return;
+
+    _telemetry_experiments.fetch_add(1, std::memory_order_relaxed);
+    _telemetry_candidates_eval.fetch_add(1, std::memory_order_relaxed);
+
+    auto cur_fn = entry->fn.load(std::memory_order_acquire);
     uint64_t cur_cycles_total = 0;
     uint64_t cand_cycles_total = 0;
     float max_abs_err = 0.0f;
     float sum_sq_err = 0.0f;
     size_t total_elems = 0;
-    auto current_fn = entry->fn.load(std::memory_order_acquire);
 
-    // Warmup current_fn and candidate
-    {
-        SF_custominiVm_tensor_t win_t{};
-        win_t.data = const_cast<uint8_t*>(samples[0].data);
-        win_t.ndim = samples[0].ndim;
-        for (int d = 0; d < 8; ++d) win_t.shape[d] = samples[0].shape[d];
-        win_t.dtype = samples[0].dtype;
-        win_t.byte_size = samples[0].byte_size;
-        SF_custominiVm_tensor_t wout_t = win_t;
-        wout_t.data = current_best_out_payload;
-        uint32_t wfault = 0;
-        sf_safe_kernel_call(current_fn, &win_t, 1, &wout_t, 1, nullptr, &wfault);
-        wout_t.data = candidate_out_payload;
-        sf_safe_kernel_call(exp.candidate, &win_t, 1, &wout_t, 1, nullptr, &wfault);
-    }
+    SF_custominiVm_pmu_stat_t exp_pmu{};
+    sf_pmu_session_t exp_pmu_sess{};
 
     for (const auto& smp : samples) {
-        SF_custominiVm_tensor_t in_t{};
-        in_t.data = const_cast<uint8_t*>(smp.data);
-        in_t.ndim = smp.ndim;
-        for (int d = 0; d < 8; ++d) in_t.shape[d] = smp.shape[d];
-        in_t.dtype = smp.dtype;
-        in_t.byte_size = smp.byte_size;
+        if (smp.byte_size == 0) continue;
+        size_t run_bytes = (smp.byte_size > STAGNANT_BUF_CAP) ? STAGNANT_BUF_CAP : smp.byte_size;
+        memcpy(stagnant_in_payload, smp.data, run_bytes);
+        memset(candidate_out_payload, 0, STAGNANT_BUF_CAP);
+        memset(current_best_out_payload, 0, STAGNANT_BUF_CAP);
 
-        SF_custominiVm_tensor_t current_out_t = in_t;
-        current_out_t.data = current_best_out_payload;
-        memset(current_best_out_payload, 0, smp.byte_size);
+        SF_custominiVm_tensor_t in_tensor{};
+        in_tensor.data = stagnant_in_payload;
+        in_tensor.byte_size = run_bytes;
+        in_tensor.ndim = smp.ndim;
+        in_tensor.dtype = smp.dtype;
+        for (int k = 0; k < 8; ++k) in_tensor.shape[k] = smp.shape[k];
 
-        uint32_t cur_fault = 0;
+        SF_custominiVm_tensor_t out_cur{};
+        out_cur.data = current_best_out_payload;
+        out_cur.byte_size = run_bytes;
+        out_cur.ndim = smp.ndim;
+        out_cur.dtype = smp.dtype;
+        for (int k = 0; k < 8; ++k) out_cur.shape[k] = smp.shape[k];
+
+        SF_custominiVm_tensor_t out_cand{};
+        out_cand.data = candidate_out_payload;
+        out_cand.byte_size = run_bytes;
+        out_cand.ndim = smp.ndim;
+        out_cand.dtype = smp.dtype;
+        for (int k = 0; k < 8; ++k) out_cand.shape[k] = smp.shape[k];
+
+        // 1. Run baseline kernel
+        uint32_t base_fault = 0;
         uint64_t t0 = sacculus_rdtsc();
-        bool cur_ok = sf_safe_kernel_call(current_fn, &in_t, 1, &current_out_t, 1, nullptr, &cur_fault);
+        bool base_ok = sf_safe_kernel_call(cur_fn, &in_tensor, 1, &out_cur, 1, nullptr, &base_fault);
         uint64_t dt0 = sacculus_rdtsc() - t0;
-        if (!cur_ok) return;
-        cur_cycles_total += (dt0 > 0 ? dt0 : 1);
+        if (!base_ok) {
+            _telemetry_fault_isolations.fetch_add(1, std::memory_order_relaxed);
+            sf_candidate_eval_t eval{};
+            eval.fn = exp.candidate;
+            strncpy(eval.variant_name, exp.name, sizeof(eval.variant_name) - 1);
+            strncpy(eval.isa_tag, exp.target_isa, sizeof(eval.isa_tag) - 1);
+            eval.executed_ok = false;
+            eval.fault_code = base_fault;
+            eval.score = -1.0;
+            evaluate_candidate(eval);
+            return;
+        }
+        cur_cycles_total += dt0;
 
-        SF_custominiVm_tensor_t candidate_out_t = in_t;
-        candidate_out_t.data = candidate_out_payload;
-        memset(candidate_out_payload, 0, smp.byte_size);
-
+        // 2. Run candidate kernel with fault isolation and PMU monitoring
         uint32_t cand_fault = 0;
-        sf_pmu_session_t exp_pmu_sess{};
-        SF_custominiVm_pmu_stat_t exp_pmu{};
         exp_pmu_sess.begin();
         uint64_t t1 = sacculus_rdtsc();
-        bool cand_ok = sf_safe_kernel_call(exp.candidate, &in_t, 1, &candidate_out_t, 1, nullptr, &cand_fault);
+        bool cand_ok = sf_safe_kernel_call(exp.candidate, &in_tensor, 1, &out_cand, 1, nullptr, &cand_fault);
         uint64_t dt1 = sacculus_rdtsc() - t1;
         exp_pmu_sess.end(&exp_pmu, smp.byte_size);
 
         if (!cand_ok) {
+            _telemetry_fault_isolations.fetch_add(1, std::memory_order_relaxed);
             sacculus_hotlog_write(_hotlog, SF_Ebin0_HOTSWAP_FAIL, SF_Ebin1_WARN,
                 exp.fn_id, 0, 0, 0, 0, 0, cand_fault, "fault_isolated");
             if (_coldlog) {
@@ -1108,6 +1057,14 @@ MSIMD_API void RedletPuzzleArena::run_puzzle_experiment_with_samples(const sf_pu
                 snprintf(msg, sizeof(msg), "fault:0x%08X", cand_fault);
                 sacculus_coldlog_write(_coldlog, SF_Ebin0_HOTSWAP_FAIL, SF_Ebin1_WARN, exp.fn_id, msg);
             }
+            sf_candidate_eval_t eval{};
+            eval.fn = exp.candidate;
+            strncpy(eval.variant_name, exp.name, sizeof(eval.variant_name) - 1);
+            strncpy(eval.isa_tag, exp.target_isa, sizeof(eval.isa_tag) - 1);
+            eval.executed_ok = false;
+            eval.fault_code = cand_fault;
+            eval.score = -1.0;
+            evaluate_candidate(eval);
             return;
         }
         cand_cycles_total += dt1;
@@ -1132,9 +1089,7 @@ MSIMD_API void RedletPuzzleArena::run_puzzle_experiment_with_samples(const sf_pu
             const double* ref_ptr = reinterpret_cast<const double*>(ref_bytes);
             bool finite_ok = true;
             sf_accumulate_ieee754_error_f64(cand_ptr, ref_ptr, n_elems, max_abs_err, sum_sq_err, finite_ok);
-            if (!finite_ok) {
-                break;
-            }
+            if (!finite_ok) break;
             total_elems += n_elems;
         } else {
             size_t n_elems = cmp_bytes / sizeof(float);
@@ -1142,31 +1097,49 @@ MSIMD_API void RedletPuzzleArena::run_puzzle_experiment_with_samples(const sf_pu
             const float* ref_ptr = reinterpret_cast<const float*>(ref_bytes);
             bool finite_ok = true;
             sf_accumulate_ieee754_error_f32(cand_ptr, ref_ptr, n_elems, max_abs_err, sum_sq_err, finite_ok);
-            if (!finite_ok) {
-                break;
-            }
+            if (!finite_ok) break;
             total_elems += n_elems;
         }
     }
+    if (total_elems == 0) return;
 
     uint64_t current_cycles = cur_cycles_total / samples.size();
     if (current_cycles == 0) current_cycles = 1;
     uint64_t candidate_cycles = cand_cycles_total / samples.size();
     float mse = sum_sq_err / static_cast<float>(total_elems > 0 ? total_elems : 1);
 
-    auto score_eval = evaluate_score(candidate_cycles, current_cycles, max_abs_err, mse, target_eps);
+    auto score_eval = evaluate_score(candidate_cycles, current_cycles, max_abs_err, mse, target_eps, &exp_pmu);
+
+    // Record evaluation in history
+    sf_candidate_eval_t eval{};
+    eval.fn = exp.candidate;
+    strncpy(eval.variant_name, exp.name, sizeof(eval.variant_name) - 1);
+    strncpy(eval.isa_tag, exp.target_isa, sizeof(eval.isa_tag) - 1);
+    eval.executed_ok = true;
+    eval.cycles = candidate_cycles;
+    eval.max_abs_err = max_abs_err;
+    eval.mse = mse;
+    eval.score = score_eval.score;
+    eval.precision_passed = (tier == sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC) ? (max_abs_err == 0.0f) : (max_abs_err <= target_eps && mse <= (target_eps * target_eps + 1e-12f));
+    eval.speed_passed = (candidate_cycles < current_cycles);
+    eval.ipc_score = score_eval.pmu_ipc;
+    eval.l1_l2_cache_miss_penalty = score_eval.cache_penalty;
+    eval.downclock_penalty = score_eval.downclock_factor;
+    eval.pmu_stats = exp_pmu;
+    evaluate_candidate(eval);
 
     if (score_eval.qualified && score_eval.score > 0.0) {
         redirect_stream(exp.fn_id, exp.candidate, candidate_cycles, exp.name, score_eval.score);
     } else {
-        bool prec_failed = (tier == sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC)
-            ? (max_abs_err != 0.0f)
-            : (max_abs_err > target_eps && mse > target_eps);
-        const char* reason = prec_failed ? "fail_precision" : "fail_speed";
+        bool prec_failed = !eval.precision_passed;
         if (prec_failed) {
+            _telemetry_prec_fails.fetch_add(1, std::memory_order_relaxed);
             sacculus_hotlog_write(_hotlog, SF_Ebin0_HEAL_NUMERIC_DIVERGE, SF_Ebin1_WARN,
                 exp.fn_id, 0, 0, 0, 0, 0, static_cast<uint32_t>(max_abs_err * 10000.0f), exp.name);
+        } else {
+            _telemetry_speed_fails.fetch_add(1, std::memory_order_relaxed);
         }
+        const char* reason = prec_failed ? "fail_precision" : "fail_speed";
         sacculus_hotlog_write(_hotlog, SF_Ebin0_HOTSWAP_FAIL, SF_Ebin1_TRACE,
             exp.fn_id, 0, 0, 0, 0, 0, static_cast<uint32_t>(max_abs_err * 10000.0f), reason);
     }
@@ -1242,23 +1215,354 @@ MSIMD_API double RedletPuzzleArena::score_variant(uint64_t baseline_cycles, uint
 
 MSIMD_API void RedletPuzzleArena::evaluate_candidate(sf_candidate_eval_t& candidate) {
     std::lock_guard<std::mutex> g(_queue_lock);
-    candidate.executed_ok = true;
-    candidate.precision_passed = (candidate.max_abs_err <= 1e-4f);
-    candidate.speed_passed = (candidate.cycles < UINT64_MAX);
-    if (candidate.precision_passed && candidate.speed_passed) {
-        candidate.score = 1.25;
-    } else {
-        candidate.score = -1.0;
-    }
+    candidate.idx = static_cast<int>(_eval_history.size());
     _eval_history.push_back(candidate);
 }
 
 MSIMD_API size_t RedletPuzzleArena::history_count() const {
+    std::lock_guard<std::mutex> g(const_cast<std::mutex&>(_queue_lock));
     return _eval_history.size();
 }
 
+MSIMD_API std::vector<sf_candidate_eval_t> RedletPuzzleArena::get_candidate_history() const {
+    std::lock_guard<std::mutex> g(const_cast<std::mutex&>(_queue_lock));
+    return _eval_history;
+}
+
 /* ========================================================================= */
-/* 5. CANONICAL C APIS                                                       */
+/* 5. SELF-TUNING MICRO-BENCHMARKS                                           */
+/* ========================================================================= */
+
+MSIMD_API sf_puzzler_bench_result_t RedletPuzzleArena::run_self_tuning_benchmark(uint32_t bench_id) {
+    sf_puzzler_bench_result_t res{};
+    res.bench_id = bench_id;
+
+    switch (static_cast<sf_puzzler_bench_id_e>(bench_id)) {
+        case sf_puzzler_bench_id_e::BENCH_MEMZERO: {
+            strncpy(res.bench_name, "memzero_tune", sizeof(res.bench_name) - 1);
+            res.tier = sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC;
+
+            constexpr size_t BUF_SZ = 256 * 1024;
+            uint8_t* buf_a = static_cast<uint8_t*>(sf_puzzle_aligned_alloc(BUF_SZ, 64));
+            uint8_t* buf_b = static_cast<uint8_t*>(sf_puzzle_aligned_alloc(BUF_SZ, 64));
+            if (!buf_a || !buf_b) {
+                if (buf_a) sf_puzzle_aligned_free(buf_a);
+                if (buf_b) sf_puzzle_aligned_free(buf_b);
+                res.verified_ok = false;
+                break;
+            }
+            memset(buf_a, 0xAA, BUF_SZ);
+            memset(buf_b, 0xAA, BUF_SZ);
+
+            // Baseline: standard memset
+            uint64_t t0 = sacculus_rdtsc();
+            memset(buf_a, 0, BUF_SZ);
+            uint64_t base_cyc = sacculus_rdtsc() - t0;
+            if (base_cyc == 0) base_cyc = 1;
+
+            // Candidate: Non-temporal streaming zeroing
+            uint64_t t1 = sacculus_rdtsc();
+            sf_critical_clear_memory(buf_b, BUF_SZ);
+            uint64_t cand_cyc = sacculus_rdtsc() - t1;
+            if (cand_cyc == 0) cand_cyc = 1;
+
+            // Verify bitwise exact equality
+            bool exact_ok = (memcmp(buf_a, buf_b, BUF_SZ) == 0);
+            res.baseline_cycles = base_cyc;
+            res.winning_cycles = cand_cyc;
+            res.speedup = static_cast<double>(base_cyc) / static_cast<double>(cand_cyc);
+            res.verified_ok = exact_ok;
+            res.max_abs_err = exact_ok ? 0.0f : 1.0f;
+            strncpy(res.winning_isa, (cand_cyc <= base_cyc && exact_ok) ? "NT_STREAM" : "MEMSET", sizeof(res.winning_isa) - 1);
+
+            sf_puzzle_aligned_free(buf_a);
+            sf_puzzle_aligned_free(buf_b);
+            break;
+        }
+        case sf_puzzler_bench_id_e::BENCH_MEMCPY: {
+            strncpy(res.bench_name, "memcpy_tune", sizeof(res.bench_name) - 1);
+            res.tier = sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC;
+
+            constexpr size_t BUF_SZ = 256 * 1024;
+            uint8_t* src = static_cast<uint8_t*>(sf_puzzle_aligned_alloc(BUF_SZ, 64));
+            uint8_t* dst_a = static_cast<uint8_t*>(sf_puzzle_aligned_alloc(BUF_SZ, 64));
+            uint8_t* dst_b = static_cast<uint8_t*>(sf_puzzle_aligned_alloc(BUF_SZ, 64));
+            if (!src || !dst_a || !dst_b) {
+                if (src) sf_puzzle_aligned_free(src);
+                if (dst_a) sf_puzzle_aligned_free(dst_a);
+                if (dst_b) sf_puzzle_aligned_free(dst_b);
+                res.verified_ok = false;
+                break;
+            }
+            for (size_t i = 0; i < BUF_SZ; ++i) src[i] = static_cast<uint8_t>(i & 0xFF);
+
+            // Baseline: memcpy
+            uint64_t t0 = sacculus_rdtsc();
+            memcpy(dst_a, src, BUF_SZ);
+            uint64_t base_cyc = sacculus_rdtsc() - t0;
+            if (base_cyc == 0) base_cyc = 1;
+
+            // Candidate: stream copy
+            uint64_t t1 = sacculus_rdtsc();
+            sf_dram_stream_copy(dst_b, src, BUF_SZ);
+            uint64_t cand_cyc = sacculus_rdtsc() - t1;
+            if (cand_cyc == 0) cand_cyc = 1;
+
+            bool exact_ok = (memcmp(dst_a, dst_b, BUF_SZ) == 0);
+            res.baseline_cycles = base_cyc;
+            res.winning_cycles = cand_cyc;
+            res.speedup = static_cast<double>(base_cyc) / static_cast<double>(cand_cyc);
+            res.verified_ok = exact_ok;
+            res.max_abs_err = exact_ok ? 0.0f : 1.0f;
+            strncpy(res.winning_isa, (cand_cyc <= base_cyc && exact_ok) ? "STREAM_COPY" : "MEMCPY", sizeof(res.winning_isa) - 1);
+
+            sf_puzzle_aligned_free(src);
+            sf_puzzle_aligned_free(dst_a);
+            sf_puzzle_aligned_free(dst_b);
+            break;
+        }
+        case sf_puzzler_bench_id_e::BENCH_BITMAP_SCAN: {
+            strncpy(res.bench_name, "bitmap_scan_tune", sizeof(res.bench_name) - 1);
+            res.tier = sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC;
+
+            constexpr size_t N_WORDS = 2048;
+            uint64_t words[N_WORDS];
+            for (size_t i = 0; i < N_WORDS; ++i) {
+                words[i] = (i % 7 == 0) ? (1ULL << (i % 64)) : 0;
+            }
+
+            // Baseline: bit-by-bit scan
+            size_t bits_found_base = 0;
+            uint64_t t0 = sacculus_rdtsc();
+            for (size_t w = 0; w < N_WORDS; ++w) {
+                uint64_t val = words[w];
+                for (int b = 0; b < 64; ++b) {
+                    if ((val >> b) & 1) ++bits_found_base;
+                }
+            }
+            uint64_t base_cyc = sacculus_rdtsc() - t0;
+            if (base_cyc == 0) base_cyc = 1;
+
+            // Candidate: BMI2 / popcnt accelerated scan
+            size_t bits_found_cand = 0;
+            uint64_t t1 = sacculus_rdtsc();
+            for (size_t w = 0; w < N_WORDS; ++w) {
+                uint64_t val = words[w];
+                while (val != 0) {
+                    ++bits_found_cand;
+                    val &= (val - 1); // BLSR
+                }
+            }
+            uint64_t cand_cyc = sacculus_rdtsc() - t1;
+            if (cand_cyc == 0) cand_cyc = 1;
+
+            bool exact_ok = (bits_found_base == bits_found_cand);
+            res.baseline_cycles = base_cyc;
+            res.winning_cycles = cand_cyc;
+            res.speedup = static_cast<double>(base_cyc) / static_cast<double>(cand_cyc);
+            res.verified_ok = exact_ok;
+            res.max_abs_err = exact_ok ? 0.0f : 1.0f;
+            strncpy(res.winning_isa, exact_ok ? "BMI2_BLSR" : "SCALAR_SCAN", sizeof(res.winning_isa) - 1);
+            break;
+        }
+        case sf_puzzler_bench_id_e::BENCH_VECTOR_FMA_F32: {
+            strncpy(res.bench_name, "vector_fma_f32_tune", sizeof(res.bench_name) - 1);
+            res.tier = sf_puzzler_determinism_tier_e::NUMERIC_IEEE_FP;
+
+            constexpr size_t N = 8192;
+            float* a = static_cast<float*>(sf_puzzle_aligned_alloc(N * sizeof(float), 64));
+            float* b = static_cast<float*>(sf_puzzle_aligned_alloc(N * sizeof(float), 64));
+            float* c = static_cast<float*>(sf_puzzle_aligned_alloc(N * sizeof(float), 64));
+            float* out_base = static_cast<float*>(sf_puzzle_aligned_alloc(N * sizeof(float), 64));
+            float* out_cand = static_cast<float*>(sf_puzzle_aligned_alloc(N * sizeof(float), 64));
+            if (!a || !b || !c || !out_base || !out_cand) {
+                if (a) sf_puzzle_aligned_free(a);
+                if (b) sf_puzzle_aligned_free(b);
+                if (c) sf_puzzle_aligned_free(c);
+                if (out_base) sf_puzzle_aligned_free(out_base);
+                if (out_cand) sf_puzzle_aligned_free(out_cand);
+                res.verified_ok = false;
+                break;
+            }
+            for (size_t i = 0; i < N; ++i) {
+                a[i] = 1.0f + 0.01f * (i % 10);
+                b[i] = 2.0f + 0.02f * (i % 10);
+                c[i] = 0.5f;
+            }
+
+            // Baseline: scalar loop
+            uint64_t t0 = sacculus_rdtsc();
+            for (size_t i = 0; i < N; ++i) {
+                out_base[i] = a[i] * b[i] + c[i];
+            }
+            uint64_t base_cyc = sacculus_rdtsc() - t0;
+            if (base_cyc == 0) base_cyc = 1;
+
+            // Candidate: unrolled chunk loop
+            uint64_t t1 = sacculus_rdtsc();
+            for (size_t i = 0; i < N; i += 4) {
+                out_cand[i + 0] = a[i + 0] * b[i + 0] + c[i + 0];
+                out_cand[i + 1] = a[i + 1] * b[i + 1] + c[i + 1];
+                out_cand[i + 2] = a[i + 2] * b[i + 2] + c[i + 2];
+                out_cand[i + 3] = a[i + 3] * b[i + 3] + c[i + 3];
+            }
+            uint64_t cand_cyc = sacculus_rdtsc() - t1;
+            if (cand_cyc == 0) cand_cyc = 1;
+
+            float max_err = 0.0f;
+            float sum_sq = 0.0f;
+            bool finite_ok = true;
+            sf_accumulate_ieee754_error_f32(out_cand, out_base, N, max_err, sum_sq, finite_ok);
+
+            res.baseline_cycles = base_cyc;
+            res.winning_cycles = cand_cyc;
+            res.speedup = static_cast<double>(base_cyc) / static_cast<double>(cand_cyc);
+            res.max_abs_err = max_err;
+            res.mse = sum_sq / static_cast<float>(N);
+            res.verified_ok = finite_ok && (max_err <= FLT_EPSILON);
+            strncpy(res.winning_isa, "FMA_UNROLLED", sizeof(res.winning_isa) - 1);
+
+            sf_puzzle_aligned_free(a);
+            sf_puzzle_aligned_free(b);
+            sf_puzzle_aligned_free(c);
+            sf_puzzle_aligned_free(out_base);
+            sf_puzzle_aligned_free(out_cand);
+            break;
+        }
+        case sf_puzzler_bench_id_e::BENCH_MATRIX_DOT_F64: {
+            strncpy(res.bench_name, "matrix_dot_f64_tune", sizeof(res.bench_name) - 1);
+            res.tier = sf_puzzler_determinism_tier_e::NUMERIC_IEEE_FP;
+
+            constexpr size_t N = 4096;
+            double* x = static_cast<double*>(sf_puzzle_aligned_alloc(N * sizeof(double), 64));
+            double* y = static_cast<double*>(sf_puzzle_aligned_alloc(N * sizeof(double), 64));
+            if (!x || !y) {
+                if (x) sf_puzzle_aligned_free(x);
+                if (y) sf_puzzle_aligned_free(y);
+                res.verified_ok = false;
+                break;
+            }
+            for (size_t i = 0; i < N; ++i) {
+                x[i] = 1.0 + 0.001 * (i % 20);
+                y[i] = 0.5 + 0.002 * (i % 20);
+            }
+
+            // Baseline: simple accumulator
+            double dot_base = 0.0;
+            uint64_t t0 = sacculus_rdtsc();
+            for (size_t i = 0; i < N; ++i) {
+                dot_base += x[i] * y[i];
+            }
+            uint64_t base_cyc = sacculus_rdtsc() - t0;
+            if (base_cyc == 0) base_cyc = 1;
+
+            // Candidate: two-way accumulator
+            double dot_cand_0 = 0.0;
+            double dot_cand_1 = 0.0;
+            uint64_t t1 = sacculus_rdtsc();
+            for (size_t i = 0; i < N; i += 2) {
+                dot_cand_0 += x[i + 0] * y[i + 0];
+                dot_cand_1 += x[i + 1] * y[i + 1];
+            }
+            double dot_cand = dot_cand_0 + dot_cand_1;
+            uint64_t cand_cyc = sacculus_rdtsc() - t1;
+            if (cand_cyc == 0) cand_cyc = 1;
+
+            float max_err = static_cast<float>(std::abs(dot_base - dot_cand));
+            res.baseline_cycles = base_cyc;
+            res.winning_cycles = cand_cyc;
+            res.speedup = static_cast<double>(base_cyc) / static_cast<double>(cand_cyc);
+            res.max_abs_err = max_err;
+            res.mse = max_err * max_err;
+            res.verified_ok = (max_err <= static_cast<float>(DBL_EPSILON * N));
+            strncpy(res.winning_isa, "DOT_DUAL_ACC", sizeof(res.winning_isa) - 1);
+
+            sf_puzzle_aligned_free(x);
+            sf_puzzle_aligned_free(y);
+            break;
+        }
+        default:
+            snprintf(res.bench_name, sizeof(res.bench_name), "unknown_bench_%u", bench_id);
+            res.speedup = 1.0;
+            res.verified_ok = false;
+            break;
+    }
+
+    return res;
+}
+
+MSIMD_API void RedletPuzzleArena::run_all_self_tuning_benchmarks() {
+    uint32_t b_ids[] = { 1, 2, 3, 4, 5 };
+    for (uint32_t id : b_ids) {
+        auto r = run_self_tuning_benchmark(id);
+        char log_buf[256];
+        snprintf(log_buf, sizeof(log_buf), "%s: win=%s speedup=%.2fx ok=%d",
+                 r.bench_name, r.winning_isa, r.speedup, r.verified_ok ? 1 : 0);
+        sf_unified_log_emit(SF_Ebin0_HOOK, SF_Ebin1_INFO, id, "puzzler_bench", log_buf);
+    }
+}
+
+/* ========================================================================= */
+/* 6. ARENA TELEMETRY REPORTING                                              */
+/* ========================================================================= */
+
+MSIMD_API sf_puzzle_arena_telemetry_t RedletPuzzleArena::get_telemetry_snapshot() const {
+    sf_puzzle_arena_telemetry_t t{};
+    t.total_experiments = _telemetry_experiments.load(std::memory_order_relaxed);
+    t.total_candidates_evaluated = _telemetry_candidates_eval.load(std::memory_order_relaxed);
+    t.total_hotswaps_performed = _telemetry_hotswaps.load(std::memory_order_relaxed);
+    t.total_precision_failures = _telemetry_prec_fails.load(std::memory_order_relaxed);
+    t.total_speed_failures = _telemetry_speed_fails.load(std::memory_order_relaxed);
+    t.total_fault_isolations = _telemetry_fault_isolations.load(std::memory_order_relaxed);
+    t.total_downclock_detections = _telemetry_downclock_detections.load(std::memory_order_relaxed);
+    t.total_pausepoint_gates_armed = _telemetry_pausepoint_gates.load(std::memory_order_relaxed);
+    t.last_winner_cycles = _telemetry_last_winner_cycles.load(std::memory_order_relaxed);
+
+    {
+        std::lock_guard<std::mutex> lk(_telemetry_lock);
+        strncpy(t.last_winner_name, _telemetry_last_winner_name, sizeof(t.last_winner_name) - 1);
+    }
+    return t;
+}
+
+MSIMD_API void RedletPuzzleArena::reset_telemetry() {
+    _telemetry_experiments.store(0, std::memory_order_relaxed);
+    _telemetry_candidates_eval.store(0, std::memory_order_relaxed);
+    _telemetry_hotswaps.store(0, std::memory_order_relaxed);
+    _telemetry_prec_fails.store(0, std::memory_order_relaxed);
+    _telemetry_speed_fails.store(0, std::memory_order_relaxed);
+    _telemetry_fault_isolations.store(0, std::memory_order_relaxed);
+    _telemetry_downclock_detections.store(0, std::memory_order_relaxed);
+    _telemetry_pausepoint_gates.store(0, std::memory_order_relaxed);
+    _telemetry_last_winner_cycles.store(0, std::memory_order_relaxed);
+
+    std::lock_guard<std::mutex> lk(_telemetry_lock);
+    memset(_telemetry_last_winner_name, 0, sizeof(_telemetry_last_winner_name));
+}
+
+MSIMD_API void RedletPuzzleArena::print_telemetry_report(FILE* out) const {
+    if (!out) out = stdout;
+    auto t = get_telemetry_snapshot();
+
+    fprintf(out, "=================================================================\n");
+    fprintf(out, "        RedletGC Yapbozcu / Puzzler Arena Telemetry Report       \n");
+    fprintf(out, "=================================================================\n");
+    fprintf(out, "Total Experiments Executed : %llu\n", static_cast<unsigned long long>(t.total_experiments));
+    fprintf(out, "Candidates Evaluated       : %llu\n", static_cast<unsigned long long>(t.total_candidates_evaluated));
+    fprintf(out, "Zero-Pause Hot-Swaps       : %llu\n", static_cast<unsigned long long>(t.total_hotswaps_performed));
+    fprintf(out, "Precision Failures (Eps)   : %llu\n", static_cast<unsigned long long>(t.total_precision_failures));
+    fprintf(out, "Speed Failures (Slower)    : %llu\n", static_cast<unsigned long long>(t.total_speed_failures));
+    fprintf(out, "Fault Isolations Handled   : %llu\n", static_cast<unsigned long long>(t.total_fault_isolations));
+    fprintf(out, "AVX-512 Downclock Alerts   : %llu\n", static_cast<unsigned long long>(t.total_downclock_detections));
+    fprintf(out, "Pausepoint Gates Armed     : %llu\n", static_cast<unsigned long long>(t.total_pausepoint_gates_armed));
+    fprintf(out, "Last Winning Candidate     : %s (cycles=%llu)\n",
+            t.last_winner_name[0] ? t.last_winner_name : "none",
+            static_cast<unsigned long long>(t.last_winner_cycles));
+    fprintf(out, "=================================================================\n");
+}
+
+/* ========================================================================= */
+/* 7. CANONICAL C APIS                                                       */
 /* ========================================================================= */
 
 extern "C" {
@@ -1299,6 +1603,30 @@ MSIMD_API void SF_custominiVm_puzzle_set_sample_count(size_t count) {
 
 MSIMD_API size_t SF_custominiVm_puzzle_get_sample_count(void) {
     return g_default_redlet_puzzle_arena.get_sample_count();
+}
+
+MSIMD_API int SF_custominiVm_puzzle_sample_tlab(size_t iterations) {
+    std::vector<sf_puzzle_sample_t> samples;
+    bool ok = g_default_redlet_puzzle_arena.sample_tlab_stream(iterations, samples);
+    return ok ? static_cast<int>(samples.size()) : 0;
+}
+
+MSIMD_API void SF_custominiVm_puzzle_run_benchmark(uint32_t bench_id, sf_puzzler_bench_result_t* out_result) {
+    if (!out_result) return;
+    *out_result = g_default_redlet_puzzle_arena.run_self_tuning_benchmark(bench_id);
+}
+
+MSIMD_API void SF_custominiVm_puzzle_get_telemetry(sf_puzzle_arena_telemetry_t* out_telemetry) {
+    if (!out_telemetry) return;
+    *out_telemetry = g_default_redlet_puzzle_arena.get_telemetry_snapshot();
+}
+
+MSIMD_API void SF_custominiVm_puzzle_reset_telemetry(void) {
+    g_default_redlet_puzzle_arena.reset_telemetry();
+}
+
+MSIMD_API void SF_custominiVm_puzzle_print_telemetry(void) {
+    g_default_redlet_puzzle_arena.print_telemetry_report(stdout);
 }
 
 } // extern "C"

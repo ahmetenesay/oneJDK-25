@@ -24,6 +24,7 @@
 
 #include "gc/redlet/redletSelfHeal.hpp"
 #include "gc/redlet/redletGearkit.hpp"
+#include "gc/redlet/self_advance/redletSelfAdvanceOrchestrator.hpp"
 #ifndef REDLET_STANDALONE_BUILD
 #include "logging/log.hpp"
 #else
@@ -85,6 +86,7 @@ bool sacculus_self_heal_engine_t::heal_header(sfLiveHeader* obj) {
             "[RedletGC Self-Heal] Repaired heap corruption at %p (brooks_severed=%d, magic_ok=1)",
             static_cast<void*>(obj), brooks_severed ? 1 : 0);
         sf_unified_log_emit(SF_Ebin0_HEAL_HEADER_REPAIRED, SF_Ebin1_ERROR, obj->function_id, "heal_live_header", msg);
+        check_autonomous_rollback_trigger();
     }
     return repaired;
 }
@@ -107,6 +109,116 @@ size_t sacculus_self_heal_engine_t::scan_and_heal_motherline(RedletMotherline& m
     return healed;
 }
 
+static std::atomic<bool> g_autonomous_rollback_latched{ false };
+
+bool sacculus_self_heal_engine_t::rebuild_emptybox_chain(SF_custominiVm_emptybox_header_t* head, size_t max_scan) {
+    if (!head) return false;
+    bool modified = false;
+
+    constexpr size_t VISITED_CAP = 1024;
+    size_t limit = (max_scan > 0 && max_scan < VISITED_CAP) ? max_scan : VISITED_CAP;
+    const void* visited[VISITED_CAP]{ nullptr };
+
+    auto* cur = head;
+    SF_custominiVm_emptybox_header_t* prev = nullptr;
+    size_t scanned = 0;
+
+    while (cur && scanned < limit) {
+        visited[scanned] = cur;
+
+        // 1. Verify and repair magic
+        if (cur->sfMN != SF_EMPTYBOX_MAGIC) {
+            cur->sfMN = SF_EMPTYBOX_MAGIC;
+            header_magics_repaired.fetch_add(1, std::memory_order_relaxed);
+            modified = true;
+        }
+
+        // 2. Break cyclic or dangling forwarding address
+        void* fwd = cur->forwarding_address.load(std::memory_order_relaxed);
+        if (fwd != nullptr) {
+            uintptr_t addr = reinterpret_cast<uintptr_t>(fwd);
+            if (fwd == static_cast<void*>(cur) || addr < 0x10000 || addr == static_cast<uintptr_t>(-1)) {
+                cur->forwarding_address.store(nullptr, std::memory_order_release);
+                brooks_cycles_broken.fetch_add(1, std::memory_order_relaxed);
+                modified = true;
+            }
+        }
+
+        // 3. Fix prev pointer
+        if (cur->prev != prev) {
+            cur->prev = prev;
+            modified = true;
+        }
+
+        // 4. Detect cycle in next pointer (self-loop or loop back to any visited node)
+        if (cur->next == cur) {
+            cur->next = nullptr;
+            emptybox_chains_rebuilt.fetch_add(1, std::memory_order_relaxed);
+            modified = true;
+            break;
+        }
+
+        bool cycle_detected = false;
+        if (cur->next != nullptr) {
+            for (size_t v = 0; v <= scanned; ++v) {
+                if (cur->next == visited[v]) {
+                    cycle_detected = true;
+                    break;
+                }
+            }
+        }
+
+        if (cycle_detected) {
+            cur->next = nullptr;
+            emptybox_chains_rebuilt.fetch_add(1, std::memory_order_relaxed);
+            modified = true;
+            break;
+        }
+
+        prev = cur;
+        cur = cur->next;
+        scanned++;
+    }
+
+    if (scanned >= limit && cur && cur->next) {
+        cur->next = nullptr;
+        emptybox_chains_rebuilt.fetch_add(1, std::memory_order_relaxed);
+        modified = true;
+    }
+
+    if (modified) {
+        check_autonomous_rollback_trigger();
+    }
+    return modified;
+}
+
+bool sacculus_self_heal_engine_t::shield_bitcode_exception(void* code_addr, uint32_t fault_code) {
+    bitcode_exceptions_shielded.fetch_add(1, std::memory_order_relaxed);
+    code_errors_captured.fetch_add(1, std::memory_order_relaxed);
+
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "[Redlet Self-Heal] Shielded bitcode execution fault (code=0x%X at %p), applied safe fallback",
+             fault_code, code_addr);
+    sf_unified_log_emit(SF_Ebin0_ERROR, SF_Ebin1_ERROR, 0, "shield_bitcode_fault", msg);
+
+    check_autonomous_rollback_trigger();
+    return true;
+}
+
+void sacculus_self_heal_engine_t::check_autonomous_rollback_trigger() {
+    uint64_t total_faults = heap_corruptions_healed.load(std::memory_order_relaxed) +
+                            brooks_cycles_broken.load(std::memory_order_relaxed) +
+                            bitcode_exceptions_shielded.load(std::memory_order_relaxed);
+
+    if (total_faults >= 20) {
+        bool expected = false;
+        if (g_autonomous_rollback_latched.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            SF_self_advance_rollback("Self-Heal: Critical fault threshold exceeded (>=20 faults)");
+        }
+    }
+}
+
 SF_custominiVm_self_heal_stats_t sacculus_self_heal_engine_t::query_stats() const {
     SF_custominiVm_self_heal_stats_t s{};
     s.heap_corruptions_healed = heap_corruptions_healed.load(std::memory_order_relaxed);
@@ -125,6 +237,7 @@ void sacculus_self_heal_engine_t::reset() {
     emptybox_chains_rebuilt.store(0, std::memory_order_relaxed);
     bitcode_exceptions_shielded.store(0, std::memory_order_relaxed);
     code_errors_captured.store(0, std::memory_order_relaxed);
+    g_autonomous_rollback_latched.store(false, std::memory_order_release);
 }
 
 /* ========================================================================= */
@@ -148,4 +261,14 @@ MSIMD_API void SF_custominiVm_diagnostic_corrupt_tensor(void* tensor_ptr, uint8_
     }
     // Automatically trigger self healing check to record healed stats
     g_sf_self_heal.heal_header(hdr);
+}
+
+MSIMD_API int SF_custominiVm_self_heal_rebuild_emptyboxes(void* head_ptr, size_t max_scan) {
+    if (!head_ptr) return 0;
+    return g_sf_self_heal.rebuild_emptybox_chain(
+        static_cast<SF_custominiVm_emptybox_header_t*>(head_ptr), max_scan) ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_self_heal_shield_bitcode(void* code_addr, uint32_t fault_code) {
+    return g_sf_self_heal.shield_bitcode_exception(code_addr, fault_code) ? 1 : 0;
 }

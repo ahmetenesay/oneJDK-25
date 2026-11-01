@@ -26,6 +26,12 @@
 #include <cstring>
 #include <cstdio>
 #include <chrono>
+#include <cmath>
+#include <algorithm>
+
+#if defined(_M_X64) || defined(__x86_64__)
+#include <immintrin.h>
+#endif
 
 #ifndef _WIN32
 #include <strings.h>
@@ -35,6 +41,10 @@
 #if (defined(_M_X64) || defined(__x86_64__)) && !defined(_MSC_VER)
 #include <cpuid.h>
 #endif
+
+/* Global ISA Dispatch Table and Pool Instances */
+sacculus_dispatch_table_t g_sf_dispatch_table;
+sacculus_instance_pool_t  g_sf_instance_pool;
 
 namespace {
 
@@ -160,6 +170,69 @@ sacculus_kernel_fn_t sacculus_dispatch_table_t::read_fn_seqlock(uint32_t fn_id, 
     }
     if (out_best_cycles) *out_best_cycles = best;
     return f;
+}
+
+void sacculus_dispatch_table_t::init_default_kernels() noexcept {
+    static std::atomic<bool> initialized{ false };
+    if (initialized.exchange(true, std::memory_order_acq_rel)) return;
+
+    // Register FP32 Vector Kernels
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_F32, sf_kernel_vec_add_f32);
+    register_fn((SF_VEC_OP_SUB << 8) | SF_DTYPE_F32, sf_kernel_vec_sub_f32);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_F32, sf_kernel_vec_mul_f32);
+    register_fn((SF_VEC_OP_FMA << 8) | SF_DTYPE_F32, sf_kernel_vec_fma_f32);
+    register_fn((SF_VEC_OP_DOT << 8) | SF_DTYPE_F32, sf_kernel_vec_dot_f32);
+    register_fn((SF_VEC_OP_MIN << 8) | SF_DTYPE_F32, sf_kernel_vec_min_f32);
+    register_fn((SF_VEC_OP_MAX << 8) | SF_DTYPE_F32, sf_kernel_vec_max_f32);
+
+    // Register FP64 Vector Kernels
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_F64, sf_kernel_vec_add_f64);
+    register_fn((SF_VEC_OP_SUB << 8) | SF_DTYPE_F64, sf_kernel_vec_sub_f64);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_F64, sf_kernel_vec_mul_f64);
+    register_fn((SF_VEC_OP_FMA << 8) | SF_DTYPE_F64, sf_kernel_vec_fma_f64);
+    register_fn((SF_VEC_OP_DOT << 8) | SF_DTYPE_F64, sf_kernel_vec_dot_f64);
+    register_fn((SF_VEC_OP_MIN << 8) | SF_DTYPE_F64, sf_kernel_vec_min_f64);
+    register_fn((SF_VEC_OP_MAX << 8) | SF_DTYPE_F64, sf_kernel_vec_max_f64);
+
+    // Register INT32 Vector Kernels
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_I32, sf_kernel_vec_add_i32);
+    register_fn((SF_VEC_OP_SUB << 8) | SF_DTYPE_I32, sf_kernel_vec_sub_i32);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_I32, sf_kernel_vec_mul_i32);
+    register_fn((SF_VEC_OP_AND << 8) | SF_DTYPE_I32, sf_kernel_vec_and_i32);
+    register_fn((SF_VEC_OP_OR  << 8) | SF_DTYPE_I32, sf_kernel_vec_or_i32);
+    register_fn((SF_VEC_OP_XOR << 8) | SF_DTYPE_I32, sf_kernel_vec_xor_i32);
+
+    // Register INT64 Vector Kernels
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_I64, sf_kernel_vec_add_i64);
+    register_fn((SF_VEC_OP_SUB << 8) | SF_DTYPE_I64, sf_kernel_vec_sub_i64);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_I64, sf_kernel_vec_mul_i64);
+    register_fn((SF_VEC_OP_AND << 8) | SF_DTYPE_I64, sf_kernel_vec_and_i64);
+    register_fn((SF_VEC_OP_OR  << 8) | SF_DTYPE_I64, sf_kernel_vec_or_i64);
+    register_fn((SF_VEC_OP_XOR << 8) | SF_DTYPE_I64, sf_kernel_vec_xor_i64);
+
+    // Register Multi-Limb Emulation Kernels
+    register_fn((SF_VEC_OP_MULTI_LIMB_ADD << 8) | SF_DTYPE_F128, sf_kernel_emu_double_double_add);
+    register_fn((SF_VEC_OP_MULTI_LIMB_MUL << 8) | SF_DTYPE_F128, sf_kernel_emu_double_double_mul);
+    register_fn((SF_VEC_OP_MULTI_LIMB_ADD << 8) | SF_DTYPE_F256, sf_kernel_emu_quad_double_add);
+    register_fn((SF_VEC_OP_MULTI_LIMB_MUL << 8) | SF_DTYPE_F256, sf_kernel_emu_quad_double_mul);
+    register_fn((SF_VEC_OP_MULTI_LIMB_ADD << 8) | SF_DTYPE_I128, sf_kernel_emu_int128_add);
+    register_fn((SF_VEC_OP_MULTI_LIMB_MUL << 8) | SF_DTYPE_I128, sf_kernel_emu_int128_mul);
+    register_fn((SF_VEC_OP_MULTI_LIMB_ADD << 8) | SF_DTYPE_I256, sf_kernel_emu_int256_add);
+    register_fn((SF_VEC_OP_MULTI_LIMB_MUL << 8) | SF_DTYPE_I256, sf_kernel_emu_int256_mul);
+
+    // Aliases for generic arithmetic operations on wide types
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_F128, sf_kernel_emu_double_double_add);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_F128, sf_kernel_emu_double_double_mul);
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_F256, sf_kernel_emu_quad_double_add);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_F256, sf_kernel_emu_quad_double_mul);
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_I128, sf_kernel_emu_int128_add);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_I128, sf_kernel_emu_int128_mul);
+    register_fn((SF_VEC_OP_ADD << 8) | SF_DTYPE_I256, sf_kernel_emu_int256_add);
+    register_fn((SF_VEC_OP_MUL << 8) | SF_DTYPE_I256, sf_kernel_emu_int256_mul);
+
+    // Register GC Fast-Path Kernels
+    register_fn((SF_VEC_OP_CARD_TABLE_SCAN << 8) | SF_DTYPE_U8, sf_kernel_gc_card_table_scan);
+    register_fn((SF_VEC_OP_MEMZERO_FAST << 8) | SF_DTYPE_U8,    sf_kernel_gc_memzero);
 }
 
 /* ========================================================================= */
@@ -409,7 +482,814 @@ void sf_fallback_pool_t::wait_all() {
 }
 
 /* ========================================================================= */
-/* 4. NESTED BATCH/GROUP SCOPES, BMI/MORTON, RDTSC & MICRO-ARCH HINTERS      */
+/* 4. VECTOR ALU KERNELS (Built-in Hardware-Accelerated & Emulated)          */
+/* ========================================================================= */
+
+// Helper to extract element count from output tensor
+static inline size_t sf_tensor_element_count(const SF_custominiVm_tensor_t* t, size_t elem_size) {
+    if (!t) return 0;
+    if (t->byte_size > 0 && elem_size > 0) return t->byte_size / elem_size;
+    if (t->shape[0] > 0) return static_cast<size_t>(t->shape[0]);
+    return 0;
+}
+
+// ── FP32 Kernels ──
+
+void sf_kernel_vec_add_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const float* a = static_cast<const float*>(in[0].data);
+    const float* b = static_cast<const float*>(in[1].data);
+    float* dst     = static_cast<float*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(float));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__)
+    for (; i + 8 <= count; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+        _mm256_storeu_ps(dst + i, _mm256_add_ps(va, vb));
+    }
+#endif
+    for (; i < count; ++i) dst[i] = a[i] + b[i];
+}
+
+void sf_kernel_vec_sub_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const float* a = static_cast<const float*>(in[0].data);
+    const float* b = static_cast<const float*>(in[1].data);
+    float* dst     = static_cast<float*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(float));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__)
+    for (; i + 8 <= count; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+        _mm256_storeu_ps(dst + i, _mm256_sub_ps(va, vb));
+    }
+#endif
+    for (; i < count; ++i) dst[i] = a[i] - b[i];
+}
+
+void sf_kernel_vec_mul_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const float* a = static_cast<const float*>(in[0].data);
+    const float* b = static_cast<const float*>(in[1].data);
+    float* dst     = static_cast<float*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(float));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__)
+    for (; i + 8 <= count; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+        _mm256_storeu_ps(dst + i, _mm256_mul_ps(va, vb));
+    }
+#endif
+    for (; i < count; ++i) dst[i] = a[i] * b[i];
+}
+
+void sf_kernel_vec_fma_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const float* a = static_cast<const float*>(in[0].data);
+    const float* b = static_cast<const float*>(in[1].data);
+    const float* c = (nin >= 3 && in[2].data) ? static_cast<const float*>(in[2].data) : nullptr;
+    float* dst     = static_cast<float*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(float));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__) && defined(__FMA__)
+    for (; i + 8 <= count; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+        __m256 vc = c ? _mm256_loadu_ps(c + i) : _mm256_loadu_ps(dst + i);
+        _mm256_storeu_ps(dst + i, _mm256_fmadd_ps(va, vb, vc));
+    }
+#endif
+    for (; i < count; ++i) {
+        float addend = c ? c[i] : dst[i];
+        dst[i] = std::fma(a[i], b[i], addend);
+    }
+}
+
+void sf_kernel_vec_dot_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const float* a = static_cast<const float*>(in[0].data);
+    const float* b = static_cast<const float*>(in[1].data);
+    float* dst     = static_cast<float*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&in[0], sizeof(float));
+    float sum = 0.0f;
+    for (size_t i = 0; i < count; ++i) sum += a[i] * b[i];
+    dst[0] = sum;
+}
+
+void sf_kernel_vec_min_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const float* a = static_cast<const float*>(in[0].data);
+    const float* b = static_cast<const float*>(in[1].data);
+    float* dst     = static_cast<float*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(float));
+    for (size_t i = 0; i < count; ++i) dst[i] = std::min(a[i], b[i]);
+}
+
+void sf_kernel_vec_max_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const float* a = static_cast<const float*>(in[0].data);
+    const float* b = static_cast<const float*>(in[1].data);
+    float* dst     = static_cast<float*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(float));
+    for (size_t i = 0; i < count; ++i) dst[i] = std::max(a[i], b[i]);
+}
+
+// ── FP64 Kernels ──
+
+void sf_kernel_vec_add_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(double));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__)
+    for (; i + 4 <= count; i += 4) {
+        __m256d va = _mm256_loadu_pd(a + i);
+        __m256d vb = _mm256_loadu_pd(b + i);
+        _mm256_storeu_pd(dst + i, _mm256_add_pd(va, vb));
+    }
+#endif
+    for (; i < count; ++i) dst[i] = a[i] + b[i];
+}
+
+void sf_kernel_vec_sub_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(double));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__)
+    for (; i + 4 <= count; i += 4) {
+        __m256d va = _mm256_loadu_pd(a + i);
+        __m256d vb = _mm256_loadu_pd(b + i);
+        _mm256_storeu_pd(dst + i, _mm256_sub_pd(va, vb));
+    }
+#endif
+    for (; i < count; ++i) dst[i] = a[i] - b[i];
+}
+
+void sf_kernel_vec_mul_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(double));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__)
+    for (; i + 4 <= count; i += 4) {
+        __m256d va = _mm256_loadu_pd(a + i);
+        __m256d vb = _mm256_loadu_pd(b + i);
+        _mm256_storeu_pd(dst + i, _mm256_mul_pd(va, vb));
+    }
+#endif
+    for (; i < count; ++i) dst[i] = a[i] * b[i];
+}
+
+void sf_kernel_vec_fma_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    const double* c = (nin >= 3 && in[2].data) ? static_cast<const double*>(in[2].data) : nullptr;
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(double));
+    size_t i = 0;
+#if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__) && defined(__FMA__)
+    for (; i + 4 <= count; i += 4) {
+        __m256d va = _mm256_loadu_pd(a + i);
+        __m256d vb = _mm256_loadu_pd(b + i);
+        __m256d vc = c ? _mm256_loadu_pd(c + i) : _mm256_loadu_pd(dst + i);
+        _mm256_storeu_pd(dst + i, _mm256_fmadd_pd(va, vb, vc));
+    }
+#endif
+    for (; i < count; ++i) {
+        double addend = c ? c[i] : dst[i];
+        dst[i] = std::fma(a[i], b[i], addend);
+    }
+}
+
+void sf_kernel_vec_dot_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&in[0], sizeof(double));
+    double sum = 0.0;
+    for (size_t i = 0; i < count; ++i) sum += a[i] * b[i];
+    dst[0] = sum;
+}
+
+void sf_kernel_vec_min_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(double));
+    for (size_t i = 0; i < count; ++i) dst[i] = std::min(a[i], b[i]);
+}
+
+void sf_kernel_vec_max_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(double));
+    for (size_t i = 0; i < count; ++i) dst[i] = std::max(a[i], b[i]);
+}
+
+// ── INT32 Kernels ──
+
+void sf_kernel_vec_add_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int32_t* a = static_cast<const int32_t*>(in[0].data);
+    const int32_t* b = static_cast<const int32_t*>(in[1].data);
+    int32_t* dst     = static_cast<int32_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int32_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] + b[i];
+}
+
+void sf_kernel_vec_sub_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int32_t* a = static_cast<const int32_t*>(in[0].data);
+    const int32_t* b = static_cast<const int32_t*>(in[1].data);
+    int32_t* dst     = static_cast<int32_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int32_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] - b[i];
+}
+
+void sf_kernel_vec_mul_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int32_t* a = static_cast<const int32_t*>(in[0].data);
+    const int32_t* b = static_cast<const int32_t*>(in[1].data);
+    int32_t* dst     = static_cast<int32_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int32_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] * b[i];
+}
+
+void sf_kernel_vec_and_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int32_t* a = static_cast<const int32_t*>(in[0].data);
+    const int32_t* b = static_cast<const int32_t*>(in[1].data);
+    int32_t* dst     = static_cast<int32_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int32_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] & b[i];
+}
+
+void sf_kernel_vec_or_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int32_t* a = static_cast<const int32_t*>(in[0].data);
+    const int32_t* b = static_cast<const int32_t*>(in[1].data);
+    int32_t* dst     = static_cast<int32_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int32_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] | b[i];
+}
+
+void sf_kernel_vec_xor_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int32_t* a = static_cast<const int32_t*>(in[0].data);
+    const int32_t* b = static_cast<const int32_t*>(in[1].data);
+    int32_t* dst     = static_cast<int32_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int32_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] ^ b[i];
+}
+
+// ── INT64 Kernels ──
+
+void sf_kernel_vec_add_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int64_t* a = static_cast<const int64_t*>(in[0].data);
+    const int64_t* b = static_cast<const int64_t*>(in[1].data);
+    int64_t* dst     = static_cast<int64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int64_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] + b[i];
+}
+
+void sf_kernel_vec_sub_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int64_t* a = static_cast<const int64_t*>(in[0].data);
+    const int64_t* b = static_cast<const int64_t*>(in[1].data);
+    int64_t* dst     = static_cast<int64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int64_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] - b[i];
+}
+
+void sf_kernel_vec_mul_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int64_t* a = static_cast<const int64_t*>(in[0].data);
+    const int64_t* b = static_cast<const int64_t*>(in[1].data);
+    int64_t* dst     = static_cast<int64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int64_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] * b[i];
+}
+
+void sf_kernel_vec_and_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int64_t* a = static_cast<const int64_t*>(in[0].data);
+    const int64_t* b = static_cast<const int64_t*>(in[1].data);
+    int64_t* dst     = static_cast<int64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int64_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] & b[i];
+}
+
+void sf_kernel_vec_or_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int64_t* a = static_cast<const int64_t*>(in[0].data);
+    const int64_t* b = static_cast<const int64_t*>(in[1].data);
+    int64_t* dst     = static_cast<int64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int64_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] | b[i];
+}
+
+void sf_kernel_vec_xor_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const int64_t* a = static_cast<const int64_t*>(in[0].data);
+    const int64_t* b = static_cast<const int64_t*>(in[1].data);
+    int64_t* dst     = static_cast<int64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t count = sf_tensor_element_count(&out[0], sizeof(int64_t));
+    for (size_t i = 0; i < count; ++i) dst[i] = a[i] ^ b[i];
+}
+
+// ── Multi-Limb Emulated Kernels (Section 14 & 15) ──
+
+struct sf_double_double_t {
+    double hi{ 0.0 };
+    double lo{ 0.0 };
+};
+
+static inline sf_double_double_t sf_two_sum(double a, double b) noexcept {
+    double s = a + b;
+    double v = s - a;
+    double e = (a - (s - v)) + (b - v);
+    return { s, e };
+}
+
+static inline sf_double_double_t sf_quick_two_sum(double a, double b) noexcept {
+    double s = a + b;
+    double e = b - (s - a);
+    return { s, e };
+}
+
+static inline sf_double_double_t sf_two_prod(double a, double b) noexcept {
+    double p = a * b;
+    double e = std::fma(a, b, -p);
+    return { p, e };
+}
+
+static inline sf_double_double_t sf_dd_add(sf_double_double_t a, sf_double_double_t b) noexcept {
+    sf_double_double_t s = sf_two_sum(a.hi, b.hi);
+    sf_double_double_t t = sf_two_sum(a.lo, b.lo);
+    s.lo += t.hi;
+    s = sf_quick_two_sum(s.hi, s.lo);
+    s.lo += t.lo;
+    s = sf_quick_two_sum(s.hi, s.lo);
+    return s;
+}
+
+static inline sf_double_double_t sf_dd_mul(sf_double_double_t a, sf_double_double_t b) noexcept {
+    sf_double_double_t p = sf_two_prod(a.hi, b.hi);
+    p.lo += a.hi * b.lo + a.lo * b.hi;
+    return sf_quick_two_sum(p.hi, p.lo);
+}
+
+static inline uint64_t sf_mul64(uint64_t u, uint64_t v, uint64_t* hi) noexcept {
+#if defined(_MSC_VER) && defined(_M_X64)
+    return _umul128(u, v, hi);
+#else
+    unsigned __int128 prod = static_cast<unsigned __int128>(u) * v;
+    *hi = static_cast<uint64_t>(prod >> 64);
+    return static_cast<uint64_t>(prod);
+#endif
+}
+
+void sf_kernel_emu_double_double_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_pairs = sf_tensor_element_count(&out[0], sizeof(double)) / 2;
+    for (size_t i = 0; i < num_pairs; ++i) {
+        sf_double_double_t da = { a[2 * i + 0], a[2 * i + 1] };
+        sf_double_double_t db = { b[2 * i + 0], b[2 * i + 1] };
+        sf_double_double_t res = sf_dd_add(da, db);
+        dst[2 * i + 0] = res.hi;
+        dst[2 * i + 1] = res.lo;
+    }
+}
+
+void sf_kernel_emu_double_double_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_pairs = sf_tensor_element_count(&out[0], sizeof(double)) / 2;
+    for (size_t i = 0; i < num_pairs; ++i) {
+        sf_double_double_t da = { a[2 * i + 0], a[2 * i + 1] };
+        sf_double_double_t db = { b[2 * i + 0], b[2 * i + 1] };
+        sf_double_double_t res = sf_dd_mul(da, db);
+        dst[2 * i + 0] = res.hi;
+        dst[2 * i + 1] = res.lo;
+    }
+}
+
+void sf_kernel_emu_quad_double_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_quads = sf_tensor_element_count(&out[0], sizeof(double)) / 4;
+    for (size_t q = 0; q < num_quads; ++q) {
+        sf_double_double_t a_hi = { a[4 * q + 0], a[4 * q + 1] };
+        sf_double_double_t a_lo = { a[4 * q + 2], a[4 * q + 3] };
+        sf_double_double_t b_hi = { b[4 * q + 0], b[4 * q + 1] };
+        sf_double_double_t b_lo = { b[4 * q + 2], b[4 * q + 3] };
+
+        sf_double_double_t s_hi = sf_dd_add(a_hi, b_hi);
+        sf_double_double_t s_lo = sf_dd_add(a_lo, b_lo);
+
+        sf_double_double_t mid = sf_two_sum(s_hi.lo, s_lo.hi);
+        sf_double_double_t r01 = sf_quick_two_sum(s_hi.hi, mid.hi);
+        sf_double_double_t r23 = sf_two_sum(mid.lo, s_lo.lo);
+        sf_double_double_t final_mid = sf_quick_two_sum(r01.lo, r23.hi);
+
+        dst[4 * q + 0] = r01.hi;
+        dst[4 * q + 1] = final_mid.hi;
+        dst[4 * q + 2] = final_mid.lo;
+        dst[4 * q + 3] = r23.lo;
+    }
+}
+
+void sf_kernel_emu_quad_double_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const double* a = static_cast<const double*>(in[0].data);
+    const double* b = static_cast<const double*>(in[1].data);
+    double* dst     = static_cast<double*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_quads = sf_tensor_element_count(&out[0], sizeof(double)) / 4;
+    for (size_t q = 0; q < num_quads; ++q) {
+        sf_double_double_t a_hi = { a[4 * q + 0], a[4 * q + 1] };
+        sf_double_double_t a_lo = { a[4 * q + 2], a[4 * q + 3] };
+        sf_double_double_t b_hi = { b[4 * q + 0], b[4 * q + 1] };
+        sf_double_double_t b_lo = { b[4 * q + 2], b[4 * q + 3] };
+
+        sf_double_double_t p0 = sf_dd_mul(a_hi, b_hi);
+        sf_double_double_t p1 = sf_dd_mul(a_hi, b_lo);
+        sf_double_double_t p2 = sf_dd_mul(a_lo, b_hi);
+
+        sf_double_double_t cross = sf_dd_add(p1, p2);
+        sf_double_double_t mid = sf_two_sum(p0.lo, cross.hi);
+        sf_double_double_t r01 = sf_quick_two_sum(p0.hi, mid.hi);
+        sf_double_double_t r23 = sf_two_sum(mid.lo, cross.lo);
+        sf_double_double_t final_mid = sf_quick_two_sum(r01.lo, r23.hi);
+
+        dst[4 * q + 0] = r01.hi;
+        dst[4 * q + 1] = final_mid.hi;
+        dst[4 * q + 2] = final_mid.lo;
+        dst[4 * q + 3] = r23.lo;
+    }
+}
+
+void sf_kernel_emu_int128_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const uint64_t* a = static_cast<const uint64_t*>(in[0].data);
+    const uint64_t* b = static_cast<const uint64_t*>(in[1].data);
+    uint64_t* dst     = static_cast<uint64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_pairs = sf_tensor_element_count(&out[0], sizeof(uint64_t)) / 2;
+    for (size_t i = 0; i < num_pairs; ++i) {
+        uint64_t a_lo = a[2 * i + 0];
+        uint64_t a_hi = a[2 * i + 1];
+        uint64_t b_lo = b[2 * i + 0];
+        uint64_t b_hi = b[2 * i + 1];
+
+        uint64_t r_lo = a_lo + b_lo;
+        uint64_t carry = (r_lo < a_lo) ? 1ULL : 0ULL;
+        uint64_t r_hi = a_hi + b_hi + carry;
+
+        dst[2 * i + 0] = r_lo;
+        dst[2 * i + 1] = r_hi;
+    }
+}
+
+void sf_kernel_emu_int128_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const uint64_t* a = static_cast<const uint64_t*>(in[0].data);
+    const uint64_t* b = static_cast<const uint64_t*>(in[1].data);
+    uint64_t* dst     = static_cast<uint64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_pairs = sf_tensor_element_count(&out[0], sizeof(uint64_t)) / 2;
+    for (size_t i = 0; i < num_pairs; ++i) {
+        uint64_t a_lo = a[2 * i + 0];
+        uint64_t a_hi = a[2 * i + 1];
+        uint64_t b_lo = b[2 * i + 0];
+        uint64_t b_hi = b[2 * i + 1];
+
+        uint64_t r_hi = 0;
+        uint64_t r_lo = sf_mul64(a_lo, b_lo, &r_hi);
+        r_hi += (a_lo * b_hi + a_hi * b_lo);
+
+        dst[2 * i + 0] = r_lo;
+        dst[2 * i + 1] = r_hi;
+    }
+}
+
+void sf_kernel_emu_int256_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const uint64_t* a = static_cast<const uint64_t*>(in[0].data);
+    const uint64_t* b = static_cast<const uint64_t*>(in[1].data);
+    uint64_t* dst     = static_cast<uint64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_quads = sf_tensor_element_count(&out[0], sizeof(uint64_t)) / 4;
+    for (size_t q = 0; q < num_quads; ++q) {
+        uint64_t carry = 0;
+        for (int k = 0; k < 4; ++k) {
+            uint64_t ak = a[4 * q + k];
+            uint64_t bk = b[4 * q + k];
+            uint64_t sum = ak + bk + carry;
+            carry = (sum < ak || (carry && sum == ak)) ? 1ULL : 0ULL;
+            dst[4 * q + k] = sum;
+        }
+    }
+}
+
+void sf_kernel_emu_int256_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 2 || nout < 1) return;
+    const uint64_t* a = static_cast<const uint64_t*>(in[0].data);
+    const uint64_t* b = static_cast<const uint64_t*>(in[1].data);
+    uint64_t* dst     = static_cast<uint64_t*>(out[0].data);
+    if (!a || !b || !dst) return;
+    size_t num_quads = sf_tensor_element_count(&out[0], sizeof(uint64_t)) / 4;
+    for (size_t q = 0; q < num_quads; ++q) {
+        const uint64_t* aq = a + 4 * q;
+        const uint64_t* bq = b + 4 * q;
+        uint64_t res[4] = { 0, 0, 0, 0 };
+
+        for (int i = 0; i < 4; ++i) {
+            uint64_t carry = 0;
+            for (int j = 0; i + j < 4; ++j) {
+                uint64_t hi = 0;
+                uint64_t lo = sf_mul64(aq[i], bq[j], &hi);
+
+                uint64_t s1 = res[i + j] + lo;
+                uint64_t c1 = (s1 < res[i + j]) ? 1ULL : 0ULL;
+
+                uint64_t s2 = s1 + carry;
+                uint64_t c2 = (s2 < s1) ? 1ULL : 0ULL;
+
+                res[i + j] = s2;
+                carry = hi + c1 + c2;
+            }
+        }
+
+        dst[4 * q + 0] = res[0];
+        dst[4 * q + 1] = res[1];
+        dst[4 * q + 2] = res[2];
+        dst[4 * q + 3] = res[3];
+    }
+}
+
+// ── GC Internal Fast-Path Kernels ──
+
+void sf_kernel_gc_card_table_scan(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    if (!in || !out || nin < 1 || nout < 1) return;
+    const uint8_t* cards = static_cast<const uint8_t*>(in[0].data);
+    uint32_t* dirty_indices = static_cast<uint32_t*>(out[0].data);
+    if (!cards || !dirty_indices) return;
+    size_t card_count = in[0].byte_size;
+    size_t dirty_count = 0;
+    size_t max_dirty = out[0].byte_size / sizeof(uint32_t);
+
+    size_t i = 0;
+    // 64-bit word scanning for fast skip of clean 8-card chunks
+    for (; i + 8 <= card_count && dirty_count < max_dirty; i += 8) {
+        uint64_t word;
+        std::memcpy(&word, cards + i, sizeof(uint64_t));
+        if (word != 0) {
+            for (size_t b = 0; b < 8 && dirty_count < max_dirty; ++b) {
+                if (cards[i + b] != 0) {
+                    dirty_indices[dirty_count++] = static_cast<uint32_t>(i + b);
+                }
+            }
+        }
+    }
+    for (; i < card_count && dirty_count < max_dirty; ++i) {
+        if (cards[i] != 0) {
+            dirty_indices[dirty_count++] = static_cast<uint32_t>(i);
+        }
+    }
+    out[0].shape[0] = static_cast<int32_t>(dirty_count);
+}
+
+void sf_kernel_gc_memzero(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout) {
+    (void)in; (void)nin;
+    if (!out || nout < 1 || !out[0].data) return;
+    void* dst = out[0].data;
+    size_t sz = out[0].byte_size;
+    std::memset(dst, 0, sz);
+}
+
+/* ========================================================================= */
+/* 5. FAST-PATH ARITHMETIC ROUTING                                           */
+/* ========================================================================= */
+
+MSIMD_API int sf_dispatch_fast_path_arithmetic(uint32_t op_id, uint8_t dtype,
+                                               const void* a, const void* b, void* out,
+                                               size_t count, uint8_t priority) {
+    if (!a || !out || count == 0) return -1;
+
+    // Ensure ISA dispatch table is initialized
+    g_sf_dispatch_table.init_default_kernels();
+
+    // 1. Acquire single ALU lane from Nexus via route resolution (no double-dispatch)
+    int is_emu = 0;
+    int schema_id = 0;
+    uint32_t alu_lane = 0;
+
+    if (op_id == SF_VEC_OP_CARD_TABLE_SCAN) {
+        alu_lane = RedletALU::select_card_table_lane(priority < 8);
+    } else if (op_id == SF_VEC_OP_MEMZERO_FAST) {
+        alu_lane = RedletALU::select_memzero_lane(false, priority < 8);
+    } else {
+        int r = RedletALU::resolve_route(dtype, priority, &is_emu, &schema_id);
+        alu_lane = (r >= 0) ? static_cast<uint32_t>(r) : 1u;
+    }
+
+    // 2. Package tensors with exact element byte sizes
+    size_t elem_size = 4;
+    switch (dtype) {
+    case SF_DTYPE_F256:
+    case SF_DTYPE_I256:
+    case SF_DTYPE_U256:
+        elem_size = 32;
+        break;
+    case SF_DTYPE_F128:
+    case SF_DTYPE_I128:
+    case SF_DTYPE_U128:
+        elem_size = 16;
+        break;
+    case SF_DTYPE_F64:
+    case SF_DTYPE_I64:
+    case SF_DTYPE_U64:
+        elem_size = 8;
+        break;
+    case SF_DTYPE_F32:
+    case SF_DTYPE_I32:
+    case SF_DTYPE_U32:
+        elem_size = 4;
+        break;
+    case SF_DTYPE_F16:
+    case SF_DTYPE_I16:
+    case SF_DTYPE_U16:
+        elem_size = 2;
+        break;
+    case SF_DTYPE_F8:
+    case SF_DTYPE_I8:
+    case SF_DTYPE_U8:
+        elem_size = 1;
+        break;
+    default:
+        elem_size = 4;
+        break;
+    }
+
+    SF_custominiVm_tensor_t in_tensors[2]{};
+    in_tensors[0].data = const_cast<void*>(a);
+    in_tensors[0].dtype = dtype;
+    in_tensors[0].ndim = 1;
+    in_tensors[0].shape[0] = static_cast<int32_t>(count);
+    in_tensors[0].byte_size = count * elem_size;
+
+    int num_in = 1;
+    if (b) {
+        in_tensors[1].data = const_cast<void*>(b);
+        in_tensors[1].dtype = dtype;
+        in_tensors[1].ndim = 1;
+        in_tensors[1].shape[0] = static_cast<int32_t>(count);
+        in_tensors[1].byte_size = count * elem_size;
+        num_in = 2;
+    }
+
+    SF_custominiVm_tensor_t out_tensor{};
+    out_tensor.data = out;
+    out_tensor.dtype = dtype;
+    out_tensor.ndim = 1;
+    out_tensor.shape[0] = static_cast<int32_t>(count);
+    out_tensor.byte_size = count * elem_size;
+
+    // 3. Resolve kernel function from ISA dispatch table
+    uint32_t fn_id = (op_id << 8) | dtype;
+    sacculus_kernel_fn_t fn = g_sf_dispatch_table.read_fn_seqlock(fn_id);
+    if (fn) {
+        fn(in_tensors, num_in, &out_tensor, 1);
+    } else {
+        // Fallback default dispatch based on opcode and dtype
+        switch (op_id) {
+        case SF_VEC_OP_ADD:
+        case SF_VEC_OP_MULTI_LIMB_ADD:
+            if (dtype == SF_DTYPE_F128) sf_kernel_emu_double_double_add(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_F256) sf_kernel_emu_quad_double_add(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_I128 || dtype == SF_DTYPE_U128) sf_kernel_emu_int128_add(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_I256 || dtype == SF_DTYPE_U256) sf_kernel_emu_int256_add(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_F64) sf_kernel_vec_add_f64(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_F32) sf_kernel_vec_add_f32(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_I64 || dtype == SF_DTYPE_U64) sf_kernel_vec_add_i64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_add_i32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_SUB:
+            if (dtype == SF_DTYPE_F64) sf_kernel_vec_sub_f64(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_F32) sf_kernel_vec_sub_f32(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_I64 || dtype == SF_DTYPE_U64) sf_kernel_vec_sub_i64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_sub_i32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_MUL:
+        case SF_VEC_OP_MULTI_LIMB_MUL:
+            if (dtype == SF_DTYPE_F128) sf_kernel_emu_double_double_mul(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_F256) sf_kernel_emu_quad_double_mul(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_I128 || dtype == SF_DTYPE_U128) sf_kernel_emu_int128_mul(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_I256 || dtype == SF_DTYPE_U256) sf_kernel_emu_int256_mul(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_F64) sf_kernel_vec_mul_f64(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_F32) sf_kernel_vec_mul_f32(in_tensors, num_in, &out_tensor, 1);
+            else if (dtype == SF_DTYPE_I64 || dtype == SF_DTYPE_U64) sf_kernel_vec_mul_i64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_mul_i32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_FMA:
+            if (dtype == SF_DTYPE_F64) sf_kernel_vec_fma_f64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_fma_f32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_DOT:
+            if (dtype == SF_DTYPE_F64) sf_kernel_vec_dot_f64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_dot_f32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_MIN:
+            if (dtype == SF_DTYPE_F64) sf_kernel_vec_min_f64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_min_f32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_MAX:
+            if (dtype == SF_DTYPE_F64) sf_kernel_vec_max_f64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_max_f32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_AND:
+            if (dtype == SF_DTYPE_I64 || dtype == SF_DTYPE_U64) sf_kernel_vec_and_i64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_and_i32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_OR:
+            if (dtype == SF_DTYPE_I64 || dtype == SF_DTYPE_U64) sf_kernel_vec_or_i64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_or_i32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_XOR:
+            if (dtype == SF_DTYPE_I64 || dtype == SF_DTYPE_U64) sf_kernel_vec_xor_i64(in_tensors, num_in, &out_tensor, 1);
+            else sf_kernel_vec_xor_i32(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_CARD_TABLE_SCAN:
+            sf_kernel_gc_card_table_scan(in_tensors, num_in, &out_tensor, 1);
+            break;
+        case SF_VEC_OP_MEMZERO_FAST:
+            sf_kernel_gc_memzero(in_tensors, num_in, &out_tensor, 1);
+            break;
+        default:
+            break;
+        }
+    }
+
+    // 4. Complete ALU lane in Nexus (exactly once)
+    RedletALU::complete(alu_lane);
+    return 0;
+}
+
+/* ========================================================================= */
+/* 6. NESTED BATCH/GROUP SCOPES, BMI/MORTON, RDTSC & MICRO-ARCH HINTERS      */
 /* ========================================================================= */
 
 struct sf_batch_scope {
@@ -944,7 +1824,6 @@ MSIMD_API void sf_hinter_blend_f32(float* dst, const float* a, const float* b, c
     if (!dst || !a || !b || !mask) return;
     size_t i = 0;
 #if (defined(_M_X64) || defined(__x86_64__)) && defined(__AVX2__)
-    // Note: _mm256_blendv_ps selects via sign bit (bit 31), so compare mask != 0 to all-ones mask first!
     const __m256i vzero = _mm256_setzero_si256();
     for (; i + 8 <= count; i += 8) {
         __m256  va     = _mm256_loadu_ps(a + i);
@@ -952,7 +1831,6 @@ MSIMD_API void sf_hinter_blend_f32(float* dst, const float* a, const float* b, c
         __m256i vm_raw = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(mask + i));
         __m256i veq0   = _mm256_cmpeq_epi32(vm_raw, vzero);
         __m256  vsel   = _mm256_castsi256_ps(veq0);
-        // where veq0 is all-1s (mask[k] == 0), pick vb; otherwise pick va
         __m256  vres   = _mm256_blendv_ps(va, vb, vsel);
         _mm256_storeu_ps(dst + i, vres);
     }

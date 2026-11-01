@@ -28,8 +28,8 @@
 #include <cstdint>
 #include <cstddef>
 #include <atomic>
-#include <mutex>
 #include "gc/redlet/redletGearkit.hpp"
+#include "gc/redlet/redletEmptyBox.hpp"
 
 #ifndef MSIMD_API
 #if defined(_WIN32)
@@ -41,6 +41,7 @@
 
 /* ========================================================================= */
 /* 0. TENSOR DATA STRUCTURE (SacFor_VM.cpp:3092-3110)                        */
+/* ========================================================================= */
 #ifndef SF_TENSOR_T_DEFINED
 #define SF_TENSOR_T_DEFINED
 typedef struct SF_custominiVm_tensor_t {
@@ -52,32 +53,272 @@ typedef struct SF_custominiVm_tensor_t {
 } SF_custominiVm_tensor_t;
 #endif
 
+#ifndef SF_TAIL_CANARY
+#define SF_TAIL_CANARY 0xDEADBEEFCAFEF00DULL
+#endif
+
 /* ========================================================================= */
-/* 1. DAG NODE & TRACE CACHE STRUCTURES                                      */
+/* 1. DAG NODE & TRACE CACHE ENUMS & TYPES                                   */
 /* ========================================================================= */
+
+enum sf_dag_op_category_t : uint8_t {
+    SF_ENTANGLE_OP_COMPUTE     = 0, // Arithmetic / Vector / Tensor operation
+    SF_ENTANGLE_OP_MEMORY      = 1, // Memory copy / DMA / SRAM prefetch transfer
+    SF_ENTANGLE_OP_GC_FUSION   = 2, // Fused GC Sweep (Falline Snatch + EmptyBox + Canary)
+    SF_ENTANGLE_OP_OBJ_LINK    = 3  // Lock-free Object Entanglement State Transition
+};
+
+enum sf_dag_node_status_t : uint8_t {
+    SF_DAG_STATUS_PENDING      = 0,
+    SF_DAG_STATUS_READY        = 1,
+    SF_DAG_STATUS_EXECUTING    = 2,
+    SF_DAG_STATUS_COMPLETED    = 3,
+    SF_DAG_STATUS_FAILED       = 4
+};
+
+enum sf_object_entangle_state_e : uint8_t {
+    SF_OBJ_ENTANGLE_UNBOUND   = 0,
+    SF_OBJ_ENTANGLE_TENTATIVE = 1,
+    SF_OBJ_ENTANGLE_LOCKED    = 2,
+    SF_OBJ_ENTANGLE_FUSED     = 3,
+    SF_OBJ_ENTANGLE_COMMITTED = 4,
+    SF_OBJ_ENTANGLE_ABORTED   = 5
+};
+
+/* ========================================================================= */
+/* 2. LOCK-FREE OBJECT ENTANGLEMENT & GC CELL FUSION STRUCTURES              */
+/* ========================================================================= */
+
+struct SACFOR_ALIGN_CL sf_object_entangle_handle_t {
+    // 64-bit control word: [63..32: version_counter] [31..8: epoch] [7..0: state]
+    alignas(64) std::atomic<uint64_t> control_word{ 0 };
+    alignas(64) std::atomic<void*>    paired_object{ nullptr };
+    alignas(64) std::atomic<uint64_t> entangle_tag{ 0 };
+
+    static inline uint64_t make_cw(uint8_t state, uint32_t epoch, uint32_t version) noexcept {
+        return (static_cast<uint64_t>(version) << 32) |
+               (static_cast<uint64_t>(epoch & 0x00FFFFFFu) << 8) |
+               static_cast<uint64_t>(state);
+    }
+
+    static inline uint8_t unpack_state(uint64_t cw) noexcept {
+        return static_cast<uint8_t>(cw & 0xFFu);
+    }
+
+    static inline uint32_t unpack_epoch(uint64_t cw) noexcept {
+        return static_cast<uint32_t>((cw >> 8) & 0x00FFFFFFu);
+    }
+
+    static inline uint32_t unpack_version(uint64_t cw) noexcept {
+        return static_cast<uint32_t>(cw >> 32);
+    }
+
+    inline uint8_t get_state() const noexcept {
+        return unpack_state(control_word.load(std::memory_order_acquire));
+    }
+
+    inline sf_object_entangle_state_e get_state_enum() const noexcept {
+        return static_cast<sf_object_entangle_state_e>(get_state());
+    }
+
+    inline bool is_entangled() const noexcept {
+        uint8_t s = get_state();
+        return s == SF_OBJ_ENTANGLE_TENTATIVE || s == SF_OBJ_ENTANGLE_LOCKED ||
+               s == SF_OBJ_ENTANGLE_FUSED || s == SF_OBJ_ENTANGLE_COMMITTED;
+    }
+
+    inline void* get_paired_object() const noexcept {
+        return paired_object.load(std::memory_order_acquire);
+    }
+
+    inline uint64_t get_tag() const noexcept {
+        return entangle_tag.load(std::memory_order_acquire);
+    }
+
+    MSIMD_API bool try_entangle(void* target, uint64_t tag, uint32_t epoch) noexcept;
+    MSIMD_API bool commit_entanglement(void* expected_target) noexcept;
+    MSIMD_API void break_entanglement() noexcept;
+};
+
+// Result structure for fused GC sweep on a cell line
+struct sf_gc_fused_cell_result_t {
+    void*    cell_address{ nullptr };
+    uint32_t prev_fn_id{ 0 };
+    size_t   cell_size{ 0 };
+    uint32_t canary_hash{ 0 };
+    bool     tombstone_written{ false };
+    bool     canary_valid{ false };
+};
+
+MSIMD_API sf_gc_fused_cell_result_t entangle_gc_cell_fusion(
+    void* cell_ptr,
+    uint32_t prev_fn,
+    size_t occupant_size,
+    size_t aligned_size,
+    void* forwarding_address,
+    uint64_t sweep_no) noexcept;
+
+/* ========================================================================= */
+/* 3. DAG NODE STRUCTURE                                                     */
+/* ========================================================================= */
+
+struct sf_entangle_dag_node_t;
+typedef void (*sf_entangle_node_kernel_fn)(void* ctx, sf_entangle_dag_node_t* node);
 
 struct sf_entangle_dag_node_t {
-    uint32_t    fn_id{ 0 };
-    const void* primary_in{ nullptr };
-    void*       primary_out{ nullptr };
-    size_t      byte_size{ 0 };
-    uint8_t     dtype{ 0 };
-    uint8_t     is_fused_epilogue{ 0 };
-};
+    // Primary identification and data pointers (ABI preserved)
+    uint32_t                    fn_id{ 0 };
+    const void*                 primary_in{ nullptr };
+    void*                       primary_out{ nullptr };
+    size_t                      byte_size{ 0 };
+    uint8_t                     dtype{ 0 };
+    uint8_t                     is_fused_epilogue{ 0 };
 
-struct sf_entangle_trace_cache_entry_t {
-    uint64_t trace_hash{ 0 };
-    uint32_t node_count{ 0 };
-    uint32_t fused_edges{ 0 };
-    uint32_t fn_ids[16]{ 0 };
-    uint32_t warmup_hits{ 0 };
-    uint32_t superkernel_fn_id{ 0 };
-    uint8_t  is_compiled{ 0 };
-    uint8_t  _pad[3]{ 0 };
+    // Extended topology and scheduling attributes
+    uint32_t                    node_id{ 0 };
+    const void*                 secondary_in{ nullptr };
+    uint8_t                     op_category{ SF_ENTANGLE_OP_COMPUTE };
+    uint8_t                     status{ SF_DAG_STATUS_PENDING };
+
+    // Predecessor and dependent tracking for parallel DAG traversal (Rich fan-in/fan-out)
+    static constexpr uint32_t   MAX_PRED = 8;
+    static constexpr uint32_t   MAX_DEP  = 16;
+    uint32_t                    predecessor_count{ 0 };
+    uint32_t                    predecessors[MAX_PRED]{ 0 };
+    uint32_t                    dependent_count{ 0 };
+    uint32_t                    dependents[MAX_DEP]{ 0 };
+    std::atomic<int32_t>        unsatisfied_deps{ 0 };
+    uint32_t                    topological_level{ 0 };
+
+    // Object entanglement references (GC cells or tensor objects)
+    void*                       target_obj_ref{ nullptr };
+    void*                       paired_obj_ref{ nullptr };
+    uint64_t                    entangle_tag{ 0 };
+    sf_object_entangle_handle_t* entangle_handle{ nullptr };
+    sf_object_entangle_handle_t  embedded_handle;
+
+    // Intermediate scratchpad routing
+    uint32_t                    scratchpad_offset{ 0 };
+    uint32_t                    scratchpad_bytes{ 0 };
+    bool                        routes_via_scratchpad{ false };
+
+    // Custom execution delegate
+    sf_entangle_node_kernel_fn  kernel_exec_cb{ nullptr };
+    void*                       user_data{ nullptr };
+
+    void reset() noexcept {
+        fn_id = 0;
+        primary_in = nullptr;
+        primary_out = nullptr;
+        byte_size = 0;
+        dtype = 0;
+        is_fused_epilogue = 0;
+        node_id = 0;
+        secondary_in = nullptr;
+        op_category = SF_ENTANGLE_OP_COMPUTE;
+        status = SF_DAG_STATUS_PENDING;
+        predecessor_count = 0;
+        for (uint32_t i = 0; i < MAX_PRED; ++i) predecessors[i] = 0;
+        dependent_count = 0;
+        for (uint32_t i = 0; i < MAX_DEP; ++i) dependents[i] = 0;
+        unsatisfied_deps.store(0, std::memory_order_relaxed);
+        topological_level = 0;
+        target_obj_ref = nullptr;
+        paired_obj_ref = nullptr;
+        entangle_tag = 0;
+        entangle_handle = nullptr;
+        embedded_handle.break_entanglement();
+        scratchpad_offset = 0;
+        scratchpad_bytes = 0;
+        routes_via_scratchpad = false;
+        kernel_exec_cb = nullptr;
+        user_data = nullptr;
+    }
 };
 
 /* ========================================================================= */
-/* 2. ENTANGLE EXECUTION & KERNEL FUSION ENGINE (SacFor_VM.cpp:7238-7320)    */
+/* 4. TRACE CACHE & TICKET-GUARDED READY RING BUFFER                         */
+/* ========================================================================= */
+
+typedef void (*sf_superkernel_fn_t)(void* scratchpad, const void** inputs, uint32_t num_inputs, void** outputs, uint32_t num_outputs);
+
+struct sf_entangle_trace_cache_entry_t {
+    uint64_t            trace_hash{ 0 };
+    uint32_t            node_count{ 0 };
+    uint32_t            fused_edges{ 0 };
+    uint32_t            fn_ids[16]{ 0 };
+    uint32_t            warmup_hits{ 0 };
+    uint32_t            superkernel_fn_id{ 0 };
+    uint8_t             is_compiled{ 0 };
+    uint8_t             max_parallel_level{ 0 };
+    uint16_t            total_bandwidth_saved_kb{ 0 };
+    sf_superkernel_fn_t superkernel_exec_fn{ nullptr };
+    uint64_t            last_access_tsc{ 0 };
+    std::atomic<uint64_t> lifetime_invocations{ 0 };
+
+    void reset() noexcept {
+        trace_hash = 0;
+        node_count = 0;
+        fused_edges = 0;
+        for (int i = 0; i < 16; ++i) fn_ids[i] = 0;
+        warmup_hits = 0;
+        superkernel_fn_id = 0;
+        is_compiled = 0;
+        max_parallel_level = 0;
+        total_bandwidth_saved_kb = 0;
+        superkernel_exec_fn = nullptr;
+        last_access_tsc = 0;
+        lifetime_invocations.store(0, std::memory_order_relaxed);
+    }
+};
+
+struct sf_lockfree_dag_queue_t {
+    static constexpr size_t QUEUE_CAP = 128;
+    alignas(64) sf_ticket_lock_t lock;
+    uint32_t buffer[QUEUE_CAP]{ 0 };
+    uint32_t head{ 0 };
+    uint32_t tail{ 0 };
+    uint32_t count{ 0 };
+
+    inline void reset() noexcept {
+        sf_ticket_guard_t g(lock);
+        head = 0;
+        tail = 0;
+        count = 0;
+        for (size_t i = 0; i < QUEUE_CAP; ++i) buffer[i] = 0;
+    }
+
+    inline bool push(uint32_t node_idx) noexcept {
+        sf_ticket_guard_t g(lock);
+        if (count >= QUEUE_CAP) return false;
+        buffer[tail] = node_idx;
+        tail = (tail + 1) % QUEUE_CAP;
+        count++;
+        return true;
+    }
+
+    inline bool pop(uint32_t& out_node_idx) noexcept {
+        sf_ticket_guard_t g(lock);
+        if (count == 0) return false;
+        out_node_idx = buffer[head];
+        head = (head + 1) % QUEUE_CAP;
+        count--;
+        return true;
+    }
+
+    inline bool is_empty() noexcept {
+        sf_ticket_guard_t g(lock);
+        return count == 0;
+    }
+
+    inline size_t size() noexcept {
+        sf_ticket_guard_t g(lock);
+        return count;
+    }
+};
+
+/* ========================================================================= */
+/* 5. ENTANGLE EXECUTION & KERNEL FUSION ENGINE (SacFor_VM.cpp:7238-7320)    */
 /* ========================================================================= */
 
 struct sf_entangle_execution_engine_t {
@@ -93,10 +334,14 @@ struct sf_entangle_execution_engine_t {
     std::atomic<uint32_t> warmup_threshold{ 4 };
     std::atomic<uint32_t> total_warmup_hits{ 0 };
     std::atomic<uint32_t> compiled_superkernel_count{ 0 };
+    std::atomic<uint32_t> parallel_execution_count{ 0 };
+    std::atomic<uint32_t> gc_fusion_count{ 0 };
+    std::atomic<uint32_t> object_entangle_count{ 0 };
 
-    std::mutex                      dag_lock;
+    sf_ticket_lock_t                dag_lock;
     sf_entangle_dag_node_t          dag_nodes[MAX_DAG_NODES]{};
     sf_entangle_trace_cache_entry_t trace_cache[TRACE_CACHE_CAP]{};
+    sf_lockfree_dag_queue_t         ready_queue;
 
     static inline uint64_t compute_dag_hash(const sf_entangle_dag_node_t* nodes, uint32_t count) noexcept {
         uint64_t h = 14695981039346656037ULL;
@@ -105,21 +350,114 @@ struct sf_entangle_execution_engine_t {
             h *= 1099511628211ULL;
             h ^= static_cast<uint64_t>(nodes[i].dtype) | (static_cast<uint64_t>(nodes[i].is_fused_epilogue) << 8);
             h *= 1099511628211ULL;
+            h ^= static_cast<uint64_t>(nodes[i].op_category) << 16;
+            h *= 1099511628211ULL;
         }
         return h == 0 ? 1ULL : h;
     }
 
     MSIMD_API void begin();
     MSIMD_API void commit();
+    MSIMD_API void cancel();
     MSIMD_API bool is_active() const { return in_transaction.load(std::memory_order_acquire); }
     MSIMD_API void record_op(uint32_t fn_id, const void* in_ptr, void* out_ptr, size_t byte_size, uint8_t dtype);
     MSIMD_API void record_kernel_op(uint32_t fn_id,
                                     const SF_custominiVm_tensor_t* inputs, int n_in,
                                     SF_custominiVm_tensor_t* outputs, int n_out);
+    MSIMD_API void record_gc_fusion(void* cell_ptr, uint32_t prev_fn, size_t occupant_size,
+                                    size_t aligned_size, void* fwd_addr, uint64_t sweep_no);
+    MSIMD_API void record_object_entangle(void* obj_a, void* obj_b, uint64_t tag,
+                                          sf_object_entangle_handle_t* handle = nullptr);
     MSIMD_API void reset();
+
+    // Parallel Traversal & DAG Analysis
+    MSIMD_API uint32_t build_dag_dependencies();
+    MSIMD_API uint32_t get_max_topological_level() const;
+    MSIMD_API void execute_dag_sequential();
+    MSIMD_API void execute_dag_parallel(uint32_t num_workers);
+    MSIMD_API void execute_node(uint32_t node_idx);
+    MSIMD_API void* get_scratchpad_slice(uint32_t worker_id, size_t needed_bytes);
+
+    // Trace Cache & Superkernel Lookup
+    MSIMD_API sf_entangle_trace_cache_entry_t* lookup_trace(uint64_t trace_hash);
 };
 
 extern sf_entangle_execution_engine_t g_sf_entangle_engine;
+
+/* ========================================================================= */
+/* 6. RAII SCOPES (RedletEntangleScope & RedletObjectEntangleScope)          */
+/* ========================================================================= */
+
+class RedletEntangleScope {
+public:
+    explicit RedletEntangleScope(sf_entangle_execution_engine_t& engine = g_sf_entangle_engine)
+        : _engine(engine), _active(true) {
+        _engine.begin();
+    }
+    ~RedletEntangleScope() {
+        if (_active) {
+            _engine.commit();
+        }
+    }
+    void cancel() noexcept {
+        if (_active) {
+            _engine.cancel();
+            _active = false;
+        }
+    }
+    void commit() noexcept {
+        if (_active) {
+            _engine.commit();
+            _active = false;
+        }
+    }
+    RedletEntangleScope(const RedletEntangleScope&) = delete;
+    RedletEntangleScope& operator=(const RedletEntangleScope&) = delete;
+
+private:
+    sf_entangle_execution_engine_t& _engine;
+    bool                            _active{ false };
+};
+
+class RedletObjectEntangleScope {
+public:
+    RedletObjectEntangleScope(sf_object_entangle_handle_t& handle, void* target, uint64_t tag, uint32_t epoch = 0)
+        : _handle(handle), _target(target), _success(false), _committed(false) {
+        _success = _handle.try_entangle(target, tag, epoch);
+    }
+    ~RedletObjectEntangleScope() {
+        if (_success && !_committed) {
+            _handle.commit_entanglement(_target);
+        }
+    }
+    bool is_locked() const noexcept { return _success; }
+    void abort() noexcept {
+        if (_success && !_committed) {
+            _handle.break_entanglement();
+            _committed = true;
+        }
+    }
+    bool commit() noexcept {
+        if (_success && !_committed) {
+            bool ok = _handle.commit_entanglement(_target);
+            _committed = true;
+            return ok;
+        }
+        return false;
+    }
+    RedletObjectEntangleScope(const RedletObjectEntangleScope&) = delete;
+    RedletObjectEntangleScope& operator=(const RedletObjectEntangleScope&) = delete;
+
+private:
+    sf_object_entangle_handle_t& _handle;
+    void*                        _target;
+    bool                         _success;
+    bool                         _committed;
+};
+
+/* ========================================================================= */
+/* 7. C-API EXPORTS FOR HOTSPOT JVM RUNTIME & REDLET GC                      */
+/* ========================================================================= */
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,16 +465,28 @@ extern "C" {
 
 MSIMD_API void     SF_custominiVm_entangle_begin(void);
 MSIMD_API void     SF_custominiVm_entangle_commit(void);
+MSIMD_API void     SF_custominiVm_entangle_cancel(void);
+MSIMD_API void     SF_custominiVm_entangle_reset(void);
 MSIMD_API int      SF_custominiVm_entangle_is_active(void);
 MSIMD_API void     SF_custominiVm_entangle_record_op(uint32_t fn_id,
                                                      const SF_custominiVm_tensor_t* inputs, int n_in,
                                                      SF_custominiVm_tensor_t* outputs, int n_out);
+MSIMD_API void     SF_custominiVm_entangle_record_gc_fusion(void* cell_ptr, uint32_t prev_fn,
+                                                            size_t occupant_size, size_t aligned_size,
+                                                            void* fwd_addr, uint64_t sweep_no);
+MSIMD_API void     SF_custominiVm_entangle_record_object_entangle(void* obj_a, void* obj_b, uint64_t tag);
+MSIMD_API void     SF_custominiVm_entangle_execute_parallel(uint32_t num_workers);
+MSIMD_API void     SF_custominiVm_entangle_execute_sequential(void);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_fused_count(void);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_dag_depth(void);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_warmup_hits(void);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_superkernel_count(void);
 MSIMD_API void     SF_custominiVm_entangle_set_warmup_threshold(uint32_t threshold);
 MSIMD_API uint32_t SF_custominiVm_entangle_get_warmup_threshold(void);
+MSIMD_API uint32_t SF_custominiVm_entangle_get_max_level(void);
+MSIMD_API uint32_t SF_custominiVm_entangle_get_parallel_exec_count(void);
+MSIMD_API uint32_t SF_custominiVm_entangle_get_gc_fusion_count(void);
+MSIMD_API uint32_t SF_custominiVm_entangle_get_object_entangle_count(void);
 
 #ifdef __cplusplus
 }

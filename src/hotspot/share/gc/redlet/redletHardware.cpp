@@ -106,19 +106,6 @@ static inline uint64_t sacculus_now_ns() noexcept {
 }
 #endif
 
-static inline void sf_get_cpuid(int info[4], int func, int subfunc = 0) {
-#if defined(_MSC_VER) || defined(__clang__)
-    __cpuidex(info, func, subfunc);
-#elif defined(__GNUC__)
-    __asm__ __volatile__(
-        "cpuid"
-        : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
-        : "a"(func), "c"(subfunc));
-#else
-    info[0] = info[1] = info[2] = info[3] = 0;
-#endif
-}
-
 /* ========================================================================= */
 /* 3. SRAM CACHELINE & VOLATILITY MEMORY CONTROL                             */
 /* ========================================================================= */
@@ -162,7 +149,13 @@ MSIMD_API void sf_dram_stream_store(void* dst, const void* src, size_t bytes) {
         i++;
     }
 #if defined(__AVX2__)
-    for (; i + 32 <= bytes && (reinterpret_cast<uintptr_t>(d + i) & 31) == 0; i += 32) {
+    // If aligned to 16 bytes but not 32 bytes, stream one 16-byte chunk to reach 32-byte alignment
+    if ((reinterpret_cast<uintptr_t>(d + i) & 31) != 0 && i + 16 <= bytes) {
+        __m128i val = _mm_loadu_si128(reinterpret_cast<const __m128i*>(s + i));
+        _mm_stream_si128(reinterpret_cast<__m128i*>(d + i), val);
+        i += 16;
+    }
+    for (; i + 32 <= bytes; i += 32) {
         __m256i val = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(s + i));
         _mm256_stream_si256(reinterpret_cast<__m256i*>(d + i), val);
     }
@@ -592,6 +585,88 @@ MSIMD_API SF_custominiVm_core_tier_t sf_hybrid_homo_engine_t::classify_core(uint
     return SF_CORE_TIER_ANY;
 }
 
+MSIMD_API bool sf_hybrid_homo_engine_t::bind_gc_sweeper_to_ecore(uint32_t thread_idx) {
+    if (!is_hybrid || e_core_mask == 0) {
+        return bind_current_thread(SF_CORE_TIER_ANY);
+    }
+    set_thread_qos(SF_CORE_TIER_EFFICIENCY);
+
+    uint64_t target_mask = e_core_mask;
+    if (thread_idx != (uint32_t)-1 && e_core_count > 1) {
+        uint32_t chosen = thread_idx % e_core_count;
+        uint32_t count = 0;
+        for (int b = 0; b < 64; ++b) {
+            if (e_core_mask & (1ULL << b)) {
+                if (count == chosen) {
+                    target_mask = (1ULL << b);
+                    break;
+                }
+                count++;
+            }
+        }
+    }
+
+#if defined(_WIN32)
+    DWORD_PTR prev = SetThreadAffinityMask(GetCurrentThread(), (DWORD_PTR)target_mask);
+    return prev != 0;
+#elif defined(__linux__) || defined(__ANDROID__)
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    for (int i = 0; i < 64; ++i) {
+        if (target_mask & (1ULL << i)) CPU_SET(i, &cpuset);
+    }
+    return pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) == 0;
+#else
+    (void)target_mask;
+    return true;
+#endif
+}
+
+MSIMD_API bool sf_hybrid_homo_engine_t::bind_mutator_to_pcore(uint32_t thread_idx) {
+    if (!is_hybrid || p_core_mask == 0) {
+        return bind_current_thread(SF_CORE_TIER_ANY);
+    }
+    set_thread_qos(SF_CORE_TIER_PERFORMANCE);
+
+    uint64_t target_mask = p_core_mask;
+    if (thread_idx != (uint32_t)-1 && p_core_count > 1) {
+        uint32_t chosen = thread_idx % p_core_count;
+        uint32_t count = 0;
+        for (int b = 0; b < 64; ++b) {
+            if (p_core_mask & (1ULL << b)) {
+                if (count == chosen) {
+                    target_mask = (1ULL << b);
+                    break;
+                }
+                count++;
+            }
+        }
+    }
+
+#if defined(_WIN32)
+    DWORD_PTR prev = SetThreadAffinityMask(GetCurrentThread(), (DWORD_PTR)target_mask);
+    return prev != 0;
+#elif defined(__linux__) || defined(__ANDROID__)
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    for (int i = 0; i < 64; ++i) {
+        if (target_mask & (1ULL << i)) CPU_SET(i, &cpuset);
+    }
+    return pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) == 0;
+#else
+    (void)target_mask;
+    return true;
+#endif
+}
+
+MSIMD_API bool sf_hybrid_homo_engine_t::bind_mutator_to_all_pcores() {
+    return bind_mutator_to_pcore((uint32_t)-1);
+}
+
+MSIMD_API bool sf_hybrid_homo_engine_t::is_dual_hybrid_applicable() const {
+    return is_hybrid && (p_core_count > 0) && (e_core_count > 0);
+}
+
 /* ========================================================================= */
 /* 6. NUMA VS UMA MEMORY ARCHITECTURE ENGINE                                 */
 /* ========================================================================= */
@@ -949,155 +1024,82 @@ MSIMD_API double sf_smt_ht_engine_t::estimate_port_contention_penalty(bool is_fm
 /* ========================================================================= */
 
 MSIMD_API void sf_sram_cache_engine_t::init(const sf_hardware_topology_t* topo) {
-    if (!topo) return;
-    l1d_kb = topo->l1d.size_kb > 0 ? topo->l1d.size_kb : 32;
-    l1i_kb = topo->l1i.size_kb > 0 ? topo->l1i.size_kb : 32;
-    l2_kb = topo->l2.size_kb > 0 ? topo->l2.size_kb : 512;
-    l3_kb = topo->l3.size_kb > 0 ? topo->l3.size_kb : 16384;
-    cacheline_bytes = topo->primary_cacheline_size > 0 ? topo->primary_cacheline_size : 64;
+    RedletSRAMCache* rsc = RedletSRAMCache::instance();
+    rsc->initialize(topo);
 
-    if (l3_kb >= 130 * 1024) {
-        has_intel_bllc = true;
-        has_3d_vcache = false;
-        sram_regime = SF_SRAM_REGIME_3D_VCACHE;
-    } else if (l3_kb >= 48 * 1024) {
-        has_3d_vcache = true;
-        has_intel_bllc = false;
-        sram_regime = SF_SRAM_REGIME_3D_VCACHE;
-    } else if (cacheline_bytes >= 128) {
-        sram_regime = SF_SRAM_REGIME_WIDE_CACHELINE_128B;
-    } else {
-        sram_regime = SF_SRAM_REGIME_STANDARD_HIERARCHICAL;
-    }
-
-    if (!scratchpad_base) {
-#if defined(_WIN32)
-        scratchpad_base = (uint8_t*)VirtualAlloc(nullptr, SCRATCHPAD_CAPACITY, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-#else
-        scratchpad_base = (uint8_t*)sf_os_reserve_memory(SCRATCHPAD_CAPACITY);
-        if (scratchpad_base) sf_os_commit_memory(scratchpad_base, SCRATCHPAD_CAPACITY);
-#endif
-        if (scratchpad_base) {
-            has_scratchpad_sram = true;
-        }
-    }
-    scratchpad_offset.store(0, std::memory_order_relaxed);
+    const auto& hier = rsc->hierarchy();
+    l1d_kb = hier.l1d.size_kb;
+    l1i_kb = hier.l1i.size_kb;
+    l2_kb = hier.l2.size_kb;
+    l3_kb = hier.l3.size_kb;
+    cacheline_bytes = hier.primary_cacheline_size;
+    has_3d_vcache = rsc->has_3d_vcache();
+    has_intel_bllc = rsc->has_intel_bllc();
+    sram_regime = rsc->regime();
+    scratchpad_base = rsc->scratchpad_base();
+    has_scratchpad_sram = rsc->has_scratchpad_sram();
+    scratchpad_offset.store(rsc->scratchpad_used(), std::memory_order_relaxed);
 }
 
 MSIMD_API void sf_sram_cache_engine_t::cleanup() {
-    if (scratchpad_base) {
-#if defined(_WIN32)
-        VirtualFree(scratchpad_base, 0, MEM_RELEASE);
-#else
-        sf_os_release_memory(scratchpad_base, SCRATCHPAD_CAPACITY);
-#endif
-        scratchpad_base = nullptr;
-        has_scratchpad_sram = false;
-    }
+    RedletSRAMCache::instance()->cleanup();
+    scratchpad_base = nullptr;
+    has_scratchpad_sram = false;
+    scratchpad_offset.store(0, std::memory_order_relaxed);
 }
 
 MSIMD_API void* sf_sram_cache_engine_t::scratchpad_alloc(size_t bytes, size_t alignment) {
-    if (!scratchpad_base || bytes == 0) return nullptr;
-    if (alignment == 0) alignment = 64;
-    size_t cur = scratchpad_offset.load(std::memory_order_relaxed);
-    while (true) {
-        size_t aligned = (cur + alignment - 1) & ~(alignment - 1);
-        size_t next = aligned + bytes;
-        if (next > SCRATCHPAD_CAPACITY) return nullptr;
-        if (scratchpad_offset.compare_exchange_weak(cur, next, std::memory_order_acquire, std::memory_order_relaxed)) {
-            return scratchpad_base + aligned;
-        }
-    }
+    void* ptr = RedletSRAMCache::instance()->scratchpad_alloc(bytes, alignment);
+    scratchpad_offset.store(RedletSRAMCache::instance()->scratchpad_used(), std::memory_order_relaxed);
+    return ptr;
 }
 
 MSIMD_API void sf_sram_cache_engine_t::scratchpad_reset() {
-    scratchpad_offset.store(0, std::memory_order_release);
+    RedletSRAMCache::instance()->scratchpad_reset();
+    scratchpad_offset.store(0, std::memory_order_relaxed);
 }
 
 MSIMD_API size_t sf_sram_cache_engine_t::pad_to_cacheline(size_t size) const {
-    size_t cl = cacheline_bytes > 0 ? cacheline_bytes : 64;
-    return (size + cl - 1) & ~(cl - 1);
+    return RedletSRAMCache::instance()->pad_to_cacheline(size);
 }
 
 MSIMD_API void* sf_sram_cache_engine_t::align_to_cacheline(void* ptr) const {
-    size_t cl = cacheline_bytes > 0 ? cacheline_bytes : 64;
-    uintptr_t addr = (uintptr_t)ptr;
-    return (void*)((addr + cl - 1) & ~(cl - 1));
+    return RedletSRAMCache::instance()->align_to_cacheline(ptr);
 }
 
 MSIMD_API bool sf_sram_cache_engine_t::should_stream_store(size_t tensor_bytes) const {
-    size_t sram_threshold;
-    if (has_intel_bllc) {
-        sram_threshold = 72ULL * 1024 * 1024;
-    } else if (has_3d_vcache) {
-        sram_threshold = 48ULL * 1024 * 1024;
-    } else {
-        sram_threshold = (l3_kb > 0 ? (l3_kb * 1024ULL) / 2 : (l2_kb * 1024ULL));
-    }
-    return tensor_bytes > sram_threshold;
+    return RedletSRAMCache::instance()->should_stream_store(tensor_bytes);
 }
 
 MSIMD_API void sf_sram_cache_engine_t::flush_wc_buffers() {
-#if defined(_M_X64) || defined(__x86_64__)
-    _mm_sfence();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-#if defined(__clang__) || defined(__GNUC__)
-    __asm__ __volatile__("dmb ishst" ::: "memory");
-#endif
-#else
-    std::atomic_thread_fence(std::memory_order_release);
-#endif
+    RedletSRAMCache::flush_wc_buffers();
 }
 
 MSIMD_API void sf_sram_cache_engine_t::compute_blis_tiles(size_t elem_size,
                                                          size_t total_M, size_t total_N, size_t total_K,
                                                          int& M_C, int& N_C, int& K_C,
                                                          int& M_R, int& N_R) const {
-    if (elem_size == 0) elem_size = 4;
-    M_R = 8;
-    N_R = 6;
-
-    size_t l1d_bytes = (l1d_kb > 0 ? l1d_kb : 32) * 1024ULL;
-    size_t l1d_target = l1d_bytes / 2;
-    int kc_calc = (int)(l1d_target / (M_R * elem_size));
-    if (kc_calc < 64)  kc_calc = 64;
-    if (kc_calc > 512) kc_calc = 512;
-    K_C = (int)(std::min)((size_t)kc_calc, total_K > 0 ? total_K : (size_t)kc_calc);
-
-    size_t l2_bytes = (l2_kb > 0 ? l2_kb : 512) * 1024ULL;
-    size_t l2_target = (l2_bytes * 6) / 10;
-    int mc_calc = (int)(l2_target / (K_C * elem_size));
-    if (mc_calc < 128)  mc_calc = 128;
-    if (mc_calc > 2048) mc_calc = 2048;
-    mc_calc = (mc_calc / M_R) * M_R;
-    if (mc_calc == 0) mc_calc = M_R;
-    M_C = (int)(std::min)((size_t)mc_calc, total_M > 0 ? total_M : (size_t)mc_calc);
-
-    if (has_intel_bllc) {
-        N_C = 16384;
-    } else if (has_3d_vcache) {
-        N_C = 8192;
-    } else {
-        size_t l3_bytes = (l3_kb > 0 ? l3_kb : 16384) * 1024ULL;
-        size_t l3_target = l3_bytes / 3;
-        int nc_calc = (int)(l3_target / (K_C * elem_size));
-        if (nc_calc < 256)  nc_calc = 256;
-        if (nc_calc > 4096) nc_calc = 4096;
-        N_C = nc_calc;
-    }
-    N_C = (N_C / N_R) * N_R;
-    if (N_C == 0) N_C = N_R;
-    if (total_N > 0 && (size_t)N_C > total_N) N_C = (int)total_N;
+    RedletSRAMCache::instance()->compute_blis_tiles(elem_size, total_M, total_N, total_K, M_C, N_C, K_C, M_R, N_R);
 }
 
 MSIMD_API void sf_sram_cache_engine_t::get_optimal_tile_sizes(size_t elem_size, int& tile_M, int& tile_N, int& tile_K) const {
-    int mr = 8, nr = 6;
-    compute_blis_tiles(elem_size, 0, 0, 0, tile_M, tile_N, tile_K, mr, nr);
+    RedletSRAMCache::instance()->get_optimal_tile_sizes(elem_size, tile_M, tile_N, tile_K);
 }
 
 MSIMD_API size_t sf_sram_cache_engine_t::get_cache_color_stride(uint32_t ways) const {
-    if (ways == 0) ways = 8;
-    return (l1d_kb * 1024ULL) / ways;
+    return RedletSRAMCache::instance()->get_cache_color_stride(ways);
+}
+
+MSIMD_API size_t sf_sram_cache_engine_t::scratchpad_used_bytes() const {
+    return RedletSRAMCache::instance()->scratchpad_used();
+}
+
+MSIMD_API size_t sf_sram_cache_engine_t::scratchpad_remaining_bytes() const {
+    return RedletSRAMCache::instance()->scratchpad_remaining();
+}
+
+MSIMD_API size_t sf_sram_cache_engine_t::scratchpad_peak_bytes() const {
+    return RedletSRAMCache::instance()->scratchpad_peak();
 }
 
 /* ========================================================================= */
@@ -1809,6 +1811,54 @@ MSIMD_API int sf_thread_pin_to_numa_node(uint32_t numa_node) {
 MSIMD_API int msimd_thread_pin_to_numa_node(uint32_t numa_node) {
     (void)numa_node;
     return 0;
+}
+
+MSIMD_API int SF_custominiVm_bind_gc_sweeper_to_ecore(uint32_t worker_id) {
+    return sf_get_hardware_nexus()->hybrid.bind_gc_sweeper_to_ecore(worker_id) ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_bind_mutator_to_pcore(void) {
+    return sf_get_hardware_nexus()->hybrid.bind_mutator_to_pcore((uint32_t)-1) ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_bind_mutator_to_specific_pcore(uint32_t thread_idx) {
+    return sf_get_hardware_nexus()->hybrid.bind_mutator_to_pcore(thread_idx) ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_has_3d_vcache(void) {
+    return RedletSRAMCache::instance()->has_3d_vcache() ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_has_intel_bllc(void) {
+    return RedletSRAMCache::instance()->has_intel_bllc() ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_has_asymmetric_3d_vcache(void) {
+    return RedletSRAMCache::instance()->has_asymmetric_3d_vcache() ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_bind_calling_thread_to_vcache_ccd(void) {
+    return RedletSRAMCache::instance()->bind_current_thread_to_vcache_ccd() ? 1 : 0;
+}
+
+MSIMD_API int SF_custominiVm_bind_calling_thread_to_frequency_ccd(void) {
+    return RedletSRAMCache::instance()->bind_current_thread_to_frequency_ccd() ? 1 : 0;
+}
+
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_used_bytes(void) {
+    return RedletSRAMCache::instance()->scratchpad_used();
+}
+
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_remaining_bytes(void) {
+    return RedletSRAMCache::instance()->scratchpad_remaining();
+}
+
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_peak_bytes(void) {
+    return RedletSRAMCache::instance()->scratchpad_peak();
+}
+
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_capacity(void) {
+    return RedletSRAMCache::instance()->scratchpad_capacity();
 }
 
 MSIMD_API int SF_custominiVm_thread_pin_to_numa_node(uint32_t numa_node) {

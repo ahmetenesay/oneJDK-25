@@ -41,6 +41,7 @@
 #include "gc/redlet/redletEntangle.hpp"
 #include "gc/redlet/redletHardware.hpp"
 #include "gc/redlet/redletIntentCLI.hpp"
+#include "gc/redlet/redletALU.hpp"
 
 #ifndef SACFOR_MAX_INSTANCES
 #define SACFOR_MAX_INSTANCES 4096
@@ -49,6 +50,26 @@
 #ifndef SACFOR_MAX_DISPATCH_SLOTS
 #define SACFOR_MAX_DISPATCH_SLOTS 4096
 #endif
+
+/* Vector ALU Opcodes */
+enum sf_vector_alu_op_e : uint32_t {
+    SF_VEC_OP_ADD               = 0x0001,
+    SF_VEC_OP_SUB               = 0x0002,
+    SF_VEC_OP_MUL               = 0x0003,
+    SF_VEC_OP_DIV               = 0x0004,
+    SF_VEC_OP_FMA               = 0x0005,
+    SF_VEC_OP_DOT               = 0x0006,
+    SF_VEC_OP_MIN               = 0x0007,
+    SF_VEC_OP_MAX               = 0x0008,
+    SF_VEC_OP_AND               = 0x0009,
+    SF_VEC_OP_OR                = 0x000A,
+    SF_VEC_OP_XOR               = 0x000B,
+    SF_VEC_OP_MULTI_LIMB_ADD    = 0x0010,
+    SF_VEC_OP_MULTI_LIMB_MUL    = 0x0011,
+    SF_VEC_OP_CARD_TABLE_SCAN   = 0x0020,
+    SF_VEC_OP_MEMZERO_FAST      = 0x0021,
+    SF_VEC_OP_MAX_OP            = 0x0030
+};
 
 typedef void (*SF_custominiVm_kernel_fn_t)(const SF_custominiVm_tensor_t* inputs, int n_in,
                                            SF_custominiVm_tensor_t* outputs, int n_out);
@@ -94,8 +115,12 @@ struct sacculus_dispatch_table_t {
     void                       register_fn(uint32_t fn_id, sacculus_kernel_fn_t fn) noexcept;
     void                       swap(uint32_t fn_id, sacculus_kernel_fn_t new_fn, uint64_t best) noexcept;
     sacculus_kernel_fn_t       read_fn_seqlock(uint32_t fn_id, uint64_t* out_best_cycles = nullptr) const noexcept;
+    void                       init_default_kernels() noexcept;
 };
 using sfDispatchTable = sacculus_dispatch_table_t;
+
+extern sacculus_dispatch_table_t g_sf_dispatch_table;
+extern sacculus_instance_pool_t  g_sf_instance_pool;
 
 /* ========================================================================= */
 /* 2. GLOBAL 65+ WORLD ISA CATALOG & FALLBACK HIERARCHY                      */
@@ -146,7 +171,113 @@ struct sf_fallback_pool_t {
 using FallbackThreadPool = sf_fallback_pool_t;
 
 /* ========================================================================= */
-/* 4. NESTED BATCH/GROUP SCOPES, BMI/MORTON, RDTSC & MICRO-ARCH HINTERS      */
+/* 4. VECTOR ALU KERNELS (Built-in Hardware-Accelerated & Emulated)          */
+/* ========================================================================= */
+
+// FP32 Vector Kernels
+MSIMD_API void sf_kernel_vec_add_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_sub_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_mul_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_fma_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_dot_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_min_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_max_f32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+
+// FP64 Vector Kernels
+MSIMD_API void sf_kernel_vec_add_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_sub_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_mul_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_fma_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_dot_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_min_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_max_f64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+
+// INT32 Vector Kernels
+MSIMD_API void sf_kernel_vec_add_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_sub_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_mul_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_and_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_or_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_xor_i32(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+
+// INT64 Vector Kernels
+MSIMD_API void sf_kernel_vec_add_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_sub_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_mul_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_and_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_or_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_vec_xor_i64(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+
+// Multi-Limb Emulated Kernels (Section 14 & 15)
+MSIMD_API void sf_kernel_emu_double_double_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_emu_double_double_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_emu_quad_double_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_emu_quad_double_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_emu_int128_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_emu_int128_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_emu_int256_add(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_emu_int256_mul(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+
+// GC Internal Fast-Path Kernels
+MSIMD_API void sf_kernel_gc_card_table_scan(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+MSIMD_API void sf_kernel_gc_memzero(const SF_custominiVm_tensor_t* in, int nin, SF_custominiVm_tensor_t* out, int nout);
+
+/* Fast-Path Arithmetic Routing */
+MSIMD_API int sf_dispatch_fast_path_arithmetic(uint32_t op_id, uint8_t dtype,
+                                               const void* a, const void* b, void* out,
+                                               size_t count, uint8_t priority);
+
+/* ========================================================================= */
+/* 5. HOTSPOT C++20 STATIC INTERFACE (RedletDispatchISA)                     */
+/* ========================================================================= */
+
+class RedletDispatchISA {
+public:
+    static inline void init() noexcept {
+        g_sf_dispatch_table.init_default_kernels();
+    }
+
+    static inline sacculus_dispatch_table_t& table() noexcept {
+        return g_sf_dispatch_table;
+    }
+
+    static inline sacculus_instance_pool_t& pool() noexcept {
+        return g_sf_instance_pool;
+    }
+
+    static inline bool execute(uint32_t fn_id, const SF_custominiVm_tensor_t* in, int nin,
+                               SF_custominiVm_tensor_t* out, int nout) noexcept {
+        sacculus_kernel_fn_t fn = g_sf_dispatch_table.read_fn_seqlock(fn_id);
+        if (!fn) return false;
+        fn(in, nin, out, nout);
+        return true;
+    }
+
+    static inline int dispatch_fast_path(uint32_t op_id, uint8_t dtype,
+                                         const void* a, const void* b, void* out,
+                                         size_t count, uint8_t priority = 5) {
+        return sf_dispatch_fast_path_arithmetic(op_id, dtype, a, b, out, count, priority);
+    }
+
+    static inline const sf_world_isa_entry_t* find_isa(const char* name) noexcept {
+        return sf_find_world_isa(name);
+    }
+
+    static inline size_t catalog_count() noexcept {
+        return sf_world_isa_catalog_count();
+    }
+
+    static inline const sf_world_isa_entry_t* catalog_at(size_t idx) noexcept {
+        return sf_world_isa_catalog_at(idx);
+    }
+
+    static inline size_t resolve_isa_chain(const char* start_isa, const sf_world_isa_entry_t** out_chain, size_t max_depth) noexcept {
+        return sf_resolve_isa_fallback_chain(start_isa, out_chain, max_depth);
+    }
+};
+
+/* ========================================================================= */
+/* 6. NESTED BATCH/GROUP SCOPES, BMI/MORTON, RDTSC & MICRO-ARCH HINTERS      */
 /* ========================================================================= */
 
 struct sf_batch_scope;

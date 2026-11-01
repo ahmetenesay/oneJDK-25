@@ -27,6 +27,7 @@
 #include "gc/redlet/redletMemoryPool.hpp"
 #include "gc/redlet/redletThreadLocalData.hpp"
 #include "gc/redlet/redlet_globals.hpp"
+#include "gc/redlet/redletFlags.hpp"
 #include "gc/shared/gcArguments.hpp"
 #include "gc/shared/locationPrinter.inline.hpp"
 #include "gc/shared/tlab_globals.hpp"
@@ -63,6 +64,7 @@ RedletHeap::RedletHeap() :
   _allocated_bytes(0) {}
 
 RedletHeap::~RedletHeap() {
+  _slab_allocator.destroy();
   if (_root_scanner != nullptr) {
     delete _root_scanner;
     _root_scanner = nullptr;
@@ -122,6 +124,14 @@ jint RedletHeap::initialize() {
   _runway.init(max_byte_size / 4, RedletForbidDynamicGrowth || RedletSCMode);
   sf_tensor_views_bind_runway(&_runway);
 
+  // Initialize Slab & Elastic TLAB Allocator
+  _slab_allocator.init(max_byte_size / 4,
+                       AlwaysPreTouch,
+                       RedletForbidDynamicGrowth || RedletSCMode,
+                       RedletFlags::config().integers.freelist_recycle_policy,
+                       RedletFlags::config().integers.slab_chunk_size_bytes);
+  _slab_allocator.set_falline(&_falline);
+
   // Initialize unified RedletGC Big GC engine
   _gc.init(&_runway, &_motherline, &_falline, &_landfill);
 
@@ -164,7 +174,8 @@ GrowableArray<MemoryPool*> RedletHeap::memory_pools() {
 }
 
 size_t RedletHeap::used() const {
-  return _space != nullptr ? _space->used() : 0;
+  size_t space_used = _space != nullptr ? _space->used() : 0;
+  return space_used + _slab_allocator.get_used_bytes();
 }
 
 HeapWord* RedletHeap::allocate_work(size_t size) {
@@ -221,6 +232,19 @@ HeapWord* RedletHeap::allocate_work(size_t size) {
 
 HeapWord* RedletHeap::mem_allocate(size_t size, bool* gc_overhead_limit_was_exceeded) {
   *gc_overhead_limit_was_exceeded = false;
+  size_t bytes = size * HeapWordSize;
+
+  // Small objects (<= 256 KB) route to discrete Slab size classes
+  if (bytes <= RedletSlabAllocator::MAX_SLAB_SIZE) {
+    void* p = _slab_allocator.allocate(bytes);
+    if (p != nullptr) {
+      _allocated_bytes.fetch_add(bytes, std::memory_order_relaxed);
+      log_trace(gc, alloc)("Allocated %zu bytes via SlabAllocator at " PTR_FORMAT, bytes, p2i(p));
+      return reinterpret_cast<HeapWord*>(p);
+    }
+  }
+
+  // Large / Humongous objects (> 256 KB) bypass slab freelists and allocate directly from runway/virtual space
   return allocate_work(size);
 }
 
@@ -231,20 +255,25 @@ HeapWord* RedletHeap::allocate_new_tlab(size_t min_size, size_t requested_size, 
   if (RedletElasticTLAB) {
     size_t ergo_size = RedletThreadLocalData::ergo_tlab_size(thread);
     if (ergo_size != 0) {
-      size = clamp(ergo_size, min_size, requested_size);
+      size = clamp(ergo_size, min_size, _max_tlab_size);
     }
   }
 
   size = align_object_size(size);
-  HeapWord* res = allocate_work(size);
 
-  if (res != nullptr) {
-    *actual_size = size;
-    if (RedletElasticTLAB) {
-      RedletThreadLocalData::set_ergo_tlab_size(thread, size * 2);
+  // Route TLAB refills directly to RedletSlabAllocator with SIMD zeroing and Falline remainder capture
+  HeapWord* res = _slab_allocator.refill_tlab(min_size, size, actual_size);
+  if (res == nullptr) {
+    res = allocate_work(size);
+    if (res != nullptr) {
+      *actual_size = size;
+    } else {
+      *actual_size = 0;
     }
-  } else {
-    *actual_size = 0;
+  }
+
+  if (res != nullptr && RedletElasticTLAB) {
+    RedletThreadLocalData::set_ergo_tlab_size(thread, (*actual_size) * 2);
   }
 
   return res;
@@ -420,7 +449,11 @@ size_t RedletHeap::execute_rmrp() {
   size_t target_bytes = (count > 0) ? (count * page_sz) : page_sz;
   size_t reclaimed_bytes = RedletRMRP::execute_reclamation(method, target_bytes);
   if (reclaimed_bytes > 0) {
-    _runway.allocator()->rebate_pages(static_cast<uint32_t>(method), reclaimed_bytes);
+    sf_snatch_rebate_mode_e rmode = (method == sf_rmrp_method_e::SEQUENTIAL)
+                                        ? sf_snatch_rebate_mode_e::RAPID
+                                        : sf_snatch_rebate_mode_e::DECOMMIT;
+    _runway.allocator.rebate_pages(rmode, reclaimed_bytes);
+    _slab_allocator.rebate_pages(rmode, reclaimed_bytes);
   }
   log_info(gc, heap)("RMRP scan: %zu emptyboxes in Falline cache, reclaimed %zu bytes", count, reclaimed_bytes);
 

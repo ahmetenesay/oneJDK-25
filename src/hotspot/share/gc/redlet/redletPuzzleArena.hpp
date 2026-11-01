@@ -35,6 +35,15 @@
 #include <thread>
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+#include <malloc.h>
+#endif
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 
 #include "gc/redlet/redletGearkit.hpp"
 #include "gc/redlet/redletHardware.hpp"
@@ -56,6 +65,29 @@
 #define SACFOR_I32 SF_DTYPE_I32
 #endif
 
+static inline void* sf_puzzle_aligned_alloc(size_t sz, size_t align = 64) noexcept {
+#if defined(_MSC_VER) || defined(__MINGW32__)
+    return _aligned_malloc(sz, align);
+#elif defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L) || (defined(__cplusplus) && __cplusplus >= 201703L)
+    size_t padded = (sz + align - 1) & ~(align - 1);
+    return std::aligned_alloc(align, padded > 0 ? padded : align);
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+    void* ptr = nullptr;
+    if (posix_memalign(&ptr, align, sz) != 0) return nullptr;
+    return ptr;
+#else
+    return malloc(sz);
+#endif
+}
+
+static inline void sf_puzzle_aligned_free(void* ptr) noexcept {
+#if defined(_MSC_VER) || defined(__MINGW32__)
+    _aligned_free(ptr);
+#else
+    free(ptr);
+#endif
+}
+
 #ifdef STRICT
 #pragma push_macro("STRICT")
 #undef STRICT
@@ -72,6 +104,8 @@
  * - NUMERIC_IEEE_FP: Float/double/mathematical operations.
  *   If user specifies no target, default is Strict IEEE 754 (machine epsilon:
  *   FLT_EPSILON for float32, DBL_EPSILON for float64).
+ *   Error guard: max_abs_err <= epsilon AND MSE <= epsilon^2.
+ *   Finite guard: strictly no NaN or Inf produced.
  *
  * - EXACT_ALGEBRAIC: String, memory copy, hash, bitmask, and GC bitmap/card-table scans.
  *   Tolerance is strictly ZERO (0-bit deviation, exact bitwise invariance, memcmp == 0).
@@ -104,6 +138,22 @@ enum class sf_puzzle_execution_mode_e : uint8_t {
 #undef SF_RESTORE_WIN32_STRICT_MACRO
 #endif
 
+enum class sf_sample_source_e : uint8_t {
+    RUNWAY_MOTHERLINE = 0,
+    TLAB_MUTATOR      = 1,
+    SYNTHETIC_VECTOR  = 2,
+    GC_BITMAP         = 3,
+    GC_FALLINE        = 4
+};
+
+enum class sf_puzzler_bench_id_e : uint32_t {
+    BENCH_MEMZERO        = 1,
+    BENCH_MEMCPY         = 2,
+    BENCH_BITMAP_SCAN    = 3,
+    BENCH_VECTOR_FMA_F32 = 4,
+    BENCH_MATRIX_DOT_F64 = 5
+};
+
 /* ========================================================================= */
 /* 2. CANDIDATE & TELEMETRY MANIFEST TYPES                                   */
 /* ========================================================================= */
@@ -119,27 +169,34 @@ typedef SF_custominiVm_isa_candidate_t sfIsaCandidate;
 #endif
 
 struct sf_puzzle_sample_t {
-    uint8_t  dtype{ SACFOR_F32 };
-    size_t   byte_size{ 0 };
-    int32_t  shape[8]{ 1, 0, 0, 0, 0, 0, 0, 0 };
-    int32_t  ndim{ 1 };
-    uint8_t* data{ nullptr };
+    uint8_t            dtype{ SACFOR_F32 };
+    size_t             byte_size{ 0 };
+    int32_t            shape[8]{ 1, 0, 0, 0, 0, 0, 0, 0 };
+    int32_t            ndim{ 1 };
+    uint8_t*           data{ nullptr };
+    sf_sample_source_e source{ sf_sample_source_e::RUNWAY_MOTHERLINE };
+    uint64_t           sample_timestamp_tsc{ 0 };
+    bool               is_from_tlab{ false };
 
     sf_puzzle_sample_t() {
-        data = (uint8_t*)_mm_malloc(128 * 1024, 64);
+        data = (uint8_t*)sf_puzzle_aligned_alloc(128 * 1024, 64);
         if (data) memset(data, 0, 128 * 1024);
     }
     ~sf_puzzle_sample_t() {
-        if (data) _mm_free(data);
+        if (data) sf_puzzle_aligned_free(data);
     }
     sf_puzzle_sample_t(const sf_puzzle_sample_t& o) {
         dtype = o.dtype; byte_size = o.byte_size; ndim = o.ndim;
+        source = o.source; sample_timestamp_tsc = o.sample_timestamp_tsc;
+        is_from_tlab = o.is_from_tlab;
         for (int i = 0; i < 8; ++i) shape[i] = o.shape[i];
-        data = (uint8_t*)_mm_malloc(128 * 1024, 64);
+        data = (uint8_t*)sf_puzzle_aligned_alloc(128 * 1024, 64);
         if (o.data && data) memcpy(data, o.data, 128 * 1024);
     }
     sf_puzzle_sample_t(sf_puzzle_sample_t&& o) noexcept {
         dtype = o.dtype; byte_size = o.byte_size; ndim = o.ndim;
+        source = o.source; sample_timestamp_tsc = o.sample_timestamp_tsc;
+        is_from_tlab = o.is_from_tlab;
         for (int i = 0; i < 8; ++i) shape[i] = o.shape[i];
         data = o.data;
         o.data = nullptr;
@@ -147,19 +204,59 @@ struct sf_puzzle_sample_t {
     sf_puzzle_sample_t& operator=(const sf_puzzle_sample_t& o) {
         if (this == &o) return *this;
         dtype = o.dtype; byte_size = o.byte_size; ndim = o.ndim;
+        source = o.source; sample_timestamp_tsc = o.sample_timestamp_tsc;
+        is_from_tlab = o.is_from_tlab;
         for (int i = 0; i < 8; ++i) shape[i] = o.shape[i];
-        if (!data) data = (uint8_t*)_mm_malloc(128 * 1024, 64);
+        if (!data) data = (uint8_t*)sf_puzzle_aligned_alloc(128 * 1024, 64);
         if (o.data && data) memcpy(data, o.data, 128 * 1024);
         return *this;
     }
     sf_puzzle_sample_t& operator=(sf_puzzle_sample_t&& o) noexcept {
         if (this == &o) return *this;
-        if (data) _mm_free(data);
+        if (data) sf_puzzle_aligned_free(data);
         dtype = o.dtype; byte_size = o.byte_size; ndim = o.ndim;
+        source = o.source; sample_timestamp_tsc = o.sample_timestamp_tsc;
+        is_from_tlab = o.is_from_tlab;
         for (int i = 0; i < 8; ++i) shape[i] = o.shape[i];
         data = o.data;
         o.data = nullptr;
         return *this;
+    }
+
+    static sf_puzzle_sample_t create_from_runway(const void* src, size_t sz, uint8_t dt = SACFOR_F32) {
+        sf_puzzle_sample_t s;
+        s.dtype = dt;
+        s.source = sf_sample_source_e::RUNWAY_MOTHERLINE;
+        s.is_from_tlab = false;
+        s.sample_timestamp_tsc = sacculus_rdtsc();
+        size_t copy_sz = sz > (128 * 1024) ? (128 * 1024) : sz;
+        if (src && s.data) {
+            memcpy(s.data, src, copy_sz);
+            s.byte_size = copy_sz;
+            s.ndim = 2;
+            size_t elem_sz = (dt == SACFOR_F64 || dt == SACFOR_I64) ? 8 : 4;
+            s.shape[0] = 1;
+            s.shape[1] = static_cast<int32_t>(copy_sz / (elem_sz > 0 ? elem_sz : 1));
+        }
+        return s;
+    }
+
+    static sf_puzzle_sample_t create_from_tlab(const void* src, size_t sz, uint8_t dt = SACFOR_F32) {
+        sf_puzzle_sample_t s;
+        s.dtype = dt;
+        s.source = sf_sample_source_e::TLAB_MUTATOR;
+        s.is_from_tlab = true;
+        s.sample_timestamp_tsc = sacculus_rdtsc();
+        size_t copy_sz = sz > (128 * 1024) ? (128 * 1024) : sz;
+        if (src && s.data) {
+            memcpy(s.data, src, copy_sz);
+            s.byte_size = copy_sz;
+            s.ndim = 2;
+            size_t elem_sz = (dt == SACFOR_F64 || dt == SACFOR_I64) ? 8 : 4;
+            s.shape[0] = 1;
+            s.shape[1] = static_cast<int32_t>(copy_sz / (elem_sz > 0 ? elem_sz : 1));
+        }
+        return s;
     }
 };
 
@@ -172,29 +269,35 @@ struct sf_puzzle_batch_job_t {
 };
 
 struct sf_puzzle_experiment_t {
-    uint32_t              fn_id{ 0 };
-    char                  name[32]{ 0 };
-    sacculus_kernel_fn_t  candidate{ nullptr };
-    char                  target_isa[16]{ 0 };
-    float                 target_epsilon{ 1e-4f };
+    uint32_t                fn_id{ 0 };
+    char                    name[32]{ 0 };
+    sacculus_kernel_fn_t    candidate{ nullptr };
+    char                    target_isa[16]{ 0 };
+    float                   target_epsilon{ 1e-4f };
     SF_custominiVm_tensor_t target_tensor{};
-    bool                  has_target_tensor{ false };
+    bool                    has_target_tensor{ false };
 };
 
 struct sf_candidate_eval_t {
-    int                  idx{ -1 };
-    sacculus_kernel_fn_t fn{ nullptr };
-    char                 variant_name[32]{ 0 };
-    char                 isa_tag[16]{ 0 };
-    bool                 executed_ok{ false };
-    uint32_t             fault_code{ 0 };
-    uint64_t             cycles{ UINT64_MAX };
-    float                max_abs_err{ 1e9f };
-    float                mse{ 1e9f };
-    bool                 precision_passed{ false };
-    bool                 speed_passed{ false };
-    double               score{ -1.0 };
-    bool                 is_hybrid{ false };
+    int                         idx{ -1 };
+    sacculus_kernel_fn_t        fn{ nullptr };
+    char                        variant_name[32]{ 0 };
+    char                        isa_tag[16]{ 0 };
+    bool                        executed_ok{ false };
+    uint32_t                    fault_code{ 0 };
+    uint64_t                    cycles{ UINT64_MAX };
+    float                       max_abs_err{ 1e9f };
+    float                       mse{ 1e9f };
+    bool                        precision_passed{ false };
+    bool                        speed_passed{ false };
+    double                      score{ -1.0 };
+    bool                        is_hybrid{ false };
+    double                      l1_l2_cache_miss_penalty{ 0.0 };
+    double                      ipc_score{ 0.0 };
+    double                      downclock_penalty{ 1.0 };
+    uint64_t                    instructions_executed{ 0 };
+    uint64_t                    cache_misses{ 0 };
+    SF_custominiVm_pmu_stat_t   pmu_stats{};
 };
 
 struct sf_hybrid_compat_result_t {
@@ -204,6 +307,13 @@ struct sf_hybrid_compat_result_t {
     double dynamic_bound{ 1.0 };
     double observed_ratio{ 1.0 };
     char   reason[64]{ 0 };
+    double avx512_downclock_penalty{ 0.0 };
+    double p_core_ipc{ 0.0 };
+    double e_core_ipc{ 0.0 };
+    double p_core_cycles{ 0.0 };
+    double e_core_cycles{ 0.0 };
+    bool   avx512_throttle_detected{ false };
+    double asymmetric_ratio{ 1.0 };
 };
 
 struct sf_score_eval_t {
@@ -213,6 +323,36 @@ struct sf_score_eval_t {
     double precision_headroom{ 0.0 };
     float  max_err{ 0.0f };
     float  mse{ 0.0f };
+    double pmu_ipc{ 0.0 };
+    double cache_penalty{ 0.0 };
+    double downclock_factor{ 1.0 };
+};
+
+struct sf_puzzler_bench_result_t {
+    uint32_t                       bench_id{ 0 };
+    char                           bench_name[32]{ 0 };
+    char                           winning_isa[16]{ 0 };
+    uint64_t                       baseline_cycles{ 0 };
+    uint64_t                       winning_cycles{ 0 };
+    double                         speedup{ 1.0 };
+    double                         ipc{ 1.0 };
+    float                          max_abs_err{ 0.0f };
+    float                          mse{ 0.0f };
+    bool                           verified_ok{ false };
+    sf_puzzler_determinism_tier_e tier{ sf_puzzler_determinism_tier_e::EXACT_ALGEBRAIC };
+};
+
+struct sf_puzzle_arena_telemetry_t {
+    uint64_t total_experiments{ 0 };
+    uint64_t total_candidates_evaluated{ 0 };
+    uint64_t total_hotswaps_performed{ 0 };
+    uint64_t total_precision_failures{ 0 };
+    uint64_t total_speed_failures{ 0 };
+    uint64_t total_fault_isolations{ 0 };
+    uint64_t total_downclock_detections{ 0 };
+    uint64_t total_pausepoint_gates_armed{ 0 };
+    uint64_t last_winner_cycles{ 0 };
+    char     last_winner_name[32]{ 0 };
 };
 
 /* ========================================================================= */
@@ -230,6 +370,27 @@ MSIMD_API void                          sf_accumulate_ieee754_error_f64(const do
 /* ========================================================================= */
 /* 4. REDLET PUZZLE ARENA (sacculus_puzzle_arena_t)                          */
 /* ========================================================================= */
+
+class RedletPausepointGateGuard {
+private:
+    bool _armed{ false };
+public:
+    RedletPausepointGateGuard() {
+        SF_custominiVm_set_pausepoint_gate(1);
+        _armed = true;
+    }
+    ~RedletPausepointGateGuard() {
+        disarm();
+    }
+    void disarm() noexcept {
+        if (_armed) {
+            SF_custominiVm_set_pausepoint_gate(0);
+            _armed = false;
+        }
+    }
+    RedletPausepointGateGuard(const RedletPausepointGateGuard&) = delete;
+    RedletPausepointGateGuard& operator=(const RedletPausepointGateGuard&) = delete;
+};
 
 class RedletPuzzleArena {
 private:
@@ -256,13 +417,31 @@ private:
     uint8_t* stagnant_in_payload{ nullptr };
     uint8_t* candidate_out_payload{ nullptr };
     uint8_t* current_best_out_payload{ nullptr };
+    bool     _owns_payload_fallback{ false };
 
     sf_cpu_isa_inventory_t     cached_isa_inventory;
     std::vector<std::string>   active_simd_pool;
 
+    // Telemetry atomic accumulators
+    std::atomic<uint64_t> _telemetry_experiments{ 0 };
+    std::atomic<uint64_t> _telemetry_candidates_eval{ 0 };
+    std::atomic<uint64_t> _telemetry_hotswaps{ 0 };
+    std::atomic<uint64_t> _telemetry_prec_fails{ 0 };
+    std::atomic<uint64_t> _telemetry_speed_fails{ 0 };
+    std::atomic<uint64_t> _telemetry_fault_isolations{ 0 };
+    std::atomic<uint64_t> _telemetry_downclock_detections{ 0 };
+    std::atomic<uint64_t> _telemetry_pausepoint_gates{ 0 };
+    std::atomic<uint64_t> _telemetry_last_winner_cycles{ 0 };
+    char                  _telemetry_last_winner_name[32]{ 0 };
+    mutable std::mutex    _telemetry_lock;
+
 public:
     MSIMD_API RedletPuzzleArena();
     MSIMD_API ~RedletPuzzleArena();
+
+    MSIMD_API void ensure_payload_buffers();
+    MSIMD_API static void record_tlab_snapshot(const void* src, size_t sz, uint8_t dt = SACFOR_F32);
+    MSIMD_API static bool get_tlab_snapshot(sf_puzzle_sample_t& out_smp);
 
     MSIMD_API void init(sacculus_dispatch_table_t* dt = nullptr,
                         sacculus_runway_t* rw = nullptr,
@@ -289,6 +468,7 @@ public:
 
     MSIMD_API void identify_stream_types(std::vector<uint8_t>& detected_dtypes);
     MSIMD_API bool sample_runway_stream(size_t sample_iterations, std::vector<sf_puzzle_sample_t>& aggregated_samples);
+    MSIMD_API bool sample_tlab_stream(size_t sample_iterations, std::vector<sf_puzzle_sample_t>& aggregated_samples);
 
     MSIMD_API void submit_batch(uint32_t fn_id,
                                 const SF_custominiVm_tensor_t* batch_samples,
@@ -340,6 +520,16 @@ public:
     MSIMD_API void evaluate_candidate(sf_candidate_eval_t& candidate);
     MSIMD_API double score_variant(uint64_t baseline_cycles, uint64_t candidate_cycles, float max_err);
     MSIMD_API size_t history_count() const;
+    MSIMD_API std::vector<sf_candidate_eval_t> get_candidate_history() const;
+
+    // Self-tuning micro-benchmark suite
+    MSIMD_API sf_puzzler_bench_result_t run_self_tuning_benchmark(uint32_t bench_id);
+    MSIMD_API void run_all_self_tuning_benchmarks();
+
+    // Telemetry reporting & inspection
+    MSIMD_API sf_puzzle_arena_telemetry_t get_telemetry_snapshot() const;
+    MSIMD_API void reset_telemetry();
+    MSIMD_API void print_telemetry_report(FILE* out = stdout) const;
 };
 
 using sacculus_puzzle_arena_t = RedletPuzzleArena;
@@ -366,6 +556,12 @@ MSIMD_API void SF_custominiVm_puzzle_set_mode(SF_custominiVm_puzzle_exec_mode_t 
 MSIMD_API SF_custominiVm_puzzle_exec_mode_t SF_custominiVm_puzzle_get_mode(void);
 MSIMD_API void SF_custominiVm_puzzle_set_sample_count(size_t count);
 MSIMD_API size_t SF_custominiVm_puzzle_get_sample_count(void);
+
+MSIMD_API int  SF_custominiVm_puzzle_sample_tlab(size_t iterations);
+MSIMD_API void SF_custominiVm_puzzle_run_benchmark(uint32_t bench_id, sf_puzzler_bench_result_t* out_result);
+MSIMD_API void SF_custominiVm_puzzle_get_telemetry(sf_puzzle_arena_telemetry_t* out_telemetry);
+MSIMD_API void SF_custominiVm_puzzle_reset_telemetry(void);
+MSIMD_API void SF_custominiVm_puzzle_print_telemetry(void);
 
 #ifdef __cplusplus
 }

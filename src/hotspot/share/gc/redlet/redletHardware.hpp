@@ -71,6 +71,19 @@
 #include <sys/ioctl.h>
 #endif
 
+static inline void sf_get_cpuid(int info[4], int func, int subfunc = 0) {
+#if defined(_MSC_VER) || defined(__clang__)
+    __cpuidex(info, func, subfunc);
+#elif defined(__GNUC__)
+    __asm__ __volatile__(
+        "cpuid"
+        : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
+        : "a"(func), "c"(subfunc));
+#else
+    info[0] = info[1] = info[2] = info[3] = 0;
+#endif
+}
+
 /* ========================================================================= */
 /* 1. ARCHITECTURAL & HARDWARE TOPOLOGY TYPES & ENUMS                        */
 /* ========================================================================= */
@@ -251,6 +264,10 @@ struct sf_hybrid_homo_engine_t {
     MSIMD_API uint32_t get_optimal_worker_count(bool is_heavy_compute) const;
     MSIMD_API bool should_steer_to_pcore(bool is_heavy_simd, size_t vector_bytes = 64) const;
     MSIMD_API SF_custominiVm_core_tier_t classify_core(uint32_t core_id) const;
+    MSIMD_API bool bind_gc_sweeper_to_ecore(uint32_t thread_idx = (uint32_t)-1);
+    MSIMD_API bool bind_mutator_to_pcore(uint32_t thread_idx = (uint32_t)-1);
+    MSIMD_API bool bind_mutator_to_all_pcores();
+    MSIMD_API bool is_dual_hybrid_applicable() const;
 };
 
 /* ------------------------------------------------------------------------- */
@@ -376,6 +393,9 @@ struct sf_sram_cache_engine_t {
     MSIMD_API void get_optimal_tile_sizes(size_t elem_size, int& tile_M, int& tile_N, int& tile_K) const;
     MSIMD_API size_t get_cache_color_stride(uint32_t ways = 8) const;
     MSIMD_API static void flush_wc_buffers();
+    MSIMD_API size_t scratchpad_used_bytes() const;
+    MSIMD_API size_t scratchpad_remaining_bytes() const;
+    MSIMD_API size_t scratchpad_peak_bytes() const;
 };
 
 /* ------------------------------------------------------------------------- */
@@ -420,6 +440,14 @@ struct sf_execution_focus_engine_t {
                                                             const sf_hybrid_homo_engine_t* hybrid_eng) const;
     MSIMD_API void set_focus(SF_custominiVm_execution_focus_t focus);
     MSIMD_API void apply_state(SF_custominiVm_execution_focus_t resolved);
+
+    bool is_dual_hybrid() const { return active_focus.load(std::memory_order_relaxed) == SF_FOCUS_DUAL_HYBRID; }
+    bool is_scp_hybrid() const { return active_focus.load(std::memory_order_relaxed) == SF_FOCUS_SCP_HYBRID; }
+    bool is_mcp_hybrid() const { return active_focus.load(std::memory_order_relaxed) == SF_FOCUS_MCP_HYBRID; }
+    bool is_dual_homo() const { return active_focus.load(std::memory_order_relaxed) == SF_FOCUS_DUAL_HOMO; }
+    bool is_scp_homo() const { return active_focus.load(std::memory_order_relaxed) == SF_FOCUS_SCP_HOMO; }
+    bool is_mcp_homo() const { return active_focus.load(std::memory_order_relaxed) == SF_FOCUS_MCP_HOMO; }
+    SF_custominiVm_execution_focus_t get_focus_mode() const { return active_focus.load(std::memory_order_relaxed); }
 };
 
 /* ------------------------------------------------------------------------- */
@@ -536,6 +564,19 @@ MSIMD_API void SF_custominiVm_dram_stream_store(void* dst, const void* src, size
 MSIMD_API void SF_custominiVm_pmu_sample_begin(void);
 MSIMD_API void SF_custominiVm_pmu_sample_end(SF_custominiVm_pmu_stat_t* out_stat, size_t bytes_processed);
 
+MSIMD_API int SF_custominiVm_bind_gc_sweeper_to_ecore(uint32_t worker_id);
+MSIMD_API int SF_custominiVm_bind_mutator_to_pcore(void);
+MSIMD_API int SF_custominiVm_bind_mutator_to_specific_pcore(uint32_t thread_idx);
+MSIMD_API int SF_custominiVm_has_3d_vcache(void);
+MSIMD_API int SF_custominiVm_has_intel_bllc(void);
+MSIMD_API int SF_custominiVm_has_asymmetric_3d_vcache(void);
+MSIMD_API int SF_custominiVm_bind_calling_thread_to_vcache_ccd(void);
+MSIMD_API int SF_custominiVm_bind_calling_thread_to_frequency_ccd(void);
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_used_bytes(void);
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_remaining_bytes(void);
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_peak_bytes(void);
+MSIMD_API size_t SF_custominiVm_sram_scratchpad_capacity(void);
+
 MSIMD_API void* sf_numa_alloc(size_t size, uint32_t numa_node);
 MSIMD_API void  sf_numa_free(void* ptr, size_t size);
 MSIMD_API void* msimd_numa_alloc(size_t size, uint32_t numa_node);
@@ -548,15 +589,21 @@ MSIMD_API int   SF_custominiVm_thread_pin_to_numa_node(uint32_t numa_node);
 }
 #endif
 
+// Forward declaration / inclusion of RedletSRAMCache
+class RedletSRAMCache;
+
 // High-level Redlet aliases
 using RedletHardwareNexus        = sf_hardware_engine_nexus_t;
 using RedletHybridEngine          = sf_hybrid_homo_engine_t;
 using RedletNumaEngine            = sf_numa_uma_engine_t;
 using RedletSMTEngine             = sf_smt_ht_engine_t;
 using RedletSRAMCacheEngine       = sf_sram_cache_engine_t;
+using RedletSRAM                  = RedletSRAMCache;
 using RedletUpclocker             = sf_upclocker_t;
 using RedletPMUSession            = sf_pmu_session_t;
 using RedletExecutionFocusEngine  = sf_execution_focus_engine_t;
 using RedletCPUISAInventory       = sf_cpu_isa_inventory_t;
+
+#include "gc/redlet/redletSRAMCache.hpp"
 
 #endif // SHARE_GC_REDLET_REDLETHARDWARE_HPP

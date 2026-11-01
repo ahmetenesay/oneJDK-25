@@ -35,6 +35,7 @@
 #include "gc/redlet/redletDispatchISA.hpp"
 #include "gc/redlet/redletMotherline.hpp"
 #include "gc/redlet/redletRunway.hpp"
+#include "gc/redlet/redletSlabAllocator.hpp"
 #include "gc/redlet/redletPitstop.hpp"
 #include "gc/redlet/redletPuzzleArena.hpp"
 #include "gc/redlet/redletMLTC.hpp"
@@ -76,6 +77,7 @@ private:
   RedletTBBArenaManager    _tbb_arenas;
   RedletMotherline         _motherline;
   RedletRunway             _runway;
+  RedletSlabAllocator      _slab_allocator;
   RedletLandfill           _landfill;
   RedletPitstop            _pitstop;
   RedletPuzzleArena        _puzzle_arena;
@@ -107,12 +109,12 @@ public:
   GrowableArray<GCMemoryManager*> memory_managers() override;
   GrowableArray<MemoryPool*> memory_pools() override;
 
-  size_t max_capacity() const override { return _virtual_space.reserved_size();  }
-  size_t capacity()     const override { return _virtual_space.committed_size(); }
+  size_t max_capacity() const override { return _virtual_space.reserved_size() + _slab_allocator.capacity();  }
+  size_t capacity()     const override { return _virtual_space.committed_size() + _slab_allocator.capacity(); }
   size_t used()         const override;
 
   bool is_in(const void* p) const override {
-    return _space != nullptr && _space->is_in(p);
+    return (_space != nullptr && _space->is_in(p)) || _slab_allocator.is_in(p);
   }
 
   bool requires_barriers(stackChunkOop obj) const override { return false; }
@@ -154,7 +156,9 @@ public:
   void verify(VerifyOption option) override {}
 
   MemRegion reserved_region() const { return _reserved; }
-  bool is_in_reserved(const void* addr) const { return _reserved.contains(addr); }
+  bool is_in_reserved(const void* addr) const {
+    return _reserved.contains(addr) || _slab_allocator.is_in(addr);
+  }
 
   void print_heap_on(outputStream* st) const override;
   void print_gc_on(outputStream* st) const override {}
@@ -168,8 +172,9 @@ public:
   RedletFalline*         falline()      { return &_falline; }
   RedletTBBArenaManager* tbb_arenas()   { return &_tbb_arenas; }
   RedletMotherline*      motherline()   { return &_motherline; }
-  RedletRunway*          runway()       { return &_runway; }
-  RedletLandfill*        landfill()     { return &_landfill; }
+  RedletRunway*          runway()         { return &_runway; }
+  RedletSlabAllocator*   slab_allocator() { return &_slab_allocator; }
+  RedletLandfill*        landfill()       { return &_landfill; }
   RedletPitstop*         pitstop()      { return &_pitstop; }
   RedletPuzzleArena*     puzzle_arena() { return &_puzzle_arena; }
   RedletGC*              gc()           { return &_gc; }

@@ -30,6 +30,7 @@
 #include <atomic>
 #include "gc/redlet/redletGearkit.hpp"
 #include "gc/redlet/redletMotherline.hpp"
+#include "gc/redlet/redletEmptyBox.hpp"
 
 #ifndef MSIMD_API
 #if defined(_WIN32)
@@ -62,6 +63,9 @@ struct sacculus_self_heal_engine_t {
 
     bool heal_header(sfLiveHeader* obj);
     size_t scan_and_heal_motherline(RedletMotherline& ml);
+    bool rebuild_emptybox_chain(SF_custominiVm_emptybox_header_t* head, size_t max_scan = 1024);
+    bool shield_bitcode_exception(void* code_addr, uint32_t fault_code);
+    void check_autonomous_rollback_trigger();
     SF_custominiVm_self_heal_stats_t query_stats() const;
     void reset();
 };
@@ -75,6 +79,8 @@ extern "C" {
 MSIMD_API uint64_t SF_custominiVm_self_heal_run_check(void);
 MSIMD_API SF_custominiVm_self_heal_stats_t SF_custominiVm_self_heal_query_stats(void);
 MSIMD_API void SF_custominiVm_diagnostic_corrupt_tensor(void* tensor_ptr, uint8_t bad_gen, int cyclic_fwd);
+MSIMD_API int SF_custominiVm_self_heal_rebuild_emptyboxes(void* head_ptr, size_t max_scan);
+MSIMD_API int SF_custominiVm_self_heal_shield_bitcode(void* code_addr, uint32_t fault_code);
 
 #ifdef __cplusplus
 }
@@ -88,6 +94,12 @@ namespace SF {
         }
         static inline SF_custominiVm_self_heal_stats_t QueryStats() {
             return SF_custominiVm_self_heal_query_stats();
+        }
+        static inline int RebuildEmptyBoxes(void* head, size_t max_scan = 1024) {
+            return SF_custominiVm_self_heal_rebuild_emptyboxes(head, max_scan);
+        }
+        static inline int ShieldBitcode(void* code_addr, uint32_t fault_code) {
+            return SF_custominiVm_self_heal_shield_bitcode(code_addr, fault_code);
         }
     };
 }
