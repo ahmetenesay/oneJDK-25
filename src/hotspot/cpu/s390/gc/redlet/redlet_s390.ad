@@ -1,0 +1,174 @@
+//
+// Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+// DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+//
+// This code is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 2 only, as
+// published by the Free Software Foundation.  Oracle designates this
+// particular file as subject to the "Classpath" exception as provided
+// by Oracle in the LICENSE file that accompanied this code.
+//
+// This code is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+// version 2 for more details (a copy is included in the LICENSE file that
+// accompanied this code).
+//
+// You should have received a copy of the GNU General Public License version
+// 2 along with this work; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+//
+// Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+// if you need additional information or have any questions.
+//
+
+source_hpp %{
+
+#include "gc/shared/gc_globals.hpp"
+#include "gc/redlet/c2/redletBarrierSetC2.hpp"
+#include "gc/redlet/redletBarrierSetAssembler.hpp"
+
+%}
+
+source %{
+
+#include "gc/redlet/redletBarrierSet.hpp"
+#include "gc/redlet/redletBarrierSetAssembler.hpp"
+
+%}
+
+// ============================================================================
+// Redlet Store Instructions on s390x
+// ============================================================================
+
+instruct redletStoreP(indirect dst, memoryRegP src, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set dst (StoreP dst src));
+  effect(KILL cr);
+  ins_cost(MEMORY_REF_COST);
+  format %{ "STG     $src,$dst\t# redlet ptr" %}
+  ins_encode %{
+    __ z_stg($src$$Register, Address($dst$$Register));
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redletStoreN(indirect dst, iRegN src, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set dst (StoreN dst src));
+  effect(KILL cr);
+  ins_cost(MEMORY_REF_COST);
+  format %{ "ST      $src,$dst\t# redlet narrow ptr" %}
+  ins_encode %{
+    __ z_st($src$$Register, Address($dst$$Register));
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+// ============================================================================
+// Redlet CompareAndSwap (CAS) Instructions on s390x
+// ============================================================================
+
+instruct redletCompareAndSwapP(indirect mem_ptr, rarg5RegP oldval, iRegP_N2P newval, iRegI res, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set res (CompareAndSwapP mem_ptr (Binary oldval newval)));
+  match(Set res (WeakCompareAndSwapP mem_ptr (Binary oldval newval)));
+  effect(TEMP res, USE mem_ptr, USE_KILL oldval, KILL cr);
+  format %{ "$res = redletCompareAndSwapP $oldval,$newval,$mem_ptr" %}
+  ins_encode %{
+    Label done;
+    __ z_csg($oldval$$Register, $newval$$Register, Address($mem_ptr$$Register));
+    __ load_const_optimized($res$$Register, 0L);
+    __ z_brne(done);
+    __ load_const_optimized($res$$Register, 1L);
+    __ bind(done);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redletCompareAndSwapN(indirect mem_ptr, rarg5RegN oldval, iRegN_P2N newval, iRegI res, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set res (CompareAndSwapN mem_ptr (Binary oldval newval)));
+  match(Set res (WeakCompareAndSwapN mem_ptr (Binary oldval newval)));
+  effect(TEMP res, USE mem_ptr, USE_KILL oldval, KILL cr);
+  format %{ "$res = redletCompareAndSwapN $oldval,$newval,$mem_ptr" %}
+  ins_encode %{
+    Label done;
+    __ z_cs($oldval$$Register, $newval$$Register, Address($mem_ptr$$Register));
+    __ load_const_optimized($res$$Register, 0L);
+    __ z_brne(done);
+    __ load_const_optimized($res$$Register, 1L);
+    __ bind(done);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+// ============================================================================
+// Redlet CompareAndExchange (CAE) Instructions on s390x
+// ============================================================================
+
+instruct redletCompareAndExchangeP(indirect mem_ptr, rarg5RegP oldval, iRegP_N2P newval, iRegP res, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set res (CompareAndExchangeP mem_ptr (Binary oldval newval)));
+  effect(TEMP res, USE mem_ptr, USE_KILL oldval, KILL cr);
+  format %{ "$res = redletCompareAndExchangeP $oldval,$newval,$mem_ptr" %}
+  ins_encode %{
+    __ z_csg($oldval$$Register, $newval$$Register, Address($mem_ptr$$Register));
+    __ z_lgr($res$$Register, $oldval$$Register);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redletCompareAndExchangeN(indirect mem_ptr, rarg5RegN oldval, iRegN_P2N newval, iRegN res, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set res (CompareAndExchangeN mem_ptr (Binary oldval newval)));
+  effect(TEMP res, USE mem_ptr, USE_KILL oldval, KILL cr);
+  format %{ "$res = redletCompareAndExchangeN $oldval,$newval,$mem_ptr" %}
+  ins_encode %{
+    __ z_cs($oldval$$Register, $newval$$Register, Address($mem_ptr$$Register));
+    __ z_lr($res$$Register, $oldval$$Register);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+// ============================================================================
+// Redlet Atomic Exchange (GetAndSet) Instructions on s390x
+// ============================================================================
+
+instruct redletGetAndSetP(indirect mem_ptr, iRegP_N2P newval, iRegP res, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set res (GetAndSetP mem_ptr newval));
+  effect(TEMP res, USE mem_ptr, KILL cr);
+  format %{ "redletGetAndSetP $res,$newval,$mem_ptr" %}
+  ins_encode %{
+    Label retry;
+    __ z_lg($res$$Register, Address($mem_ptr$$Register));
+    __ bind(retry);
+    __ z_csg($res$$Register, $newval$$Register, Address($mem_ptr$$Register));
+    __ z_brne(retry);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redletGetAndSetN(indirect mem_ptr, iRegN_P2N newval, iRegN res, flagsReg cr)
+%{
+  predicate(UseRedletGC);
+  match(Set res (GetAndSetN mem_ptr newval));
+  effect(TEMP res, USE mem_ptr, KILL cr);
+  format %{ "redletGetAndSetN $res,$newval,$mem_ptr" %}
+  ins_encode %{
+    Label retry;
+    __ z_l($res$$Register, Address($mem_ptr$$Register));
+    __ bind(retry);
+    __ z_cs($res$$Register, $newval$$Register, Address($mem_ptr$$Register));
+    __ z_brne(retry);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
