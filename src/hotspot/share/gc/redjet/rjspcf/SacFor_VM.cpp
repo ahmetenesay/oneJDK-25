@@ -1,4 +1,4 @@
-﻿#if 0 // oneJDK-25: Reference implementation for RedjetGC extraction
+#if 0 // oneJDK-25: Reference implementation for RedjetGC extraction
 #include "MathventageSIMD.h"
 #include "SacculusForge.h"
 
@@ -3253,7 +3253,7 @@ struct HS_custominiVm_live_header_t {
     std::atomic<uint64_t> cycles_gained{ 0 };               // Net cycles saved per call
     uint16_t              active_simd_idx{ 0 };             // Active index in branched SIMD table
     uint16_t              simd_candidate_count{ 0 };        // Total candidates in table
-    hs_simd_ladder_slot_t simd_table[8]{};                // Branched SIMD ladder table
+    hs_simd_ladder_slot_t simd_table[17]{};               // 17-Slot SIMD ladder table (16 Primary + 1 Overwrite)
 
     std::atomic<void*>   forwarding_address{ nullptr };
 
@@ -3441,24 +3441,24 @@ struct HS_custominiVm_live_header_t {
     void set_active_simd_candidate(const char* isa_name, uint32_t level = 0) {
         if (!isa_name || !isa_name[0]) return;
         int found_idx = -1;
-        for (uint16_t i = 0; i < simd_candidate_count && i < 8; ++i) {
+        for (uint16_t i = 0; i < simd_candidate_count && i < 17; ++i) {
             if (_stricmp(simd_table[i].name, isa_name) == 0) {
                 found_idx = (int)i;
                 break;
             }
         }
         if (found_idx < 0) {
-            if (simd_candidate_count < 8) {
+            if (simd_candidate_count < 17) {
                 found_idx = (int)simd_candidate_count++;
             }
             else {
-                found_idx = 7;
+                found_idx = 16;  // Slot 16: Puzzler Overwrite Wildcard
             }
             strncpy(simd_table[found_idx].name, isa_name, sizeof(simd_table[found_idx].name) - 1);
             simd_table[found_idx].name[sizeof(simd_table[found_idx].name) - 1] = '\0';
             simd_table[found_idx].ladder_level = level;
         }
-        for (uint16_t i = 0; i < simd_candidate_count && i < 8; ++i) {
+        for (uint16_t i = 0; i < simd_candidate_count && i < 17; ++i) {
             simd_table[i].is_active = (i == (uint16_t)found_idx) ? 1 : 0;
         }
         active_simd_idx = (uint16_t)found_idx;
@@ -5865,7 +5865,7 @@ struct sacculus_runway_t {
                         }
                         else {
                             cur->active_simd_idx = new_simd_idx;
-                            for (uint16_t i = 0; i < cur->simd_candidate_count && i < 8; ++i) {
+                            for (uint16_t i = 0; i < cur->simd_candidate_count && i < 17; ++i) {
                                 cur->simd_table[i].is_active = (i == new_simd_idx) ? 1 : 0;
                             }
                         }

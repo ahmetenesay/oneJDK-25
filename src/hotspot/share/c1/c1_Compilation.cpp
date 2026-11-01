@@ -31,6 +31,8 @@
 #include "c1/c1_RangeCheckElimination.hpp"
 #include "c1/c1_ValueMap.hpp"
 #include "c1/c1_ValueStack.hpp"
+#include "c1/c1_SortOpt.hpp"
+#include "gc/redjet/rjnrml/c1/redjetVACBridge.hpp"
 #include "code/debugInfoRec.hpp"
 #include "compiler/compilationFailureInfo.hpp"
 #include "compiler/compilationLog.hpp"
@@ -396,6 +398,20 @@ int Compilation::compile_java_method() {
     BAILOUT_("Bailing out because of -XX:+BailoutAfterHIR", no_frame_size);
   }
 
+  // Phase 1: Virtual Abstract Compilation (VAC) & MIRC Execution Path
+  // Decouple C1 from emitting native binary code directly if VAC is enabled.
+  if (UseVAC && RedjetVACBridge::should_use_vac(method())) {
+    SortOpt sort_opt(hir());
+    sort_opt.execute();
+    _vac_snapshot = sort_opt.snapshot();
+
+    int vac_frame_size = compile_with_vac_mirc();
+    if (vac_frame_size >= 0) {
+      // Successfully compiled and emitted via MIRC Level 1 & 2
+      return vac_frame_size;
+    }
+    // If VAC/MIRC synthesis fell back, continue down legacy C1 LIR path
+  }
 
   {
     PhaseTraceTime timeit(_t_emit_lir);
@@ -416,6 +432,44 @@ int Compilation::compile_java_method() {
     PhaseTraceTime timeit(_t_codeemit);
     return emit_code_body();
   }
+}
+
+int Compilation::compile_with_vac_mirc() {
+  if (_vac_snapshot == nullptr) {
+    return -1;
+  }
+
+  if (_frame_map == nullptr) {
+    _frame_map = new FrameMap(method(), hir()->number_of_locks(), hir()->max_stack());
+    if (!_frame_map->finalize_frame(0)) {
+      return -1;
+    }
+  }
+
+  if (!setup_code_buffer(code(), 0)) {
+    return -1;
+  }
+  code()->initialize_oop_recorder(env()->oop_recorder());
+
+  if (_masm == nullptr) {
+    _masm = new C1_MacroAssembler(code());
+    _masm->set_oop_recorder(env()->oop_recorder());
+  }
+
+  int frame_size = RedjetVACBridge::compile_via_vac_and_mirc(this, _vac_snapshot);
+  if (frame_size < 0) {
+    return -1;
+  }
+
+  LIR_Assembler lir_asm(this);
+  emit_code_epilog(&lir_asm);
+  if (bailed_out()) {
+    return -1;
+  }
+
+  generate_exception_handler_table();
+
+  return frame_size;
 }
 
 void Compilation::install_code(int frame_size) {
@@ -587,6 +641,7 @@ Compilation::Compilation(AbstractCompiler* compiler, ciEnv* env, ciMethod* metho
 , _has_access_indexed(false)
 , _interpreter_frame_size(0)
 , _immediate_oops_patched(0)
+, _vac_snapshot(nullptr)
 , _current_instruction(nullptr)
 #ifndef PRODUCT
 , _last_instruction_printed(nullptr)

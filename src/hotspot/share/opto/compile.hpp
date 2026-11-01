@@ -68,6 +68,7 @@ class MachSafePointNode;
 class Node;
 class Node_Array;
 class Node_List;
+struct MIRC_Lvl1_Table;
 class Node_Notes;
 class NodeHash;
 class NodeCloneInfo;
@@ -529,6 +530,7 @@ public:
   int                   _interpreter_frame_size;
 
   PhaseOutput*          _output;
+  MIRC_Lvl1_Table*      _mirc_lvl1_table;
 
  public:
   // Accessors
@@ -542,6 +544,10 @@ public:
 
   PhaseOutput*      output() const              { return _output; }
   void              set_output(PhaseOutput* o)  { _output = o; }
+
+  MIRC_Lvl1_Table*  mirc_lvl1_table() const     { return _mirc_lvl1_table; }
+  void              set_mirc_lvl1_table(MIRC_Lvl1_Table* t) { _mirc_lvl1_table = t; }
+  bool              compile_with_mirc();
 
   // ID for this compilation.  Useful for setting breakpoints in the debugger.
   int               compile_id() const          { return _compile_id; }

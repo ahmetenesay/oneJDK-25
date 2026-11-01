@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -51,6 +51,9 @@
 #include "gc/redjet/rjspcf/redjetDispatchISA.hpp"
 #include "gc/redjet/rjspcf/redjetRingLog.hpp"
 #include "gc/redjet/rjnrml/redjetRunway.hpp"
+#include "opto/mirc/mirc.hpp"
+
+class VAC_Table_Snapshot;
 
 #ifndef SACFOR_F32
 #define SACFOR_F32 HS_DTYPE_F32
@@ -530,6 +533,14 @@ public:
     MSIMD_API hs_puzzle_arena_telemetry_t get_telemetry_snapshot() const;
     MSIMD_API void reset_telemetry();
     MSIMD_API void print_telemetry_report(FILE* out = stdout) const;
+
+    // Phase 4: Puzzler Çift Girdili Yarışma Motoru (VAC_Table + MIRC_Lvl1_Table)
+    MSIMD_API bool submit_duel(const VAC_Table_Snapshot* vac_tab,
+                               MIRC_Lvl1_Table* lvl1_tab,
+                               mirc_hotswap_delta_t* out_delta = nullptr);
+
+    MSIMD_API bool apply_hotswap_delta_2points(const mirc_hotswap_delta_t& delta,
+                                               HS_custominiVm_live_header_t* target_obj = nullptr);
 };
 
 using sacculus_puzzle_arena_t = RedjetPuzzleArena;

@@ -40,6 +40,7 @@ class Optimizer {
   void eliminate_conditional_expressions();
   void eliminate_blocks();
   void eliminate_null_checks();
+  void sort_opt();
 };
 
 #endif // SHARE_C1_C1_OPTIMIZER_HPP

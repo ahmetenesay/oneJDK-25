@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -236,7 +236,7 @@ bool RedjetPitstop::morph_isa_to_fledgling(hsLiveHeader* obj, uint16_t target_si
     if (obj->opt_permitted == 0u) {
         return false; // Locked by BYPASS_WARMUP
     }
-    if (target_simd_idx >= 8u) {
+    if (target_simd_idx >= 17u) {
         target_simd_idx = 0u;
     }
 
@@ -273,7 +273,7 @@ bool RedjetPitstop::morph_isa_to_fledgling(hsLiveHeader* obj, uint16_t target_si
         staged.simd_candidate_count = static_cast<uint16_t>(target_simd_idx + 1u);
     }
     staged.active_simd_idx = target_simd_idx;
-    for (uint16_t i = 0u; i < staged.simd_candidate_count && i < 8u; ++i) {
+    for (uint16_t i = 0u; i < staged.simd_candidate_count && i < 17u; ++i) {
         staged.simd_table[i].is_active = (i == target_simd_idx) ? 1u : 0u;
     }
 

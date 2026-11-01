@@ -292,6 +292,9 @@ void IR::optimize_blocks() {
       if (PrintIR  || PrintIR1 ) { tty->print_cr("IR after block elimination"); print(false); }
 #endif
     }
+    if (UseVAC && UseSortOpt) {
+      opt.sort_opt();
+    }
   }
 }
 

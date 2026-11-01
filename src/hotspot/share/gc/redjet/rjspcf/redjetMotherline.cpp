@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -319,7 +319,7 @@ void HS_custominiVm_live_header_t::init(uint32_t fn_id, uint64_t sig_hash, const
 void HS_custominiVm_live_header_t::set_active_simd_candidate(const char* isa_name, uint32_t level) {
     if (!isa_name || !isa_name[0]) return;
     int found_idx = -1;
-    for (uint16_t i = 0; i < simd_candidate_count && i < 8; ++i) {
+    for (uint16_t i = 0; i < simd_candidate_count && i < 17; ++i) {
 #if defined(_WIN32)
         if (_stricmp(simd_table[i].name, isa_name) == 0) {
 #else
@@ -330,16 +330,16 @@ void HS_custominiVm_live_header_t::set_active_simd_candidate(const char* isa_nam
         }
     }
     if (found_idx < 0) {
-        if (simd_candidate_count < 8) {
+        if (simd_candidate_count < 17) {
             found_idx = (int)simd_candidate_count++;
         } else {
-            found_idx = 7;
+            found_idx = 16;  // Slot 16: Puzzler Overwrite Wildcard
         }
         strncpy(simd_table[found_idx].name, isa_name, sizeof(simd_table[found_idx].name) - 1);
         simd_table[found_idx].name[sizeof(simd_table[found_idx].name) - 1] = '\0';
         simd_table[found_idx].ladder_level = level;
     }
-    for (uint16_t i = 0; i < simd_candidate_count && i < 8; ++i) {
+    for (uint16_t i = 0; i < simd_candidate_count && i < 17; ++i) {
         simd_table[i].is_active = (i == (uint16_t)found_idx) ? 1 : 0;
     }
     active_simd_idx = (uint16_t)found_idx;

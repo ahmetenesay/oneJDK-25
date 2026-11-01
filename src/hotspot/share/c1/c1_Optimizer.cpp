@@ -23,6 +23,7 @@
  */
 
 #include "c1/c1_Optimizer.hpp"
+#include "c1/c1_SortOpt.hpp"
 #include "c1/c1_ValueSet.hpp"
 #include "c1/c1_ValueStack.hpp"
 #include "compiler/compileLog.hpp"
@@ -1274,3 +1275,11 @@ void Optimizer::eliminate_null_checks() {
                   ir()->method()->signature()->as_symbol()->as_utf8());
   }
 }
+
+void Optimizer::sort_opt() {
+  if (UseSortOpt) {
+    SortOpt sort_opt(_ir);
+    sort_opt.execute();
+  }
+}
+

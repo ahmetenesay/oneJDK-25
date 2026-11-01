@@ -53,6 +53,7 @@ class ValueStack;
 class C1_MacroAssembler;
 class CFGPrinter;
 class CFGPrinterOutput;
+class VAC_Table_Snapshot;
 
 typedef GrowableArray<BasicType> BasicTypeArray;
 typedef GrowableArray<BasicType> BasicTypeList;
@@ -96,6 +97,7 @@ class Compilation: public StackObj {
   bool               _has_access_indexed;
   int                _interpreter_frame_size; // Stack space needed in case of a deoptimization
   int                _immediate_oops_patched;
+  VAC_Table_Snapshot* _vac_snapshot;
 
   // compilation helpers
   void initialize();
@@ -106,6 +108,7 @@ class Compilation: public StackObj {
   int  emit_code_body();
 
   int  compile_java_method();
+  int  compile_with_vac_mirc();
   void install_code(int frame_size);
   void compile_method();
 
@@ -157,6 +160,7 @@ class Compilation: public StackObj {
   bool has_access_indexed()                      { return _has_access_indexed; }
   bool should_install_code()                     { return _install_code && InstallMethods; }
   LinearScan* allocator()                        { return _allocator; }
+  VAC_Table_Snapshot* vac_snapshot() const       { return _vac_snapshot; }
 
   // Instruction ids
   int get_next_id()                              { return _next_id++; }

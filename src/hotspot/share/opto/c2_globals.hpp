@@ -98,6 +98,15 @@
           "actual size could be less depending on elements type")           \
           range(0, max_jint)                                                \
                                                                             \
+  product(bool, UseMIRC, true,                                              \
+          "Enable MIRC (Machine Instruction Ready Code) engine in C2")       \
+                                                                            \
+  product(bool, UseMIRCLvl1, true,                                          \
+          "Enable MIRC Level 1 runtime codegen & 17-slot SIMD synthesis")   \
+                                                                            \
+  product(bool, UseMIRCLvl2, true,                                          \
+          "Enable MIRC Level 2 direct native machine code generation")      \
+                                                                            \
   product(intx, ArrayOperationPartialInlineSize, 0, DIAGNOSTIC,             \
           "Partial inline size used for small array operations"             \
           "(e.g. copy,cmp) acceleration.")                                  \

@@ -54,6 +54,7 @@
 #include "opto/cfgnode.hpp"
 #include "opto/chaitin.hpp"
 #include "opto/compile.hpp"
+#include "opto/mirc/mirc.hpp"
 #include "opto/connode.hpp"
 #include "opto/convertnode.hpp"
 #include "opto/divnode.hpp"
@@ -694,7 +695,8 @@ Compile::Compile(ciEnv* ci_env, ciMethod* target, int osr_bci,
       _java_calls(0),
       _inner_loops(0),
       _interpreter_frame_size(0),
-      _output(nullptr)
+      _output(nullptr),
+      _mirc_lvl1_table(nullptr)
 #ifndef PRODUCT
       ,
       _in_dump_cnt(0)
@@ -955,6 +957,7 @@ Compile::Compile(ciEnv* ci_env,
       _inner_loops(0),
       _interpreter_frame_size(0),
       _output(nullptr),
+      _mirc_lvl1_table(nullptr),
 #ifndef PRODUCT
       _in_dump_cnt(0),
 #endif
@@ -2986,11 +2989,44 @@ void Compile::optimize_logic_cones(PhaseIterGVN &igvn) {
   }
 }
 
+bool Compile::compile_with_mirc() {
+  if (!UseMIRC) {
+    return false;
+  }
+
+  // Phase 2: MIRC Level 1 Synthesis (Runtime Codegen & 17-Slot SIMD Ladder)
+  if (UseMIRCLvl1) {
+    _mirc_lvl1_table = MIRC_Lvl1::synthesize_c2(this);
+    if (_mirc_lvl1_table == nullptr) {
+      return false;
+    }
+  }
+
+  // Phase 3: MIRC Level 2 Direct Machine Code Generation
+  if (UseMIRCLvl2 && _mirc_lvl1_table != nullptr) {
+    if (output() != nullptr && output()->code_buffer() != nullptr) {
+      int status = MIRC_Lvl2::emit_c2_machine_code(this, _mirc_lvl1_table, output()->code_buffer());
+      if (status >= 0) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 //------------------------------Code_Gen---------------------------------------
 // Given a graph, generate code for it
 void Compile::Code_Gen() {
   if (failing()) {
     return;
+  }
+
+  // MIRC Execution Path: bypass legacy C2 Matcher & Codegen when MIRC successfully emits code
+  if (UseMIRC && has_method() && method()->is_loaded()) {
+    if (compile_with_mirc()) {
+      return;
+    }
   }
 
   // Perform instruction selection.  You might think we could reclaim Matcher

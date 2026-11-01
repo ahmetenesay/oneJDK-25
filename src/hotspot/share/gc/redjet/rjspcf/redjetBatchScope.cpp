@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -577,7 +577,7 @@ size_t RedjetBatchScopeManager::batch_optimize_egg_objects(void** egg_hdrs, size
       // Direct fallback promotion when Pitstop instance is detached
       RedjetPointCoordinator::request_object_pause(hdr);
       hdr->active_simd_idx = target_idx;
-      for (uint16_t s = 0u; s < hdr->simd_candidate_count && s < 8u; ++s) {
+      for (uint16_t s = 0u; s < hdr->simd_candidate_count && s < 17u; ++s) {
         hdr->simd_table[s].is_active = (s == target_idx) ? 1u : 0u;
       }
       hdr->cycles_gained.store(est_gain, std::memory_order_relaxed);

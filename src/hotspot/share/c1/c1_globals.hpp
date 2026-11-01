@@ -83,6 +83,15 @@
   develop(bool, UseC1Optimizations, true,                                   \
           "Turn on C1 optimizations")                                       \
                                                                             \
+  product(bool, UseVAC, true,                                               \
+          "Enable VAC (Virtual Abstract Compilation) mode in C1")           \
+                                                                            \
+  product(bool, UseSortOpt, true,                                           \
+          "Enable SortOpt topological loop-unroll reordering in VAC")       \
+                                                                            \
+  product(intx, VACUnrollFactor, 8,                                         \
+          "Default loop unrolling factor in VAC SortOpt pass")              \
+                                                                            \
   develop(bool, SelectivePhiFunctions, true,                                \
           "create phi functions at loop headers only when necessary")       \
                                                                             \

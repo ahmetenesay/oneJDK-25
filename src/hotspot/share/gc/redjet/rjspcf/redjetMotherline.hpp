@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -318,7 +318,7 @@ struct alignas(SACFOR_CACHE_LINE) HS_custominiVm_live_header_t {
     std::atomic<uint64_t> cycles_gained{ 0 };
     uint16_t              active_simd_idx{ 0 };
     uint16_t              simd_candidate_count{ 0 };
-    hs_simd_ladder_slot_t simd_table[8]{};
+    hs_simd_ladder_slot_t simd_table[17]{};  // 16 Primary Candidate Rungs + 1 Puzzler Overwrite Wildcard (Slot 16)
 
     std::atomic<void*>    forwarding_address{ nullptr };
     std::atomic<uint32_t> child_view_count{ 0 };
