@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,7 +24,7 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include "gc/redjet/rjspcf/vfs/redjetVFSTree.hpp"
+#include "gc/redjet/rjnrml/vfs/redjetVFSTree.hpp"
 #ifdef REDJET_STANDALONE_BUILD
 #include "gc/redjet/rjnrml/redjetFlags.hpp"
 static const bool RedjetVFSStrict = true;

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -48,7 +48,7 @@
 #include "gc/redjet/rjnrml/redjetMonitoringSupport.hpp"
 #include "gc/redjet/rjnrml/redjetMarkBitMap.hpp"
 #include "gc/redjet/rjnrml/redjetRootScanner.hpp"
-#include "gc/redjet/rjspcf/vfs/redjetVFSTree.hpp"
+#include "gc/redjet/rjnrml/vfs/redjetVFSTree.hpp"
 #include "gc/shared/collectedHeap.hpp"
 #include "gc/shared/gc_globals.hpp"
 #include "gc/shared/softRefPolicy.hpp"

@@ -22,15 +22,15 @@
  * if you need additional information or have any questions.
  */
 
-#ifndef SHARE_GC_REDJET_RJSPCF_VFS_REDJETVFSTREE_HPP
-#define SHARE_GC_REDJET_RJSPCF_VFS_REDJETVFSTREE_HPP
+#ifndef SHARE_GC_REDJET_RJNRML_VFS_REDJETVFSTREE_HPP
+#define SHARE_GC_REDJET_RJNRML_VFS_REDJETVFSTREE_HPP
 
 #include <atomic>
 #if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
 #include <immintrin.h>
 #endif
 #ifdef REDJET_STANDALONE_BUILD
-#include "gc/redjet/rjspcf/vfs/redjetVFSNode.hpp"
+#include "gc/redjet/rjnrml/vfs/redjetVFSNode.hpp"
 #include <cstdio>
 #ifndef OUTPUTSTREAM_FALLBACK_DEFINED
 #define OUTPUTSTREAM_FALLBACK_DEFINED
@@ -48,7 +48,7 @@ public:
 };
 #endif
 #else
-#include "gc/redjet/rjspcf/vfs/redjetVFSNode.hpp"
+#include "gc/redjet/rjnrml/vfs/redjetVFSNode.hpp"
 #include "memory/allocation.hpp"
 #include "runtime/os.hpp"
 #include "utilities/ostream.hpp"
@@ -95,4 +95,4 @@ public:
   void print_node_recursive(outputStream* st, RedjetVFSNode* node, int indent) const;
 };
 
-#endif // SHARE_GC_REDJET_RJSPCF_VFS_REDJETVFSTREE_HPP
+#endif // SHARE_GC_REDJET_RJNRML_VFS_REDJETVFSTREE_HPP
