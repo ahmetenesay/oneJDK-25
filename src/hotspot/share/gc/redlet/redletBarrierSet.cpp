@@ -23,6 +23,7 @@
  */
 
 #include "gc/redlet/redletBarrierSet.hpp"
+#include "gc/redlet/redletBarrierSetAssembler.hpp"
 #include "gc/redlet/redletThreadLocalData.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetAssembler.hpp"
@@ -38,7 +39,7 @@ class RedletBarrierSetC1;
 class RedletBarrierSetC2;
 
 RedletBarrierSet::RedletBarrierSet() : BarrierSet(
-          make_barrier_set_assembler<BarrierSetAssembler>(),
+          make_barrier_set_assembler<RedletBarrierSetAssembler>(),
           make_barrier_set_c1<RedletBarrierSetC1>(),
           make_barrier_set_c2<RedletBarrierSetC2>(),
           nullptr /* barrier_set_nmethod */,

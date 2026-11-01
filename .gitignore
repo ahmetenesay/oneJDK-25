@@ -27,3 +27,6 @@ NashornProfile.txt
 
 # TBB headers — manually added, not from OpenJDK upstream
 /include/
+
+# Exclude non-Java pure-mathematics references from RedletGC
+src/hotspot/share/gc/redlet/.code_references/

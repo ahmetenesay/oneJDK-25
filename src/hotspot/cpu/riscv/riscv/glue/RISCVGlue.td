@@ -125,6 +125,7 @@ class GCBarrier<string asmstr, string desc, int c = 100, string pipe = "ialu_mem
 include "../gc/RISCV_G1.td"
 include "../gc/RISCV_Shenandoah.td"
 include "../gc/RISCV_Z.td"
+include "../gc/RISCV_Redlet.td"
 
 // ============================================================================
 // End of RISCVGlue.td

@@ -45,6 +45,8 @@
 #include "gc/redlet/redletGC.hpp"
 #include "gc/redlet/redletBarrierSet.hpp"
 #include "gc/redlet/redletMonitoringSupport.hpp"
+#include "gc/redlet/redletMarkBitMap.hpp"
+#include "gc/redlet/redletRootScanner.hpp"
 #include "gc/redlet/vfs/redletVFSTree.hpp"
 #include "gc/shared/collectedHeap.hpp"
 #include "gc/shared/gc_globals.hpp"
@@ -78,6 +80,8 @@ private:
   RedletPitstop            _pitstop;
   RedletPuzzleArena        _puzzle_arena;
   RedletGC                 _gc;
+  RedletMarkBitMap         _mark_bitmap;
+  RedletRootScanner*       _root_scanner;
   msimd_context            _msimd_ctx;
 
   std::atomic<uint64_t>    _current_sweep_no;
@@ -169,7 +173,14 @@ public:
   RedletPitstop*         pitstop()      { return &_pitstop; }
   RedletPuzzleArena*     puzzle_arena() { return &_puzzle_arena; }
   RedletGC*              gc()           { return &_gc; }
+  RedletMarkBitMap*      mark_bitmap()  { return &_mark_bitmap; }
+  RedletRootScanner*     root_scanner() { return _root_scanner; }
   msimd_context          msimd_ctx()    { return _msimd_ctx; }
+
+  // Root scanning and sweep operations
+  size_t scan_roots_and_trace();
+  size_t sweep_unmarked();
+  void oops_do(OopClosure* cl);
 
   bool is_sc_mode()               const { return RedletSCMode; }
   bool is_forbid_dynamic_growth() const { return RedletForbidDynamicGrowth; }

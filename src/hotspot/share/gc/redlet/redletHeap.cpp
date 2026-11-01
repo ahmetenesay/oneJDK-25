@@ -31,6 +31,7 @@
 #include "gc/shared/locationPrinter.inline.hpp"
 #include "gc/shared/tlab_globals.hpp"
 #include "logging/log.hpp"
+#include "oops/oop.inline.hpp"
 #include "memory/allocation.hpp"
 #include "memory/allocation.inline.hpp"
 #include "memory/metaspaceUtils.hpp"
@@ -56,11 +57,16 @@ RedletHeap::RedletHeap() :
   _memory_manager("Redlet Heap"),
   _space(nullptr),
   _max_tlab_size(0),
+  _root_scanner(nullptr),
   _msimd_ctx(nullptr),
   _current_sweep_no(1),
   _allocated_bytes(0) {}
 
 RedletHeap::~RedletHeap() {
+  if (_root_scanner != nullptr) {
+    delete _root_scanner;
+    _root_scanner = nullptr;
+  }
   if (_msimd_ctx != nullptr) {
     sf_destroy(_msimd_ctx);
     _msimd_ctx = nullptr;
@@ -96,6 +102,10 @@ jint RedletHeap::initialize() {
   _space->initialize(committed_region, true, true);
 
   _max_tlab_size = MIN2(RedletMaxTLABSize / HeapWordSize, _space->capacity());
+
+  // Initialize Redlet Mark BitMap covering committed heap space and Root Scanner
+  _mark_bitmap.initialize((HeapWord*)_virtual_space.low(), (HeapWord*)_virtual_space.high());
+  _root_scanner = new RedletRootScanner(this, &_mark_bitmap);
 
   // Initialize VFS memory trees & strict branch validation policies
   _vfs_tree.init();
@@ -286,11 +296,23 @@ void RedletHeap::collect(GCCause::Cause cause) {
   sf_gc_controlpoint_check(_allocated_bytes.load(std::memory_order_relaxed));
   g_sf_mltc_solver.check_and_solve(used(), capacity(), 0.0f);
   sf_gc_hookpoint_trigger(SF_HOOKPOINT_GC_PRE_SWEEP, 0, nullptr, 0);
+
+  // 1. HotSpot Root Scan & Live Object Graph Tracing
+  scan_roots_and_trace();
+
+  // 2. Sweep unmarked memory into Falline / Landfill
+  sweep_unmarked();
+
+  // 3. Step Redlet Big GC Engine
   _gc.step();
   sf_gc_hookpoint_trigger(SF_HOOKPOINT_GC_POST_SWEEP, 0, nullptr, 0);
+
   if (RedletRMRP) {
     execute_rmrp();
   }
+
+  // 4. Reset mark bitmap for next collection cycle
+  _mark_bitmap.clear();
   drain_hotlog_to_coldlog(&_hotlog, &_coldlog);
 }
 
@@ -298,13 +320,56 @@ void RedletHeap::do_full_collection(bool clear_all_soft_refs) {
   log_info(gc)("RedletGC full collection triggered (clear_all_soft_refs=%s)", clear_all_soft_refs ? "true" : "false");
   sf_gc_safepoint_rendezvous_wait();
   sf_gc_hookpoint_trigger(SF_HOOKPOINT_GC_PRE_COMPACT, 0, nullptr, 0);
+
+  // 1. HotSpot Root Scan & Live Object Graph Tracing
+  scan_roots_and_trace();
+
+  // 2. Full Compaction / Shake Bed
   _gc.shake_bed();
   sf_gc_hookpoint_trigger(SF_HOOKPOINT_GC_POST_COMPACT, 0, nullptr, 0);
   _current_sweep_no.fetch_add(1, std::memory_order_relaxed);
+
   if (RedletRMRP) {
     execute_rmrp();
   }
+
+  // 3. Reset mark bitmap
+  _mark_bitmap.clear();
   drain_hotlog_to_coldlog(&_hotlog, &_coldlog);
+}
+
+size_t RedletHeap::scan_roots_and_trace() {
+  if (_root_scanner != nullptr) {
+    return _root_scanner->scan_roots_and_trace();
+  }
+  return 0;
+}
+
+size_t RedletHeap::sweep_unmarked() {
+  size_t reclaimed_bytes = 0;
+  if (_space != nullptr) {
+    HeapWord* cur = _space->bottom();
+    HeapWord* top = _space->top();
+    while (cur < top) {
+      oop obj = cast_to_oop(cur);
+      size_t obj_size_words = obj->size();
+      size_t obj_size_bytes = obj_size_words * HeapWordSize;
+      if (!_mark_bitmap.is_marked(cur)) {
+        if (obj_size_bytes >= sizeof(RedletEmptyBox)) {
+          _falline.put_emptybox(reinterpret_cast<RedletEmptyBox*>(cur), _current_sweep_no.load(std::memory_order_relaxed));
+          reclaimed_bytes += obj_size_bytes;
+        }
+      }
+      cur += obj_size_words;
+    }
+  }
+  return reclaimed_bytes;
+}
+
+void RedletHeap::oops_do(OopClosure* cl) {
+  if (_root_scanner != nullptr) {
+    _root_scanner->roots_do(cl);
+  }
 }
 
 void RedletHeap::object_iterate(ObjectClosure* cl) {

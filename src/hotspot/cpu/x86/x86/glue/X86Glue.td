@@ -125,6 +125,7 @@ class GCBarrier<string asmstr, string desc, int c = 100, string pipe = "ialu_mem
 include "../gc/X86_G1.td"
 include "../gc/X86_Shenandoah.td"
 include "../gc/X86_Z.td"
+include "../gc/X86_Redlet.td"
 
 // ============================================================================
 // End of X86Glue.td

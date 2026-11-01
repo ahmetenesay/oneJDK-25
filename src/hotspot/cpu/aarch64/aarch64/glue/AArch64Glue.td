@@ -125,6 +125,7 @@ class GCBarrier<string asmstr, string desc, int c = 100, string pipe = "ialu_mem
 include "../gc/AArch64_G1.td"
 include "../gc/AArch64_Shenandoah.td"
 include "../gc/AArch64_Z.td"
+include "../gc/AArch64_Redlet.td"
 
 // ============================================================================
 // End of AArch64Glue.td

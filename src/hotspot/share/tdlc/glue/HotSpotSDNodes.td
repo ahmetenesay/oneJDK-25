@@ -46,4 +46,19 @@ def z_cae_p         : SDNode<"HotSpotISD::Z_CAE_P", SDTHotspotGCOut1>;
 def z_cas_p         : SDNode<"HotSpotISD::Z_CAS_P", SDTHotspotGCOut1>;
 def z_xchg_p        : SDNode<"HotSpotISD::Z_XCHG_P", SDTHotspotGCOut1>;
 
+// ============================================================================
+// Redlet GC Node Definitions
+// ============================================================================
+def redlet_load_p        : SDNode<"HotSpotISD::REDLET_LOAD_P", SDTHotspotGCOut1>;
+def redlet_load_n        : SDNode<"HotSpotISD::REDLET_LOAD_N", SDTHotspotGCOut1>;
+def redlet_store_p       : SDNode<"HotSpotISD::REDLET_STORE_P", SDTHotspotGC>;
+def redlet_store_n       : SDNode<"HotSpotISD::REDLET_STORE_N", SDTHotspotGC>;
+def redlet_encode_p      : SDNode<"HotSpotISD::REDLET_ENCODE_P", SDTHotspotGCOut1>;
+def redlet_cae_p         : SDNode<"HotSpotISD::REDLET_CAE_P", SDTHotspotGCOut1>;
+def redlet_cae_n         : SDNode<"HotSpotISD::REDLET_CAE_N", SDTHotspotGCOut1>;
+def redlet_cas_p         : SDNode<"HotSpotISD::REDLET_CAS_P", SDTHotspotGCOut1>;
+def redlet_cas_n         : SDNode<"HotSpotISD::REDLET_CAS_N", SDTHotspotGCOut1>;
+def redlet_xchg_p        : SDNode<"HotSpotISD::REDLET_XCHG_P", SDTHotspotGCOut1>;
+def redlet_xchg_n        : SDNode<"HotSpotISD::REDLET_XCHG_N", SDTHotspotGCOut1>;
+
 #endif // HOTSPOT_SDNODES_TD
