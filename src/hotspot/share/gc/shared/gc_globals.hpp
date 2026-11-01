@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -46,8 +46,8 @@
 #if INCLUDE_ZGC
 #include "gc/z/z_globals.hpp"
 #endif
-#if INCLUDE_REDLETGC
-#include "gc/redlet/redlet_globals.hpp"
+#if INCLUDE_REDJETGC
+#include "gc/redjet/rjnrml/redjet_globals.hpp"
 #endif
 
 #define GC_FLAGS(develop,                                                   \
@@ -105,7 +105,7 @@
     range,                                                                  \
     constraint))                                                            \
                                                                             \
-  REDLETGC_ONLY(GC_REDLET_FLAGS(                                            \
+  REDJETGC_ONLY(GC_REDJET_FLAGS(                                            \
     develop,                                                                \
     develop_pd,                                                             \
     product,                                                                \
@@ -134,7 +134,10 @@
           "Use the Shenandoah garbage collector")                           \
                                                                             \
   product(bool, UseRedletGC, false, EXPERIMENTAL,                           \
-          "Use the Redlet garbage collector")                               \
+          "Alias for UseRedjetGC")                                          \
+                                                                             \
+  product(bool, UseRedjetGC, false, EXPERIMENTAL,                           \
+          "Use the Redjet garbage collector")                               \
                                                                             \
   /* notice: the max range value here is INT_MAX not UINT_MAX  */           \
   /* to protect from overflows                                 */           \

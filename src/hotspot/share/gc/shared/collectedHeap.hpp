@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2001, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -193,7 +193,8 @@ protected:
     Epsilon,
     Z,
     Shenandoah,
-    Redlet
+    Redjet,
+    Redlet = Redjet
   };
 
  protected:

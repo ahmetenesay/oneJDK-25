@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // https://github.com/ahmetenesay/oneJDK-25
 //
@@ -125,7 +125,7 @@ class GCBarrier<string asmstr, string desc, int c = 100, string pipe = "ialu_mem
 include "../gc/X86_G1.td"
 include "../gc/X86_Shenandoah.td"
 include "../gc/X86_Z.td"
-include "../gc/X86_Redlet.td"
+include "../gc/X86_Redjet.td"
 
 // ============================================================================
 // End of X86Glue.td

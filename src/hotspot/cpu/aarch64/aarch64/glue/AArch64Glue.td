@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // https://github.com/ahmetenesay/oneJDK-25
 //
@@ -125,7 +125,7 @@ class GCBarrier<string asmstr, string desc, int c = 100, string pipe = "ialu_mem
 include "../gc/AArch64_G1.td"
 include "../gc/AArch64_Shenandoah.td"
 include "../gc/AArch64_Z.td"
-include "../gc/AArch64_Redlet.td"
+include "../gc/AArch64_Redjet.td"
 
 // ============================================================================
 // End of AArch64Glue.td

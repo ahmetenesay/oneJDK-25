@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2024, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -252,23 +252,35 @@
 #define NOT_ZGC_RETURN_(code) { return code; }
 #endif // INCLUDE_ZGC
 
-#ifndef INCLUDE_REDLETGC
-#define INCLUDE_REDLETGC 1
-#endif // INCLUDE_REDLETGC
+#ifndef INCLUDE_REDJETGC
+#define INCLUDE_REDJETGC 1
+#endif // INCLUDE_REDJETGC
+#define INCLUDE_REDLETGC INCLUDE_REDJETGC
+#define REDLETGC_ONLY(x) REDJETGC_ONLY(x)
+#define REDLETGC_ONLY_ARG(arg) REDJETGC_ONLY_ARG(arg)
+#define NOT_REDLETGC(x) NOT_REDJETGC(x)
+#define NOT_REDLETGC_RETURN NOT_REDJETGC_RETURN
+#define NOT_REDLETGC_RETURN_(code) NOT_REDJETGC_RETURN_(code)
 
-#if INCLUDE_REDLETGC
-#define REDLETGC_ONLY(x) x
-#define REDLETGC_ONLY_ARG(arg) arg,
-#define NOT_REDLETGC(x)
-#define NOT_REDLETGC_RETURN        /* next token must be ; */
-#define NOT_REDLETGC_RETURN_(code) /* next token must be ; */
+#if INCLUDE_REDJETGC
+#define REDJETGC_ONLY(x) x
+#define REDJETGC_ONLY_ARG(arg) arg,
+#define NOT_REDJETGC(x)
+#define NOT_REDJETGC_RETURN        /* next token must be ; */
+#define NOT_REDJETGC_RETURN_(code) /* next token must be ; */
 #else
-#define REDLETGC_ONLY(x)
-#define REDLETGC_ONLY_ARG(arg)
-#define NOT_REDLETGC(x) x
-#define NOT_REDLETGC_RETURN        {}
-#define NOT_REDLETGC_RETURN_(code) { return code; }
-#endif // INCLUDE_REDLETGC
+#define REDJETGC_ONLY(x)
+#define REDJETGC_ONLY_ARG(arg)
+#define NOT_REDJETGC(x) x
+#define NOT_REDJETGC_RETURN        {}
+#define NOT_REDJETGC_RETURN_(code) { return code; }
+#endif // INCLUDE_REDJETGC
+#define INCLUDE_REDLETGC INCLUDE_REDJETGC
+#define REDLETGC_ONLY(x) REDJETGC_ONLY(x)
+#define REDLETGC_ONLY_ARG(arg) REDJETGC_ONLY_ARG(arg)
+#define NOT_REDLETGC(x) NOT_REDJETGC(x)
+#define NOT_REDLETGC_RETURN NOT_REDJETGC_RETURN
+#define NOT_REDLETGC_RETURN_(code) NOT_REDJETGC_RETURN_(code)
 
 #ifndef INCLUDE_JFR
 #define INCLUDE_JFR 1

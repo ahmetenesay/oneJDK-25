@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -940,10 +940,10 @@ public:
     _jdk_internal_ValueBased,
     _java_lang_Deprecated,
     _java_lang_Deprecated_for_removal,
-    _annotation_RedletBatchExec,
-    _annotation_RedletNestedExec,
-    _annotation_RedletBypassWarmup,
-    _annotation_RedletExemptPin,
+    _annotation_RedjetBatchExec,
+    _annotation_RedjetNestedExec,
+    _annotation_RedjetBypassWarmup,
+    _annotation_RedjetExemptPin,
     _annotation_LIMIT
   };
   const Location _location;
@@ -1210,8 +1210,8 @@ static void parse_annotations(const ConstantPool* const cp,
       continue; // proceed to next annotation
     }
 
-    if (AnnotationCollector::_annotation_RedletBatchExec == id) {
-      // Inspect @RedletBatchExec member-value pairs for bypassWarmup=true.
+    if (AnnotationCollector::_annotation_RedjetBatchExec == id) {
+      // Inspect @RedjetBatchExec member-value pairs for bypassWarmup=true.
       int cur_off = index0 + member_off;
       for (int i = 0; i < count && cur_off + 3 <= index; ++i) {
         const int m_idx = Bytes::get_Java_u2((address)(buffer + cur_off));
@@ -1224,7 +1224,7 @@ static void parse_annotations(const ConstantPool* const cp,
           if (cp->is_within_bounds(bool_cp_idx) &&
               cp->tag_at(bool_cp_idx).is_int() &&
               cp->int_at(bool_cp_idx) != 0) {
-            coll->set_annotation(AnnotationCollector::_annotation_RedletBypassWarmup);
+            coll->set_annotation(AnnotationCollector::_annotation_RedjetBypassWarmup);
           }
           break;
         }
@@ -1922,21 +1922,21 @@ AnnotationCollector::annotation_index(const ClassLoaderData* loader_data,
     case VM_SYMBOL_ENUM_NAME(java_lang_Deprecated): {
       return _java_lang_Deprecated;
     }
-    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletBatchExec_signature): {
+    case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetBatchExec_signature): {
       if (_location != _in_method && _location != _in_class) break;
-      return _annotation_RedletBatchExec;
+      return _annotation_RedjetBatchExec;
     }
-    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletNestedExec_signature): {
+    case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetNestedExec_signature): {
       if (_location != _in_method && _location != _in_class) break;
-      return _annotation_RedletNestedExec;
+      return _annotation_RedjetNestedExec;
     }
-    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletBypassWarmup_signature): {
+    case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetBypassWarmup_signature): {
       if (_location != _in_method && _location != _in_class) break;
-      return _annotation_RedletBypassWarmup;
+      return _annotation_RedjetBypassWarmup;
     }
-    case VM_SYMBOL_ENUM_NAME(org_wlft_sfvm_annotation_RedletExemptPin_signature): {
+    case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetExemptPin_signature): {
       if (_location != _in_method && _location != _in_class) break;
-      return _annotation_RedletExemptPin;
+      return _annotation_RedjetExemptPin;
     }
     default: {
       break;
@@ -1988,18 +1988,18 @@ void MethodAnnotationCollector::apply_to(const methodHandle& m) {
     m->set_deprecated();
   if (has_annotation(_java_lang_Deprecated_for_removal))
     m->set_deprecated_for_removal();
-  if (has_annotation(_annotation_RedletBatchExec))
-    m->set_redlet_batch_exec(true);
-  if (has_annotation(_annotation_RedletNestedExec))
-    m->set_redlet_nested_exec(true);
-  if (has_annotation(_annotation_RedletBypassWarmup)) {
-    m->set_redlet_bypass_warmup(true);
+  if (has_annotation(_annotation_RedjetBatchExec))
+    m->set_redjet_batch_exec(true);
+  if (has_annotation(_annotation_RedjetNestedExec))
+    m->set_redjet_nested_exec(true);
+  if (has_annotation(_annotation_RedjetBypassWarmup)) {
+    m->set_redjet_bypass_warmup(true);
     if (!m->dont_inline()) {
       m->set_force_inline(true);
     }
   }
-  if (has_annotation(_annotation_RedletExemptPin))
-    m->set_redlet_exempt_pin(true);
+  if (has_annotation(_annotation_RedjetExemptPin))
+    m->set_redjet_exempt_pin(true);
 }
 
 void ClassFileParser::ClassAnnotationCollector::apply_to(InstanceKlass* ik) {
@@ -2029,30 +2029,30 @@ void ClassFileParser::ClassAnnotationCollector::apply_to(InstanceKlass* ik) {
       m->set_deprecated_for_removal();
     }
   }
-  if (has_annotation(_annotation_RedletBatchExec) ||
-      has_annotation(_annotation_RedletNestedExec) ||
-      has_annotation(_annotation_RedletBypassWarmup) ||
-      has_annotation(_annotation_RedletExemptPin)) {
+  if (has_annotation(_annotation_RedjetBatchExec) ||
+      has_annotation(_annotation_RedjetNestedExec) ||
+      has_annotation(_annotation_RedjetBypassWarmup) ||
+      has_annotation(_annotation_RedjetExemptPin)) {
     Array<Method*>* methods = ik->methods();
     int length = methods->length();
-    const bool is_batch  = has_annotation(_annotation_RedletBatchExec);
-    const bool is_nested = has_annotation(_annotation_RedletNestedExec);
-    const bool is_bypass = has_annotation(_annotation_RedletBypassWarmup);
-    const bool is_exempt = has_annotation(_annotation_RedletExemptPin);
+    const bool is_batch  = has_annotation(_annotation_RedjetBatchExec);
+    const bool is_nested = has_annotation(_annotation_RedjetNestedExec);
+    const bool is_bypass = has_annotation(_annotation_RedjetBypassWarmup);
+    const bool is_exempt = has_annotation(_annotation_RedjetExemptPin);
     for (int i = 0; i < length; i++) {
       Method* m = methods->at(i);
       if (m->is_static_initializer()) {
         continue;
       }
-      if (is_batch)  m->set_redlet_batch_exec(true);
-      if (is_nested) m->set_redlet_nested_exec(true);
+      if (is_batch)  m->set_redjet_batch_exec(true);
+      if (is_nested) m->set_redjet_nested_exec(true);
       if (is_bypass) {
-        m->set_redlet_bypass_warmup(true);
+        m->set_redjet_bypass_warmup(true);
         if (!m->dont_inline()) {
           m->set_force_inline(true);
         }
       }
-      if (is_exempt) m->set_redlet_exempt_pin(true);
+      if (is_exempt) m->set_redjet_exempt_pin(true);
     }
   }
 }

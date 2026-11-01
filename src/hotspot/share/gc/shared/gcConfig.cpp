@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -46,8 +46,8 @@
 #if INCLUDE_ZGC
 #include "gc/z/zArguments.hpp"
 #endif
-#if INCLUDE_REDLETGC
-#include "gc/redlet/redletArguments.hpp"
+#if INCLUDE_REDJETGC
+#include "gc/redjet/rjnrml/redjetArguments.hpp"
 #endif
 
 struct IncludedGC {
@@ -66,7 +66,7 @@ struct IncludedGC {
     SERIALGC_ONLY(static SerialArguments     serialArguments;)
 SHENANDOAHGC_ONLY(static ShenandoahArguments shenandoahArguments;)
          ZGC_ONLY(static ZArguments          zArguments;)
-    REDLETGC_ONLY(static RedletArguments     redletArguments;)
+    REDJETGC_ONLY(static RedjetArguments     redjetArguments;)
 
 // Table of included GCs, for translating between command
 // line flag, CollectedHeap::Name and GCArguments instance.
@@ -77,7 +77,7 @@ static const IncludedGC IncludedGCs[] = {
     SERIALGC_ONLY_ARG(IncludedGC(UseSerialGC,        CollectedHeap::Serial,     serialArguments,     "serial gc"))
 SHENANDOAHGC_ONLY_ARG(IncludedGC(UseShenandoahGC,    CollectedHeap::Shenandoah, shenandoahArguments, "shenandoah gc"))
          ZGC_ONLY_ARG(IncludedGC(UseZGC,             CollectedHeap::Z,          zArguments,          "z gc"))
-    REDLETGC_ONLY_ARG(IncludedGC(UseRedletGC,        CollectedHeap::Redlet,     redletArguments,     "redlet gc"))
+    REDJETGC_ONLY_ARG(IncludedGC(UseRedjetGC,        CollectedHeap::Redjet,     redjetArguments,     "redjet gc"))
 };
 
 #define FOR_EACH_INCLUDED_GC(var)                                            \
@@ -98,7 +98,7 @@ void GCConfig::fail_if_non_included_gc_is_selected() {
   NOT_SERIALGC(    FAIL_IF_SELECTED(UseSerialGC));
   NOT_SHENANDOAHGC(FAIL_IF_SELECTED(UseShenandoahGC));
   NOT_ZGC(         FAIL_IF_SELECTED(UseZGC));
-  NOT_REDLETGC(    FAIL_IF_SELECTED(UseRedletGC));
+  NOT_REDJETGC(    FAIL_IF_SELECTED(UseRedjetGC));
 }
 
 void GCConfig::select_gc_ergonomically() {

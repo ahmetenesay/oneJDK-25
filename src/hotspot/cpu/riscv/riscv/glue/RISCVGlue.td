@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // https://github.com/ahmetenesay/oneJDK-25
 //
@@ -125,7 +125,7 @@ class GCBarrier<string asmstr, string desc, int c = 100, string pipe = "ialu_mem
 include "../gc/RISCV_G1.td"
 include "../gc/RISCV_Shenandoah.td"
 include "../gc/RISCV_Z.td"
-include "../gc/RISCV_Redlet.td"
+include "../gc/RISCV_Redjet.td"
 
 // ============================================================================
 // End of RISCVGlue.td

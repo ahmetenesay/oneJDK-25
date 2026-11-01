@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2005, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -37,8 +37,8 @@
 #include "compiler/compilerOracle.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/c1/barrierSetC1.hpp"
-#if INCLUDE_REDLETGC
-#include "gc/redlet/c1/redletBarrierSetC1.hpp"
+#if INCLUDE_REDJETGC
+#include "gc/redjet/rjnrml/c1/redjetBarrierSetC1.hpp"
 #endif
 #include "oops/klass.inline.hpp"
 #include "oops/methodCounters.hpp"
@@ -2524,9 +2524,9 @@ void LIRGenerator::profile_parameters(Base* x) {
 }
 
 void LIRGenerator::do_Base(Base* x) {
-#if INCLUDE_REDLETGC
-  if (UseRedletGC) {
-    RedletBarrierSetC1::report_iterative_bytecode_lir_heat(compilation(), this);
+#if INCLUDE_REDJETGC
+  if (UseRedjetGC) {
+    RedjetBarrierSetC1::report_iterative_bytecode_lir_heat(compilation(), this);
   }
 #endif
   __ std_entry(LIR_OprFact::illegalOpr);

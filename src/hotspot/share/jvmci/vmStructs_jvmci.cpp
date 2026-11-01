@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -698,7 +698,7 @@
   declare_constant(CollectedHeap::Epsilon)                                \
   declare_constant(CollectedHeap::Z)                                      \
   declare_constant(CollectedHeap::Shenandoah)                             \
-  declare_constant(CollectedHeap::Redlet)                                 \
+  declare_constant(CollectedHeap::Redjet)                                 \
                                                                           \
   declare_constant(vmIntrinsics::FIRST_MH_SIG_POLY)                       \
   declare_constant(vmIntrinsics::LAST_MH_SIG_POLY)                        \

@@ -1,0 +1,155 @@
+﻿//
+// Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+// DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+//
+// This code is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 2 only, as
+// published by the Free Software Foundation.  Oracle designates this
+// particular file as subject to the "Classpath" exception as provided
+// by Oracle in the LICENSE file that accompanied this code.
+//
+// This code is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+// version 2 for more details (a copy is included in the LICENSE file that
+// accompanied this code).
+//
+// You should have received a copy of the GNU General Public License version
+// 2 along with this work; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+//
+// Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+// if you need additional information or have any questions.
+//
+
+source_hpp %{
+
+#include "gc/shared/gc_globals.hpp"
+#include "gc/redjet/rjnrml/c2/redjetBarrierSetC2.hpp"
+#include "gc/redjet/rjnrml/c2/redjetSupport.hpp"
+#include "gc/redjet/rjnrml/redjetBarrierSetAssembler.hpp"
+#include "gc/redjet/rjnrml/redjetPointCoordinator.hpp"
+
+void redjet_arm_emit_pausepoint_poll(MacroAssembler* masm, Register gate_addr, Register scratch);
+void redjet_arm_emit_safepoint_poll(MacroAssembler* masm, Register flag_addr, Register scratch);
+void redjet_arm_emit_hookpoint_xchg(MacroAssembler* masm, Register dst_prev, Register pin_addr, Register new_state, Register tmp);
+
+%}
+
+source %{
+
+#include "gc/redjet/rjnrml/redjetBarrierSet.hpp"
+#include "gc/redjet/rjnrml/redjetBarrierSetAssembler.hpp"
+
+void redjet_arm_emit_pausepoint_poll(MacroAssembler* masm, Register gate_addr, Register scratch) {
+  masm->ldr(scratch, Address(gate_addr));
+  masm->cmp(scratch, 0);
+}
+
+void redjet_arm_emit_safepoint_poll(MacroAssembler* masm, Register flag_addr, Register scratch) {
+  masm->ldr(scratch, Address(flag_addr));
+  masm->cmp(scratch, 0);
+}
+
+void redjet_arm_emit_hookpoint_xchg(MacroAssembler* masm, Register dst_prev, Register pin_addr, Register new_state, Register tmp) {
+  Label retry;
+  masm->bind(retry);
+  masm->ldrex(dst_prev, Address(pin_addr));
+  masm->strex(tmp, new_state, Address(pin_addr));
+  masm->cmp(tmp, 0);
+  masm->b(retry, ne);
+}
+
+%}
+
+// ============================================================================
+// Redjet Store Instructions on ARM (32-bit)
+// ============================================================================
+
+instruct redjetStoreP(memoryP mem, store_ptr_RegP src)
+%{
+  predicate(UseRedjetGC);
+  match(Set mem (StoreP mem src));
+  ins_cost(MEMORY_REF_COST);
+  size(4);
+  format %{ "STR    $src,$mem\t# redjet ptr" %}
+  ins_encode %{
+    __ str($src$$Register, $mem$$Address);
+  %}
+  ins_pipe(istore_mem_spORreg);
+%}
+
+// ============================================================================
+// Redjet Load Instructions on ARM (32-bit)
+// ============================================================================
+
+instruct redjetLoadP(iRegP dst, memoryP mem)
+%{
+  predicate(UseRedjetGC);
+  match(Set dst (LoadP mem));
+  ins_cost(MEMORY_REF_COST);
+  size(4);
+  format %{ "LDR    $dst,$mem\t# redjet ptr" %}
+  ins_encode %{
+    __ ldr($dst$$Register, $mem$$Address);
+  %}
+  ins_pipe(iload_mem);
+%}
+
+// ============================================================================
+// Redjet CompareAndSwap Instructions on ARM (32-bit)
+// ============================================================================
+
+instruct redjetCompareAndSwapP(memoryex mem, iRegP oldval, iRegP newval, iRegI res, iRegI tmp, flagsReg ccr)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (CompareAndSwapP mem (Binary oldval newval)));
+  effect(KILL ccr, TEMP tmp);
+  size(28);
+  format %{ "loop: \n\t"
+            "LDREX    $tmp, $mem\t# redjet CAS\n\t"
+            "CMP      $tmp, $oldval\n\t"
+            "STREX.eq $tmp, $newval, $mem\n\t"
+            "MOV.ne   $tmp, 0 \n\t"
+            "EORS.eq  $tmp,$tmp, 1 \n\t"
+            "B.eq     loop \n\t"
+            "MOV      $res, $tmp" %}
+  ins_encode %{
+    Label loop;
+    __ bind(loop);
+    __ ldrex($tmp$$Register, $mem$$Address);
+    __ cmp($tmp$$Register, $oldval$$Register);
+    __ strex($tmp$$Register, $newval$$Register, $mem$$Address, eq);
+    __ mov($tmp$$Register, 0, ne);
+    __ eors($tmp$$Register, $tmp$$Register, 1, eq);
+    __ b(loop, eq);
+    __ mov($res$$Register, $tmp$$Register);
+  %}
+  ins_pipe(long_memory_op);
+%}
+
+// ============================================================================
+// Redjet GetAndSet Instructions on ARM (32-bit)
+// ============================================================================
+
+instruct redjetGetAndSetP(memoryex mem, iRegP newval, iRegP res, iRegI tmp, flagsReg ccr)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (GetAndSetP mem newval));
+  effect(KILL ccr, TEMP tmp, TEMP res);
+  size(16);
+  format %{ "loop: \n\t"
+            "LDREX    $res, $mem\t# redjet xchg\n\t"
+            "STREX    $tmp, $newval, $mem\n\t"
+            "CMP      $tmp, 0 \n\t"
+            "B.ne     loop \n\t" %}
+  ins_encode %{
+    Label loop;
+    __ bind(loop);
+    __ ldrex($res$$Register, $mem$$Address);
+    __ strex($tmp$$Register, $newval$$Register, $mem$$Address);
+    __ cmp($tmp$$Register, 0);
+    __ b(loop, ne);
+  %}
+  ins_pipe(long_memory_op);
+%}

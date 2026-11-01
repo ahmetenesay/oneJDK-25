@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -547,12 +547,12 @@ public:
   M_STATUS_DO(M_STATUS_GET_SET)
 #undef M_STATUS_GET_SET
 
-  // Redlet SFVM annotation query helpers (individual getters/setters generated via M_STATUS_DO above)
-  bool is_redlet_accelerated() const {
-    return redlet_batch_exec() || redlet_nested_exec() || redlet_bypass_warmup() || redlet_exempt_pin();
+  // Redjet SFVM annotation query helpers (individual getters/setters generated via M_STATUS_DO above)
+  bool is_redjet_accelerated() const {
+    return redjet_batch_exec() || redjet_nested_exec() || redjet_bypass_warmup() || redjet_exempt_pin();
   }
-  bool should_redlet_bypass_safepoint() const {
-    return redlet_batch_exec() || redlet_nested_exec() || redlet_bypass_warmup();
+  bool should_redjet_bypass_safepoint() const {
+    return redjet_batch_exec() || redjet_nested_exec() || redjet_bypass_warmup();
   }
 
   // returns true if the method has any backward branches.

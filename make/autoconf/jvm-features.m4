@@ -46,7 +46,7 @@ m4_define(jvm_features_valid, m4_normalize( \
     \
     cds compiler1 compiler2 dtrace epsilongc g1gc jfr jni-check \
     jvmci jvmti link-time-opt management minimal opt-size parallelgc \
-    redletgc serialgc services shenandoahgc vm-structs zero zgc \
+    redjetgc redletgc serialgc services shenandoahgc vm-structs zero zgc \
 ))
 
 # Deprecated JVM features (these are ignored, but with a warning)
@@ -69,7 +69,8 @@ m4_define(jvm_feature_desc_management, [enable java.lang.management API support]
 m4_define(jvm_feature_desc_minimal, [support building variant 'minimal'])
 m4_define(jvm_feature_desc_opt_size, [optimize the JVM library for size])
 m4_define(jvm_feature_desc_parallelgc, [include the parallel garbage collector])
-m4_define(jvm_feature_desc_redletgc, [include the Redlet garbage collector])
+m4_define(jvm_feature_desc_redjetgc, [include the Redjet garbage collector])
+m4_define(jvm_feature_desc_redletgc, [include the Redlet garbage collector (alias for Redjet)])
 m4_define(jvm_feature_desc_serialgc, [include the serial garbage collector])
 m4_define(jvm_feature_desc_services, [enable diagnostic services and client attaching])
 m4_define(jvm_feature_desc_shenandoahgc, [include the Shenandoah garbage collector])

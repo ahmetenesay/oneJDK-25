@@ -59,9 +59,13 @@ endif
 REDLET_ENGINE_SRC := $(filter-out SacFor_VM.cpp, $(notdir \
     $(filter-out %/.code_references/%, \
     $(call FindFiles, $(TOPDIR)/src/hotspot/share/gc/redlet, *.cpp) \
+    $(call FindFiles, $(TOPDIR)/src/hotspot/share/gc/redjet, *.cpp) \
     $(call FindFiles, $(TOPDIR)/src/hotspot/cpu, *redlet*.cpp) \
+    $(call FindFiles, $(TOPDIR)/src/hotspot/cpu, *redjet*.cpp) \
     $(call FindFiles, $(TOPDIR)/src/hotspot/os, *redlet*.cpp) \
-    $(call FindFiles, $(TOPDIR)/src/hotspot/os_cpu, *redlet*.cpp))))
+    $(call FindFiles, $(TOPDIR)/src/hotspot/os, *redjet*.cpp) \
+    $(call FindFiles, $(TOPDIR)/src/hotspot/os_cpu, *redlet*.cpp) \
+    $(call FindFiles, $(TOPDIR)/src/hotspot/os_cpu, *redjet*.cpp))))
 
 ifeq ($(call isTargetOs, linux), true)
   BUILD_LIBJVM_sharedRuntimeTrig.cpp_CXXFLAGS := $(FDLIBM_CFLAGS) $(LIBJVM_FDLIBM_COPY_OPT_FLAG)

@@ -204,6 +204,8 @@ ifeq ($(call check-jvm-feature, compiler2), true)
   AD_SRC_FILES += $(call uniq, $(wildcard $(foreach d, $(AD_SRC_ROOTS), \
       $d/cpu/$(HOTSPOT_TARGET_CPU_ARCH)/gc/redlet/redlet_$(HOTSPOT_TARGET_CPU).ad \
       $d/cpu/$(HOTSPOT_TARGET_CPU_ARCH)/gc/redlet/redlet_$(HOTSPOT_TARGET_CPU_ARCH).ad \
+      $d/cpu/$(HOTSPOT_TARGET_CPU_ARCH)/gc/redjet/redjet_$(HOTSPOT_TARGET_CPU).ad \
+      $d/cpu/$(HOTSPOT_TARGET_CPU_ARCH)/gc/redjet/redjet_$(HOTSPOT_TARGET_CPU_ARCH).ad \
     )))
 
   SINGLE_AD_SRCFILE := $(ADLC_SUPPORT_DIR)/all-ad-src.ad

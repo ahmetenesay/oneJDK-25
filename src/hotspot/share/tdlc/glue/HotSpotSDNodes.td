@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // https://github.com/ahmetenesay/oneJDK-25
 //
@@ -47,25 +47,25 @@ def z_cas_p         : SDNode<"HotSpotISD::Z_CAS_P", SDTHotspotGCOut1>;
 def z_xchg_p        : SDNode<"HotSpotISD::Z_XCHG_P", SDTHotspotGCOut1>;
 
 // ============================================================================
-// Redlet GC Node Definitions
+// Redjet GC Node Definitions
 // ============================================================================
-def redlet_load_p        : SDNode<"HotSpotISD::REDLET_LOAD_P", SDTHotspotGCOut1>;
-def redlet_load_n        : SDNode<"HotSpotISD::REDLET_LOAD_N", SDTHotspotGCOut1>;
-def redlet_store_p       : SDNode<"HotSpotISD::REDLET_STORE_P", SDTHotspotGC>;
-def redlet_store_n       : SDNode<"HotSpotISD::REDLET_STORE_N", SDTHotspotGC>;
-def redlet_encode_p      : SDNode<"HotSpotISD::REDLET_ENCODE_P", SDTHotspotGCOut1>;
-def redlet_cae_p         : SDNode<"HotSpotISD::REDLET_CAE_P", SDTHotspotGCOut1>;
-def redlet_cae_n         : SDNode<"HotSpotISD::REDLET_CAE_N", SDTHotspotGCOut1>;
-def redlet_cas_p         : SDNode<"HotSpotISD::REDLET_CAS_P", SDTHotspotGCOut1>;
-def redlet_cas_n         : SDNode<"HotSpotISD::REDLET_CAS_N", SDTHotspotGCOut1>;
-def redlet_xchg_p        : SDNode<"HotSpotISD::REDLET_XCHG_P", SDTHotspotGCOut1>;
-def redlet_xchg_n        : SDNode<"HotSpotISD::REDLET_XCHG_N", SDTHotspotGCOut1>;
+def redjet_load_p        : SDNode<"HotSpotISD::REDJET_LOAD_P", SDTHotspotGCOut1>;
+def redjet_load_n        : SDNode<"HotSpotISD::REDJET_LOAD_N", SDTHotspotGCOut1>;
+def redjet_store_p       : SDNode<"HotSpotISD::REDJET_STORE_P", SDTHotspotGC>;
+def redjet_store_n       : SDNode<"HotSpotISD::REDJET_STORE_N", SDTHotspotGC>;
+def redjet_encode_p      : SDNode<"HotSpotISD::REDJET_ENCODE_P", SDTHotspotGCOut1>;
+def redjet_cae_p         : SDNode<"HotSpotISD::REDJET_CAE_P", SDTHotspotGCOut1>;
+def redjet_cae_n         : SDNode<"HotSpotISD::REDJET_CAE_N", SDTHotspotGCOut1>;
+def redjet_cas_p         : SDNode<"HotSpotISD::REDJET_CAS_P", SDTHotspotGCOut1>;
+def redjet_cas_n         : SDNode<"HotSpotISD::REDJET_CAS_N", SDTHotspotGCOut1>;
+def redjet_xchg_p        : SDNode<"HotSpotISD::REDJET_XCHG_P", SDTHotspotGCOut1>;
+def redjet_xchg_n        : SDNode<"HotSpotISD::REDJET_XCHG_N", SDTHotspotGCOut1>;
 
-// Redlet SFVM 4-Point Coordination & SIMD Dispatch SDNodes
-def redlet_safepoint_poll   : SDNode<"HotSpotISD::REDLET_SAFEPOINT_POLL", SDTHotspotGC>;
-def redlet_pausepoint_poll  : SDNode<"HotSpotISD::REDLET_PAUSEPOINT_POLL", SDTHotspotGC>;
-def redlet_hookpoint_pin    : SDNode<"HotSpotISD::REDLET_HOOKPOINT_PIN", SDTHotspotGCOut1>;
-def redlet_controlpoint_chk : SDNode<"HotSpotISD::REDLET_CONTROLPOINT_CHK", SDTHotspotGCOut1>;
-def redlet_simd_dispatch    : SDNode<"HotSpotISD::REDLET_SIMD_DISPATCH", SDTHotspotGCOut1>;
+// Redjet SFVM 4-Point Coordination & SIMD Dispatch SDNodes
+def redjet_parkpoint_poll   : SDNode<"HotSpotISD::REDJET_SAFEPOINT_POLL", SDTHotspotGC>;
+def redjet_parkpoint_poll  : SDNode<"HotSpotISD::REDJET_PAUSEPOINT_POLL", SDTHotspotGC>;
+def redjet_dockpoint_pin    : SDNode<"HotSpotISD::REDJET_HOOKPOINT_PIN", SDTHotspotGCOut1>;
+def redjet_dockpoint_chk : SDNode<"HotSpotISD::REDJET_CONTROLPOINT_CHK", SDTHotspotGCOut1>;
+def redjet_simd_dispatch    : SDNode<"HotSpotISD::REDJET_SIMD_DISPATCH", SDTHotspotGCOut1>;
 
 #endif // HOTSPOT_SDNODES_TD

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -43,8 +43,8 @@
 #if INCLUDE_ZGC
 #include "gc/z/zBarrierSet.inline.hpp"
 #endif
-#if INCLUDE_REDLETGC
-#include "gc/redlet/redletBarrierSet.hpp"
+#if INCLUDE_REDJETGC
+#include "gc/redjet/rjnrml/redjetBarrierSet.hpp"
 #endif
 
 #endif // SHARE_GC_SHARED_BARRIERSETCONFIG_INLINE_HPP

@@ -427,7 +427,7 @@ ifneq ($(GENERATE_COMPILE_COMMANDS_ONLY), true)
       TARGETS += $1.op_check
     endef
 
-    REDLET_OP_CHECK_EXCLUDE := %/tbb_jni$(OBJ_SUFFIX) %/SacFor_VM$(OBJ_SUFFIX) %/redlet%$(OBJ_SUFFIX)
+    REDLET_OP_CHECK_EXCLUDE := %/tbb_jni$(OBJ_SUFFIX) %/SacFor_VM$(OBJ_SUFFIX) %/redlet%$(OBJ_SUFFIX) %/redjet%$(OBJ_SUFFIX)
     $(foreach o, $(filter-out $(REDLET_OP_CHECK_EXCLUDE), $(BUILD_LIBJVM_ALL_OBJS)), $(eval $(call SetupOperatorNewDeleteCheck,$o)))
   endif
 endif

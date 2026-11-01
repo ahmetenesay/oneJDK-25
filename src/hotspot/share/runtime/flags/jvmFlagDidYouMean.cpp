@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLabsFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -64,13 +64,13 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "epsilongc",                "UseEpsilonGC",            "bool", "true", "Intent: Epsilon no-op allocation-only collector" },
   { "nogc",                     "UseEpsilonGC",            "bool", "true", "Intent: Epsilon no-op allocation-only collector" },
   { "no_gc",                    "UseEpsilonGC",            "bool", "true", "Intent: Epsilon no-op allocation-only collector" },
-  { "redlet",                   "UseRedletGC",             "bool", "true", "Intent: RedletGC vectorized microsecond generational GC" },
-  { "useredlet",                "UseRedletGC",             "bool", "true", "Intent: RedletGC vectorized microsecond generational GC" },
-  { "redletgc",                 "UseRedletGC",             "bool", "true", "Intent: RedletGC vectorized microsecond generational GC" },
-  { "redlet_gc",                "UseRedletGC",             "bool", "true", "Intent: RedletGC vectorized microsecond generational GC" },
-  { "fast_gc",                  "UseRedletGC",             "bool", "true", "Intent: RedletGC vectorized microsecond generational GC" },
-  { "simd_gc",                  "UseRedletGC",             "bool", "true", "Intent: RedletGC vectorized microsecond generational GC" },
-  { "vector_gc",                "UseRedletGC",             "bool", "true", "Intent: RedletGC vectorized microsecond generational GC" },
+  { "redjet",                   "UseRedjetGC",             "bool", "true", "Intent: RedjetGC vectorized microsecond generational GC" },
+  { "useredjet",                "UseRedjetGC",             "bool", "true", "Intent: RedjetGC vectorized microsecond generational GC" },
+  { "redjetgc",                 "UseRedjetGC",             "bool", "true", "Intent: RedjetGC vectorized microsecond generational GC" },
+  { "redjet_gc",                "UseRedjetGC",             "bool", "true", "Intent: RedjetGC vectorized microsecond generational GC" },
+  { "fast_gc",                  "UseRedjetGC",             "bool", "true", "Intent: RedjetGC vectorized microsecond generational GC" },
+  { "simd_gc",                  "UseRedjetGC",             "bool", "true", "Intent: RedjetGC vectorized microsecond generational GC" },
+  { "vector_gc",                "UseRedjetGC",             "bool", "true", "Intent: RedjetGC vectorized microsecond generational GC" },
 
   // --- 1.2 GC Features, Deduplication & Verification ---
   { "string_dedup",             "UseStringDeduplication",  "bool", "true", "Intent: Deduplicate identical String char/byte arrays in memory" },
@@ -207,23 +207,23 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "jfr",                      "FlightRecorder",          "bool", "true", "Intent: Enable Java Flight Recorder low-overhead event engine" },
   { "flight_recorder",          "FlightRecorder",          "bool", "true", "Intent: Enable Java Flight Recorder low-overhead event engine" },
 
-  // --- 1.8 RedletGC Booleans ---
-  { "strict_vfs",               "RedletVFSStrict",         "bool", "true", "Intent: Validate hierarchical VFS memory branches on every allocation" },
-  { "vfs_strict",               "RedletVFSStrict",         "bool", "true", "Intent: Validate hierarchical VFS memory branches on every allocation" },
-  { "vfs_dialog",               "RedletVFSPanicDialog",    "bool", "true", "Intent: Display desktop modal panic dialog on fatal VFS panics" },
-  { "panic_dialog",             "RedletVFSPanicDialog",    "bool", "true", "Intent: Display desktop modal panic dialog on fatal VFS panics" },
-  { "rmrp",                     "RedletRMRP",              "bool", "true", "Intent: Reduce Memory Resident Set Reclamation (RMRP)" },
-  { "trim",                     "RedletRMRP",              "bool", "true", "Intent: Reduce Memory Resident Set Reclamation (RMRP)" },
-  { "hetero_arenas",            "RedletHeteroArenas",      "bool", "true", "Intent: Enable P-Core and E-Core heterogeneous task arenas via oneTBB" },
-  { "elastic_tlab",             "RedletElasticTLAB",       "bool", "true", "Intent: Use elastic policy to dynamically manage Redlet TLAB sizes" },
-  { "ssiolsc",                  "RedletSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time deterministic profile (replaces G1 soft heuristics)" },
-  { "sc",                       "RedletSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time deterministic profile with zero-jitter envelope" },
-  { "sc_mode",                  "RedletSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time bounded latency deterministic mode" },
-  { "safety_critical",          "RedletSCMode",            "bool", "true", "Intent: Mission-critical hard real-time bounded latency mode" },
-  { "realtime_gc",              "RedletSCMode",            "bool", "true", "Intent: Hard real-time deterministic microsecond GC mode" },
-  { "deterministic_gc",         "RedletSCMode",            "bool", "true", "Intent: Deterministic bounded pause profile eliminating dynamic scheduling jitter" },
-  { "forbid_dynamic_growth",    "RedletForbidDynamicGrowth","bool","true", "Intent: Forbid runtime heap growth to guarantee bounded execution envelope" },
-  { "forbid_growth",            "RedletForbidDynamicGrowth","bool","true", "Intent: Forbid runtime heap growth to guarantee bounded execution envelope" },
+  // --- 1.8 RedjetGC Booleans ---
+  { "strict_vfs",               "RedjetVFSStrict",         "bool", "true", "Intent: Validate hierarchical VFS memory branches on every allocation" },
+  { "vfs_strict",               "RedjetVFSStrict",         "bool", "true", "Intent: Validate hierarchical VFS memory branches on every allocation" },
+  { "vfs_dialog",               "RedjetVFSPanicDialog",    "bool", "true", "Intent: Display desktop modal panic dialog on fatal VFS panics" },
+  { "panic_dialog",             "RedjetVFSPanicDialog",    "bool", "true", "Intent: Display desktop modal panic dialog on fatal VFS panics" },
+  { "rmrp",                     "RedjetRMRP",              "bool", "true", "Intent: Reduce Memory Resident Set Reclamation (RMRP)" },
+  { "trim",                     "RedjetRMRP",              "bool", "true", "Intent: Reduce Memory Resident Set Reclamation (RMRP)" },
+  { "hetero_arenas",            "RedjetHeteroArenas",      "bool", "true", "Intent: Enable P-Core and E-Core heterogeneous task arenas via oneTBB" },
+  { "elastic_tlab",             "RedjetElasticTLAB",       "bool", "true", "Intent: Use elastic policy to dynamically manage Redjet TLAB sizes" },
+  { "ssiolsc",                  "RedjetSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time deterministic profile (replaces G1 soft heuristics)" },
+  { "sc",                       "RedjetSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time deterministic profile with zero-jitter envelope" },
+  { "sc_mode",                  "RedjetSCMode",            "bool", "true", "Intent: Safety-Critical hard real-time bounded latency deterministic mode" },
+  { "safety_critical",          "RedjetSCMode",            "bool", "true", "Intent: Mission-critical hard real-time bounded latency mode" },
+  { "realtime_gc",              "RedjetSCMode",            "bool", "true", "Intent: Hard real-time deterministic microsecond GC mode" },
+  { "deterministic_gc",         "RedjetSCMode",            "bool", "true", "Intent: Deterministic bounded pause profile eliminating dynamic scheduling jitter" },
+  { "forbid_dynamic_growth",    "RedjetForbidDynamicGrowth","bool","true", "Intent: Forbid runtime heap growth to guarantee bounded execution envelope" },
+  { "forbid_growth",            "RedjetForbidDynamicGrowth","bool","true", "Intent: Forbid runtime heap growth to guarantee bounded execution envelope" },
 
   // =========================================================================
   // GROUP 2: Memory Sizing & Capacities (size_t)
@@ -273,14 +273,14 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "max_direct_memory",        "MaxDirectMemorySize",     "size_t", "4g",   "Intent: Maximum allowable off-heap direct NIO ByteBuffer memory" },
   { "direct_memory_size",       "MaxDirectMemorySize",     "size_t", "4g",   "Intent: Maximum allowable off-heap direct NIO ByteBuffer memory" },
   { "async_log_buffer_size",    "AsyncLogBufferSize",      "size_t", "2m",   "Intent: Memory buffer capacity for unified asynchronous logging" },
-  { "redlet_runway",            "RedletRunwayHandselBytes","size_t", "1g",   "Intent: Pre-reserved contiguous runway virtual memory handsel bytes" },
-  { "runway_size",              "RedletRunwayHandselBytes","size_t", "1g",   "Intent: Pre-reserved contiguous runway virtual memory handsel bytes" },
-  { "redlet_landfill",          "RedletLandfillHandselBytes","size_t","285m","Intent: Auxiliary landfill staging memory handsel bytes" },
-  { "landfill_size",            "RedletLandfillHandselBytes","size_t","285m","Intent: Auxiliary landfill staging memory handsel bytes" },
-  { "pressure_threshold",       "RedletPressureThresholdBytes","size_t","256m","Intent: Heap pressure threshold triggering proactive reclamation" },
-  { "slab_chunk_size",          "RedletSlabChunkSizeBytes","size_t", "2m",   "Intent: Allocation granularity slab chunk size (default 2MB)" },
-  { "redlet_min_expand",        "RedletMinHeapExpand",     "size_t", "128m", "Intent: Minimum expansion increment for Redlet heap growth" },
-  { "redlet_max_tlab",          "RedletMaxTLABSize",       "size_t", "4m",   "Intent: Maximum TLAB size cap allowed in RedletGC" },
+  { "redjet_runway",            "RedjetRunwayHandselBytes","size_t", "1g",   "Intent: Pre-reserved contiguous runway virtual memory handsel bytes" },
+  { "runway_size",              "RedjetRunwayHandselBytes","size_t", "1g",   "Intent: Pre-reserved contiguous runway virtual memory handsel bytes" },
+  { "redjet_landfill",          "RedjetLandfillHandselBytes","size_t","285m","Intent: Auxiliary landfill staging memory handsel bytes" },
+  { "landfill_size",            "RedjetLandfillHandselBytes","size_t","285m","Intent: Auxiliary landfill staging memory handsel bytes" },
+  { "pressure_threshold",       "RedjetPressureThresholdBytes","size_t","256m","Intent: Heap pressure threshold triggering proactive reclamation" },
+  { "slab_chunk_size",          "RedjetSlabChunkSizeBytes","size_t", "2m",   "Intent: Allocation granularity slab chunk size (default 2MB)" },
+  { "redjet_min_expand",        "RedjetMinHeapExpand",     "size_t", "128m", "Intent: Minimum expansion increment for Redjet heap growth" },
+  { "redjet_max_tlab",          "RedjetMaxTLABSize",       "size_t", "4m",   "Intent: Maximum TLAB size cap allowed in RedjetGC" },
 
   // =========================================================================
   // GROUP 3: Counts, Ratios, Limits & Intervals (uintx / intx / uint / int)
@@ -341,8 +341,8 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "safepoint_timeout_delay",  "SafepointTimeoutDelay",   "intx",   "10000","Intent: Delay in ms before reporting safepoint timeout warnings" },
   { "autobox_cache_max",        "AutoBoxCacheMax",         "intx",   "1024", "Intent: High end of cache size for boxing autoboxed Integers" },
   { "locking_mode",             "LockingMode",             "int",    "1",    "Intent: Synchronization locking mode (1=lightweight, 2=heavy monitors)" },
-  { "wakes_interval_ns",        "RedletWakesGCIntervalNs", "uint64_t","1000000","Intent: Proactive background GC wake-up interval in nanoseconds" },
-  { "line_compaction_freq_ns",  "RedletLineCompactionFreqNs","uint64_t","350000000","Intent: Background line compaction interval in nanoseconds" },
+  { "wakes_interval_ns",        "RedjetWakesGCIntervalNs", "uint64_t","1000000","Intent: Proactive background GC wake-up interval in nanoseconds" },
+  { "line_compaction_freq_ns",  "RedjetLineCompactionFreqNs","uint64_t","350000000","Intent: Background line compaction interval in nanoseconds" },
 
   // =========================================================================
   // GROUP 4: Percentages, Floats & Threshold Ratios (double)
@@ -357,8 +357,8 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "initial_ram_percentage",   "InitialRAMPercentage",    "double", "25.0", "Intent: Initial heap size as percentage of total RAM at boot" },
   { "initialrampercentage",     "InitialRAMPercentage",    "double", "25.0", "Intent: Initial heap size as percentage of total RAM at boot" },
   { "periodic_gc_system_load",  "G1PeriodicGCSystemLoadThreshold","double","0.0","Intent: System 1-minute load average threshold for periodic GC" },
-  { "falline_ratio",            "RedletFallineCompactRatio","double","0.30", "Intent: Falline compaction threshold ratio (0.05 to 0.95)" },
-  { "falline_compact_ratio",    "RedletFallineCompactRatio","double","0.30", "Intent: Falline compaction threshold ratio (0.05 to 0.95)" },
+  { "falline_ratio",            "RedjetFallineCompactRatio","double","0.30", "Intent: Falline compaction threshold ratio (0.05 to 0.95)" },
+  { "falline_compact_ratio",    "RedjetFallineCompactRatio","double","0.30", "Intent: Falline compaction threshold ratio (0.05 to 0.95)" },
 
   // =========================================================================
   // GROUP 5: Paths, Commands, Directives & Options (ccstr / ccstrlist)
@@ -382,17 +382,17 @@ const HotSpotIntentEntry JVMFlagDidYouMean::INTENT_REGISTRY[] = {
   { "jfr_options",              "FlightRecorderOptions",   "ccstr",  "stackdepth=128",   "Intent: Configuration options for Java Flight Recorder" },
   { "compile_only",             "CompileOnly",             "ccstr",  "pkg/Class.method", "Intent: Restrict compilation to matching method signature pattern" },
   { "compile_command",          "CompileCommand",          "ccstrlist","dontinline,Foo.bar","Intent: Prepend JIT compilation directive commands" },
-  { "normax",                   "RedletProfile",           "ccstr",  "NORMAX", "Intent: Normal maximum high-throughput SIMD execution profile" },
-  { "ssiolsc_profile",          "RedletProfile",           "ccstr",  "SSIOLSC","Intent: Safety-Critical execution profile (replaces G1 soft heuristics)" },
-  { "sc_profile",               "RedletProfile",           "ccstr",  "SSIOLSC","Intent: Safety-Critical execution profile (replaces G1 soft heuristics)" },
-  { "scgc_type",                "RedletSCGCType",          "ccstr",  "Default","Intent: Safety-Critical GC type: Default (bureaucratic STW) or PrimitiveRW" },
-  { "redlet_options",           "RedletOptions",           "ccstr",  "turbo,trim",       "Intent: RedletGC direct comma-separated intent sequence" },
-  { "turbo",                    "RedletOptions",           "ccstr",  "turbo",            "Intent: Engage hardware performance governor boost during GC" },
-  { "boost",                    "RedletOptions",           "ccstr",  "boost",            "Intent: Engage hardware performance governor boost during GC" },
-  { "upclock",                  "RedletOptions",           "ccstr",  "upclock",          "Intent: Engage host CPU upclocking during intensive sweeps" },
-  { "rmrp_method",              "RedletRMRPMethod",        "ccstr",  "Plump",            "Intent: RMRP memory reclamation method: Plump or Sequential" },
-  { "redlet_simd",              "RedletSIMD",              "ccstr",  "avx10_2",          "Intent: Vector engine: auto, avx10_2, avx512, sve2, rvv" },
-  { "gpu_offload",              "RedletGPUOffload",        "ccstr",  "levelzero",        "Intent: GPU accelerator backend: none, levelzero, hip" }
+  { "normax",                   "RedjetProfile",           "ccstr",  "NORMAX", "Intent: Normal maximum high-throughput SIMD execution profile" },
+  { "ssiolsc_profile",          "RedjetProfile",           "ccstr",  "SSIOLSC","Intent: Safety-Critical execution profile (replaces G1 soft heuristics)" },
+  { "sc_profile",               "RedjetProfile",           "ccstr",  "SSIOLSC","Intent: Safety-Critical execution profile (replaces G1 soft heuristics)" },
+  { "scgc_type",                "RedjetSCGCType",          "ccstr",  "Default","Intent: Safety-Critical GC type: Default (bureaucratic STW) or PrimitiveRW" },
+  { "redjet_options",           "RedjetOptions",           "ccstr",  "turbo,trim",       "Intent: RedjetGC direct comma-separated intent sequence" },
+  { "turbo",                    "RedjetOptions",           "ccstr",  "turbo",            "Intent: Engage hardware performance governor boost during GC" },
+  { "boost",                    "RedjetOptions",           "ccstr",  "boost",            "Intent: Engage hardware performance governor boost during GC" },
+  { "upclock",                  "RedjetOptions",           "ccstr",  "upclock",          "Intent: Engage host CPU upclocking during intensive sweeps" },
+  { "rmrp_method",              "RedjetRMRPMethod",        "ccstr",  "Plump",            "Intent: RMRP memory reclamation method: Plump or Sequential" },
+  { "redjet_simd",              "RedjetSIMD",              "ccstr",  "avx10_2",          "Intent: Vector engine: auto, avx10_2, avx512, sve2, rvv" },
+  { "gpu_offload",              "RedjetGPUOffload",        "ccstr",  "levelzero",        "Intent: GPU accelerator backend: none, levelzero, hip" }
 };
 
 const size_t JVMFlagDidYouMean::INTENT_REGISTRY_COUNT =
