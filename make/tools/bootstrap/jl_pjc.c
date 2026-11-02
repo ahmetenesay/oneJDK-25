@@ -26,7 +26,7 @@
  * ============================================================================
  * jl_pjc.c — JavaLang Primitive Java Compiler (C-Bootstrap Mini-Compiler)
  * ============================================================================
- * Zero-BootJDK Enabler for oneJDK-25.
+ * Zero-BootJDK Enabler for oneJDK-25 & FCS (Futuristic Compiling Systems).
  *
  * Written in 100% pure ANSI C99. Free from any Java or external runtime dependencies.
  *
@@ -34,7 +34,7 @@
  * 1. Invoked ephemerally by host C compiler (GCC, MSVC, Clang) during early build.
  * 2. Parses the core bootstrap Java source: PJCF.java.
  * 3. Emits standard Java bytecode binary: PJCF.class (Magic 0xCAFEBABE, v65/Java 21+).
- * 4. Enables HotSpot (with VAC and MIRC) to launch and compile PJCF into native jljc.exe,
+ * 4. Enables HotSpot (with VAC and MIRC) to launch and compile PJCF into native jlc.exe,
  *    eradicating the historical requirement for a pre-installed BootJDK!
  * ============================================================================
  */

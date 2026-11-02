@@ -35,11 +35,12 @@ import java.util.Map;
  * ============================================================================
  * Architectural Role:
  * - Ultra-lightweight pre-VAC sorter and bytecode emission bridge.
+ * - Part of FCS (Futuristic Compiling Systems) overarching umbrella (PJCF/jlc + VAC + MIRC).
  * - Enforces the strict boundary rules:
  *   1. Pure Block Sorting: Definitions at top, execution core in middle, stores/return at end.
  *   2. Preserve original variable names (zero var1000 obfuscation in LocalVariableTable).
  *   3. Javadoc & DocComments Preservation: Encapsulated as standalone ClassFile attribute
- *      (WLFT_DocComments) so IDEs/Reflection can inspect it, while HotSpot VAC skips it in 1ns!
+ *      (FCS_DocComm) so IDEs/Reflection can inspect it, while HotSpot VAC skips it in 1ns!
  *   4. Custom Asset Payload & Semantic Boundary:
  *      - Generic handling for embedded assets (GLSL/HLSL shaders, XML, JSON, Base64, raw binary tables)
  *        without fragile type-specific parsers.
@@ -52,11 +53,11 @@ import java.util.Map;
  */
 public final class PJCF {
 
-    public static final String COMPILER_NAME      = "oneJDK-25 Primitive Java Compiler Frontend (PJCF)";
+    public static final String COMPILER_NAME      = "oneJDK-25 Primitive Java Compiler Frontend (PJCF / FCS)";
     public static final String NATIVE_BINARY_NAME = "jlc";
-    public static final String VERSION            = "25.0.0-WLFT-MIRC";
-    public static final String ATTR_DOC_COMMENTS  = "WLFT_DocComments";
-    public static final String ATTR_CUSTOM_ASSET  = "WLFT_CustomAsset";
+    public static final String VERSION            = "25.0.0-FCS-MIRC";
+    public static final String ATTR_DOC_COMMENTS  = "FCS_DocComm";
+    public static final String ATTR_CUSTOM_ASSET  = "FCS_CustomAsset";
     public static final int    LARGE_BLOB_THRESHOLD_BYTES = 256;
 
     private PJCF() {
@@ -306,8 +307,8 @@ public final class PJCF {
         System.out.println("  -d <directory>        Specify destination directory for classfiles");
         System.out.println("  -classpath <path>     Specify user class lookup path");
         System.out.println("  --preserve-vars       Guarantee 100% original variable names in LocalVariableTable");
-        System.out.println("  --preserve-javadoc    Embed Javadoc into WLFT_DocComments custom attribute");
-        System.out.println("  --preserve-assets     Embed GLSL/HLSL/XML/Base64 into WLFT_CustomAsset with comments");
+        System.out.println("  --preserve-javadoc    Embed Javadoc into FCS_DocComm custom attribute");
+        System.out.println("  --preserve-assets     Embed GLSL/HLSL/XML/Base64 into FCS_CustomAsset with comments");
         System.out.println("  --prevac-sort         Enforce Definitions-First canonical block ordering");
         System.out.println("  -version              Print compiler version");
         System.out.println("  -help                 Print this help message");
