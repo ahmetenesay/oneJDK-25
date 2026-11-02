@@ -588,12 +588,14 @@ static bool emit_class_file(const char* out_filename,
 
     if (tbt_attr_idx != 0) {
         // Synthesize bootstrap TBT 8-Way Propositional Implication Matrix (8-WIM):
-        // [u2 count=1] [u2 id=1]
-        // 1. [u2, "p=>q"]         2. [u2, "p=>!q"]
-        // 3. [u2, "!p=>q"]        4. [u2, "!p=>!q"]
-        // 5. [u2, "q=>p"]         6. [u2, "q=>!p"]
-        // 7. [u2, "!q=>p"]        8. [u2, "!q=>!p"]
-        // [u2 roll_len, "ok"] [u1 bpu_hint=1]
+        // 1. (p => q)   : If Ahmet studies his lessons, he is successful.
+        // 2. (p => !q)  : If Ahmet studies his lessons, he is unsuccessful.
+        // 3. (!p => q)  : If Ahmet does not study his lessons, he is successful.
+        // 4. (!p => !q) : If Ahmet does not study his lessons, he is unsuccessful.
+        // 5. (q => p)   : If Ahmet is successful, he studied his lessons.
+        // 6. (q => !p)  : If Ahmet is successful, he did not study his lessons.
+        // 7. (!q => p)  : If Ahmet is unsuccessful, he studied his lessons.
+        // 8. (!q => !p) : If Ahmet is unsuccessful, he did not study his lessons.
         uint8_t tbt_payload[] = {
             0x00, 0x01,                                     // 1 TBT Entry
             0x00, 0x01,                                     // Branch ID 1

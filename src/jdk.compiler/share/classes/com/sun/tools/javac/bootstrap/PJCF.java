@@ -162,14 +162,14 @@ public final class PJCF {
     /**
      * Temporal Branching Table (TBT) Entry:
      * Represents the complete 8-Way Propositional Implication Matrix (8-WIM) between condition (p) and consequence (q):
-     * 1. p => q         : Forward Hot Path ("Ahmet çalışmışsa başarılıdır")
-     * 2. p => !q        : Forward Fault/Exception ("Ahmet çalışmışsa başarısızdır")
-     * 3. !p => q        : Speculative Shortcut/Bypass ("Ahmet çalışmamışsa başarılıdır")
-     * 4. !p => !q       : Canonical Cold Path ("Ahmet çalışmamışsa başarısızdır")
-     * 5. q => p         : Converse Reversible Recovery ("Ahmet başarılıysa çalışmıştır")
-     * 6. q => !p        : Converse Verification ("Ahmet başarılıysa çalışmamıştır")
-     * 7. !q => p        : Retry / Rollback Mutation ("Ahmet başarısızsa çalışmıştır")
-     * 8. !q => !p       : Contrapositive Dead Branch Pruning ("Ahmet başarısızsa çalışmamıştır", p=>q == !q=>!p)
+     * 1. p => q         : Forward Hot Path ("If Ahmet studies his lessons, he is successful.")
+     * 2. p => !q        : Forward Fault/Exception ("If Ahmet studies his lessons, he is unsuccessful.")
+     * 3. !p => q        : Speculative Shortcut/Bypass ("If Ahmet does not study his lessons, he is successful.")
+     * 4. !p => !q       : Canonical Cold Path ("If Ahmet does not study his lessons, he is unsuccessful.")
+     * 5. q => p         : Converse Reversible Recovery ("If Ahmet is successful, he studied his lessons.")
+     * 6. q => !p        : Converse Verification ("If Ahmet is successful, he did not study his lessons.")
+     * 7. !q => p        : Retry / Rollback Mutation ("If Ahmet is unsuccessful, he studied his lessons.")
+     * 8. !q => !p       : Contrapositive Dead Branch Pruning ("If Ahmet is unsuccessful, he did not study his lessons.", p=>q == !q=>!p)
      */
     public static final class TemporalBranchEntry {
         public final int branchId;
