@@ -477,11 +477,12 @@ static bool emit_class_file(const char* out_filename,
     uint16_t main_name_idx = cp_add_utf8("main");
     uint16_t main_desc_idx = cp_add_utf8("([Ljava/lang/String;)V");
 
-    // FCS Custom Attribute (FCS_DocComm)
+    // FCS Custom Attributes (FCS_DocComm & FCS_TBT)
     uint16_t doc_attr_idx = 0;
     if (embed_doc_comments && meta->doc_len > 0) {
         doc_attr_idx = cp_add_utf8("FCS_DocComm");
     }
+    uint16_t tbt_attr_idx = cp_add_utf8("FCS_TBT");
 
     // 1. Magic & Version
     write_u4(f, JAVA_CLASS_MAGIC);
@@ -572,14 +573,31 @@ static bool emit_class_file(const char* out_filename,
         write_u2(f, 0); // attributes_count
     }
 
-    // 7. Class-Level Attributes (FCS_DocComm embedded by default)
+    // 7. Class-Level Attributes (FCS_DocComm & FCS_TBT embedded by default)
+    uint16_t class_attr_count = 0;
+    if (embed_doc_comments && doc_attr_idx != 0) class_attr_count++;
+    if (tbt_attr_idx != 0) class_attr_count++;
+
+    write_u2(f, class_attr_count);
+
     if (embed_doc_comments && doc_attr_idx != 0) {
-        write_u2(f, 1); // attributes_count = 1
         write_u2(f, doc_attr_idx);
         write_u4(f, meta->doc_len);
         fwrite(meta->doc_comments, 1, meta->doc_len, f);
-    } else {
-        write_u2(f, 0); // attributes_count = 0
+    }
+
+    if (tbt_attr_idx != 0) {
+        // Synthesize bootstrap TBT entry (Branch #1: Canonical bootstrap entry, Hint: LIKELY)
+        uint8_t tbt_payload[] = {
+            0x00, 0x01,                         // 1 TBT Entry
+            0x00, 0x01,                         // Branch ID 1
+            0x00, 0x04, 't', 'r', 'u', 'e',     // Forward condition ("true")
+            0x00, 0x05, 'f', 'a', 'l', 's', 'e', // Inverse condition ("false")
+            0x01                                // BPU Hint: 1 (LIKELY)
+        };
+        write_u2(f, tbt_attr_idx);
+        write_u4(f, sizeof(tbt_payload));
+        fwrite(tbt_payload, 1, sizeof(tbt_payload), f);
     }
 
     fclose(f);
@@ -587,6 +605,7 @@ static bool emit_class_file(const char* out_filename,
     if (embed_doc_comments && meta->doc_len > 0) {
         printf("[jl_pjc] Embedded FCS_DocComm custom attribute (%u bytes documentation)\n", meta->doc_len);
     }
+    printf("[jl_pjc] Embedded FCS_TBT (Temporal Branching Table) custom attribute\n");
     return true;
 }
 

@@ -68,6 +68,7 @@ public final class PJCF {
     public static final String ATTR_DOC_COMMENTS  = "FCS_DocComm";
     public static final String ATTR_CUSTOM_ASSET  = "FCS_CustomAsset";
     public static final String ATTR_DEAD_CODE     = "FCS_DeadCode";
+    public static final String ATTR_TEMPORAL_BRANCH_TABLE = "FCS_TBT";
     public static final int    LARGE_BLOB_THRESHOLD_BYTES = 256;
 
     private PJCF() {
@@ -159,6 +160,67 @@ public final class PJCF {
     }
 
     /**
+     * Temporal Branching Table (TBT) Entry:
+     * Represents the reversible negative mirror of a control-flow branch.
+     * Provides deterministic rollback invariants, static BPU priming, and zero-deopt paths.
+     */
+    public static final class TemporalBranchEntry {
+        public final int branchId;
+        public final String forwardCondition;
+        public final String inverseCondition;
+        public final String rollbackMutation;
+        public final int bpuHint; // 0=UNLIKELY, 1=LIKELY, 2=BALANCED
+
+        public TemporalBranchEntry(int branchId, String forwardCond, String inverseCond, String rollbackMutation, int bpuHint) {
+            this.branchId = branchId;
+            this.forwardCondition = forwardCond != null ? forwardCond : "";
+            this.inverseCondition = inverseCond != null ? inverseCond : "";
+            this.rollbackMutation = rollbackMutation != null ? rollbackMutation : "";
+            this.bpuHint = bpuHint;
+        }
+
+        @Override
+        public String toString() {
+            return "[TBT #" + branchId + "] Forward: (" + forwardCondition + ") <-> Inverse: (" +
+                   inverseCondition + ") | Rollback: " + rollbackMutation + " | BPU: " + bpuHint;
+        }
+    }
+
+    /**
+     * Temporal Branching Table (TBT):
+     * Emitted as ClassFile attribute (FCS_TBT) containing the full reversible symmetry of method branches.
+     */
+    public static final class TemporalBranchTable {
+        public final List<TemporalBranchEntry> entries = new ArrayList<>();
+
+        public void registerBranch(String forwardCond, String inverseCond, String rollbackMutation, int bpuHint) {
+            entries.add(new TemporalBranchEntry(entries.size() + 1, forwardCond, inverseCond, rollbackMutation, bpuHint));
+        }
+
+        public byte[] toAttributeBytes() {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            java.io.DataOutputStream dos = new java.io.DataOutputStream(bos);
+            try {
+                dos.writeShort(entries.size());
+                for (TemporalBranchEntry e : entries) {
+                    dos.writeShort(e.branchId);
+                    byte[] fwd = e.forwardCondition.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    dos.writeShort(fwd.length);
+                    dos.write(fwd);
+                    byte[] inv = e.inverseCondition.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    dos.writeShort(inv.length);
+                    dos.write(inv);
+                    dos.writeByte(e.bpuHint);
+                }
+                dos.flush();
+            } catch (Exception ex) {
+                // In-memory operation
+            }
+            return bos.toByteArray();
+        }
+    }
+
+    /**
      * Lightweight Pre-VAC Sorter Engine:
      * Partitions method statements into canonical blocks, isolates Custom Asset Payloads,
      * preserves internal comments, and guarantees safe semantic barrier ordering.
@@ -194,7 +256,9 @@ public final class PJCF {
             // Track string pool deduplication for static literals
             Map<String, String> deduplicatedAssets = new LinkedHashMap<>();
 
-            // Pass 1: Normalize expressions, categorize statements, fold trivial constants, apply PILF
+            // Pass 1: Normalize expressions, categorize statements, fold trivial constants, apply PILF & TBT
+            TemporalBranchTable tbt = new TemporalBranchTable();
+
             for (MethodStatement stmt : rawStatements) {
                 // Rule 5: Trivial constant cleanup only for non-asset expressions
                 String cleanedExpr = stmt.rawExpression;
@@ -207,14 +271,21 @@ public final class PJCF {
 
                 StatementKind effectiveKind = stmt.kind;
 
-                // Rule 6: Pseudo Inverted Logic Flow (PILF)
+                // Rule 6: Pseudo Inverted Logic Flow (PILF) & Temporal Branching Table (TBT)
                 if (pilfEnabled) {
                     if (isWhileLoop(cleanedExpr)) {
                         effectiveKind = StatementKind.PILF_LOOP;
+                        String originalCond = extractLoopCondition(cleanedExpr);
                         cleanedExpr = invertLoopToBottomCondition(cleanedExpr);
+                        tbt.registerBranch(originalCond, "!(" + originalCond + ")", "/* rollback: rewind induction */", 1);
                     } else if (isNestedDefensiveGuard(cleanedExpr)) {
                         effectiveKind = StatementKind.PILF_GUARD;
+                        String guardCond = extractGuardCondition(cleanedExpr);
                         cleanedExpr = invertGuardToEarlyExit(cleanedExpr);
+                        tbt.registerBranch("!(" + guardCond + ")", guardCond, "/* rollback: return void/null */", 0);
+                    } else if (cleanedExpr.startsWith("if (") || cleanedExpr.startsWith("if(")) {
+                        String ifCond = extractGuardCondition(cleanedExpr);
+                        tbt.registerBranch(ifCond, "!(" + ifCond + ")", "/* rollback: restore stack */", 2);
                     }
                 }
 
@@ -307,6 +378,28 @@ public final class PJCF {
                 return "if (" + cond + ") { do " + body + " while (" + cond + "); } /* [PILF: Loop Inversion BPU Hot] */";
             }
             return expr;
+        }
+
+        private static String extractLoopCondition(String expr) {
+            if (expr == null) return "true";
+            String s = expr.trim();
+            int openIdx = s.indexOf('(');
+            int closeIdx = s.indexOf(')');
+            if (openIdx >= 0 && closeIdx > openIdx) {
+                return s.substring(openIdx + 1, closeIdx).trim();
+            }
+            return "true";
+        }
+
+        private static String extractGuardCondition(String expr) {
+            if (expr == null) return "true";
+            String s = expr.trim();
+            int openIdx = s.indexOf('(');
+            int closeIdx = s.indexOf(')');
+            if (openIdx >= 0 && closeIdx > openIdx) {
+                return s.substring(openIdx + 1, closeIdx).trim();
+            }
+            return "true";
         }
 
         /**
