@@ -161,61 +161,86 @@ public final class PJCF {
 
     /**
      * Temporal Branching Table (TBT) Entry:
-     * Represents the formal propositional logic quadruplet of a control-flow branch:
-     * 1. Forward (p => q): "Eğer p ise q yap" (Canonical path)
-     * 2. Converse (q => p): "Eğer q olduysa p idi" (Reversible state reconstruction without memory reload)
-     * 3. Inverse (!p => !q): "Eğer p değilse q yapma" (Alternate path isolation)
-     * 4. Contrapositive (!q => !p): "Eğer q olmadıysa p olmamıştır" (Dead branch elimination, p=>q == !q=>!p)
+     * Represents the complete 8-Way Propositional Implication Matrix (8-WIM) between condition (p) and consequence (q):
+     * 1. p => q         : Forward Hot Path ("Ahmet çalışmışsa başarılıdır")
+     * 2. p => !q        : Forward Fault/Exception ("Ahmet çalışmışsa başarısızdır")
+     * 3. !p => q        : Speculative Shortcut/Bypass ("Ahmet çalışmamışsa başarılıdır")
+     * 4. !p => !q       : Canonical Cold Path ("Ahmet çalışmamışsa başarısızdır")
+     * 5. q => p         : Converse Reversible Recovery ("Ahmet başarılıysa çalışmıştır")
+     * 6. q => !p        : Converse Verification ("Ahmet başarılıysa çalışmamıştır")
+     * 7. !q => p        : Retry / Rollback Mutation ("Ahmet başarısızsa çalışmıştır")
+     * 8. !q => !p       : Contrapositive Dead Branch Pruning ("Ahmet başarısızsa çalışmamıştır", p=>q == !q=>!p)
      */
     public static final class TemporalBranchEntry {
         public final int branchId;
-        public final String forward;        // p => q
-        public final String converse;       // q => p (Reversible State Recovery)
-        public final String inverse;        // !p => !q
-        public final String contrapositive; // !q => !p (Dead Branch Pruning)
+        public final String p_to_q;         // 1. Forward Hot Path (p => q)
+        public final String p_to_not_q;     // 2. Forward Fault (p => !q)
+        public final String not_p_to_q;     // 3. Speculative Shortcut (!p => q)
+        public final String not_p_to_not_q; // 4. Canonical Cold Path (!p => !q)
+        public final String q_to_p;         // 5. Converse Reversible Recovery (q => p)
+        public final String q_to_not_p;     // 6. Converse Verification (q => !p)
+        public final String not_q_to_p;     // 7. Retry / Rollback Delta (!q => p)
+        public final String not_q_to_not_p; // 8. Contrapositive Pruning (!q => !p)
         public final String rollbackMutation;
         public final int bpuHint;           // 0=UNLIKELY, 1=LIKELY, 2=BALANCED
 
         public TemporalBranchEntry(int branchId,
-                                   String forward,
-                                   String converse,
-                                   String inverse,
-                                   String contrapositive,
+                                   String p_to_q,
+                                   String p_to_not_q,
+                                   String not_p_to_q,
+                                   String not_p_to_not_q,
+                                   String q_to_p,
+                                   String q_to_not_p,
+                                   String not_q_to_p,
+                                   String not_q_to_not_p,
                                    String rollbackMutation,
                                    int bpuHint) {
             this.branchId = branchId;
-            this.forward = (forward != null) ? forward : "";
-            this.converse = (converse != null) ? converse : "";
-            this.inverse = (inverse != null) ? inverse : "";
-            this.contrapositive = (contrapositive != null) ? contrapositive : "";
+            this.p_to_q = (p_to_q != null) ? p_to_q : "";
+            this.p_to_not_q = (p_to_not_q != null) ? p_to_not_q : "";
+            this.not_p_to_q = (not_p_to_q != null) ? not_p_to_q : "";
+            this.not_p_to_not_q = (not_p_to_not_q != null) ? not_p_to_not_q : "";
+            this.q_to_p = (q_to_p != null) ? q_to_p : "";
+            this.q_to_not_p = (q_to_not_p != null) ? q_to_not_p : "";
+            this.not_q_to_p = (not_q_to_p != null) ? not_q_to_p : "";
+            this.not_q_to_not_p = (not_q_to_not_p != null) ? not_q_to_not_p : "";
             this.rollbackMutation = (rollbackMutation != null) ? rollbackMutation : "";
             this.bpuHint = bpuHint;
         }
 
         @Override
         public String toString() {
-            return "[TBT #" + branchId + " Logic Quadruplet]\n" +
-                   "  Forward (p => q):         " + forward + "\n" +
-                   "  Converse (q => p):        " + converse + "  [Reversible Recovery]\n" +
-                   "  Inverse (!p => !q):       " + inverse + "\n" +
-                   "  Contrapositive (!q => !p):" + contrapositive + " [Dead Branch Pruning]\n" +
-                   "  Rollback Delta:           " + rollbackMutation + " | BPU: " + bpuHint;
+            return "[TBT #" + branchId + " 8-Way Implication Matrix]\n" +
+                   "  1. Forward (p => q):         " + p_to_q + "\n" +
+                   "  2. Fault (p => !q):           " + p_to_not_q + "\n" +
+                   "  3. Shortcut (!p => q):        " + not_p_to_q + "\n" +
+                   "  4. Cold (!p => !q):           " + not_p_to_not_q + "\n" +
+                   "  5. Converse (q => p):         " + q_to_p + " [Reversible State Recovery]\n" +
+                   "  6. Verify (q => !p):          " + q_to_not_p + "\n" +
+                   "  7. Rollback (!q => p):        " + not_q_to_p + " [Retry / Delta]\n" +
+                   "  8. Contrapositive (!q => !p): " + not_q_to_not_p + " [Dead Branch Pruning]\n" +
+                   "  Rollback Delta:               " + rollbackMutation + " | BPU Hint: " + bpuHint;
         }
     }
 
     /**
      * Temporal Branching Table (TBT):
-     * Emitted as ClassFile attribute (FCS_TBT) containing the full reversible propositional logic
-     * symmetry of method branches. VAC consumes this to reconstruct state, eliminate dead branches,
+     * Emitted as ClassFile attribute (FCS_TBT) containing the full 8-Way Propositional Implication Matrix (8-WIM)
+     * of method branches. VAC consumes this to reconstruct state, eliminate dead branches,
      * and prime BPU statically with zero runtime profiling overhead.
      */
     public static final class TemporalBranchTable {
         public final List<TemporalBranchEntry> entries = new ArrayList<>();
 
-        public void registerLogicQuadruplet(String forward, String converse, String inverse,
-                                            String contrapositive, String rollbackMutation, int bpuHint) {
-            entries.add(new TemporalBranchEntry(entries.size() + 1, forward, converse, inverse,
-                                                contrapositive, rollbackMutation, bpuHint));
+        public void register8WayMatrix(String p_to_q, String p_to_not_q,
+                                       String not_p_to_q, String not_p_to_not_q,
+                                       String q_to_p, String q_to_not_p,
+                                       String not_q_to_p, String not_q_to_not_p,
+                                       String rollbackMutation, int bpuHint) {
+            entries.add(new TemporalBranchEntry(entries.size() + 1,
+                                                p_to_q, p_to_not_q, not_p_to_q, not_p_to_not_q,
+                                                q_to_p, q_to_not_p, not_q_to_p, not_q_to_not_p,
+                                                rollbackMutation, bpuHint));
         }
 
         public byte[] toAttributeBytes() {
@@ -225,10 +250,14 @@ public final class PJCF {
                 dos.writeShort(entries.size());
                 for (TemporalBranchEntry e : entries) {
                     dos.writeShort(e.branchId);
-                    writeUtfString(dos, e.forward);
-                    writeUtfString(dos, e.converse);
-                    writeUtfString(dos, e.inverse);
-                    writeUtfString(dos, e.contrapositive);
+                    writeUtfString(dos, e.p_to_q);
+                    writeUtfString(dos, e.p_to_not_q);
+                    writeUtfString(dos, e.not_p_to_q);
+                    writeUtfString(dos, e.not_p_to_not_q);
+                    writeUtfString(dos, e.q_to_p);
+                    writeUtfString(dos, e.q_to_not_p);
+                    writeUtfString(dos, e.not_q_to_p);
+                    writeUtfString(dos, e.not_q_to_not_p);
                     writeUtfString(dos, e.rollbackMutation);
                     dos.writeByte(e.bpuHint);
                 }
@@ -297,16 +326,20 @@ public final class PJCF {
 
                 StatementKind effectiveKind = stmt.kind;
 
-                // Rule 6: Pseudo Inverted Logic Flow (PILF) & Temporal Branching Table (TBT)
+                // Rule 6: Pseudo Inverted Logic Flow (PILF) & Temporal Branching Table 8-Way Matrix (8-WIM)
                 if (pilfEnabled) {
                     if (isWhileLoop(cleanedExpr)) {
                         effectiveKind = StatementKind.PILF_LOOP;
                         String cond = extractLoopCondition(cleanedExpr);
                         cleanedExpr = invertLoopToBottomCondition(cleanedExpr);
-                        tbt.registerLogicQuadruplet(
+                        tbt.register8WayMatrix(
                             cond + " => loopBody",
-                            "loopBody => " + cond,
+                            cond + " => exitLoop",
+                            "!(" + cond + ") => loopBody",
                             "!(" + cond + ") => exitLoop",
+                            "loopBody => " + cond,
+                            "loopBody => !(" + cond + ")",
+                            "exitLoop => " + cond,
                             "exitLoop => !(" + cond + ")",
                             "/* rollback: rewind induction */",
                             1 // BPU Hint: 1 (LIKELY)
@@ -315,20 +348,28 @@ public final class PJCF {
                         effectiveKind = StatementKind.PILF_GUARD;
                         String guard = extractGuardCondition(cleanedExpr);
                         cleanedExpr = invertGuardToEarlyExit(cleanedExpr);
-                        tbt.registerLogicQuadruplet(
+                        tbt.register8WayMatrix(
                             "!(" + guard + ") => bailout",
-                            "bailout => !(" + guard + ")",
+                            "!(" + guard + ") => hotHighway",
+                            guard + " => bailout",
                             guard + " => hotHighway",
+                            "bailout => !(" + guard + ")",
+                            "bailout => " + guard,
+                            "hotHighway => !(" + guard + ")",
                             "hotHighway => " + guard,
                             "/* rollback: return void/null */",
                             0 // BPU Hint: 0 (UNLIKELY)
                         );
                     } else if (cleanedExpr.startsWith("if (") || cleanedExpr.startsWith("if(")) {
                         String ifCond = extractGuardCondition(cleanedExpr);
-                        tbt.registerLogicQuadruplet(
+                        tbt.register8WayMatrix(
                             ifCond + " => branchTrue",
-                            "branchTrue => " + ifCond,
+                            ifCond + " => branchFalse",
+                            "!(" + ifCond + ") => branchTrue",
                             "!(" + ifCond + ") => branchFalse",
+                            "branchTrue => " + ifCond,
+                            "branchTrue => !(" + ifCond + ")",
+                            "branchFalse => " + ifCond,
                             "branchFalse => !(" + ifCond + ")",
                             "/* rollback: restore stack */",
                             2 // BPU Hint: 2 (BALANCED)

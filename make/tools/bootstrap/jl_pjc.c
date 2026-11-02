@@ -587,21 +587,24 @@ static bool emit_class_file(const char* out_filename,
     }
 
     if (tbt_attr_idx != 0) {
-        // Synthesize bootstrap TBT Proposition Logic Quadruplet:
+        // Synthesize bootstrap TBT 8-Way Propositional Implication Matrix (8-WIM):
         // [u2 count=1] [u2 id=1]
-        // [u2 fwd_len, fwd_str "p=>q"]
-        // [u2 conv_len, conv_str "q=>p"] (Reversible Recovery)
-        // [u2 inv_len, inv_str "!p=>!q"]
-        // [u2 contra_len, contra_str "!q=>!p"] (Dead Branch Pruning)
-        // [u2 roll_len, roll_str "ok"]
-        // [u1 bpu_hint=1]
+        // 1. [u2, "p=>q"]         2. [u2, "p=>!q"]
+        // 3. [u2, "!p=>q"]        4. [u2, "!p=>!q"]
+        // 5. [u2, "q=>p"]         6. [u2, "q=>!p"]
+        // 7. [u2, "!q=>p"]        8. [u2, "!q=>!p"]
+        // [u2 roll_len, "ok"] [u1 bpu_hint=1]
         uint8_t tbt_payload[] = {
             0x00, 0x01,                                     // 1 TBT Entry
             0x00, 0x01,                                     // Branch ID 1
-            0x00, 0x04, 'p', '=', '>', 'q',                 // Forward (p => q)
-            0x00, 0x04, 'q', '=', '>', 'p',                 // Converse (q => p) [Reversible State Recovery]
-            0x00, 0x06, '!', 'p', '=', '>', '!', 'q',       // Inverse (!p => !q)
-            0x00, 0x06, '!', 'q', '=', '>', '!', 'p',       // Contrapositive (!q => !p) [Dead Branch Pruning]
+            0x00, 0x04, 'p', '=', '>', 'q',                 // 1. Forward Hot (p => q)
+            0x00, 0x05, 'p', '=', '>', '!', 'q',             // 2. Forward Fault (p => !q)
+            0x00, 0x05, '!', 'p', '=', '>', 'q',             // 3. Speculative Shortcut (!p => q)
+            0x00, 0x06, '!', 'p', '=', '>', '!', 'q',       // 4. Canonical Cold (!p => !q)
+            0x00, 0x04, 'q', '=', '>', 'p',                 // 5. Converse Reversible Recovery (q => p)
+            0x00, 0x05, 'q', '=', '>', '!', 'p',             // 6. Converse Verification (q => !p)
+            0x00, 0x05, '!', 'q', '=', '>', 'p',             // 7. Retry / Rollback Delta (!q => p)
+            0x00, 0x06, '!', 'q', '=', '>', '!', 'p',       // 8. Contrapositive Dead Pruning (!q => !p)
             0x00, 0x02, 'o', 'k',                           // Rollback mutation delta
             0x01                                            // BPU Hint: 1 (LIKELY)
         };
