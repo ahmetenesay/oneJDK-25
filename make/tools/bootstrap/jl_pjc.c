@@ -402,19 +402,24 @@ static bool ingest_java_source(const char* filepath, source_metadata_t* meta) {
             }
         }
 
-        // Detect class declaration
-        if (strstr(p, "class ") != NULL) {
+        // Detect primary top-level public class declaration (never overwrite with inner/nested classes)
+        if (!in_block_comment && (strncmp(p, "public final class ", 19) == 0 ||
+                                  strncmp(p, "public class ", 13) == 0)) {
             char* cpos = strstr(p, "class ");
-            char cname[256];
-            if (sscanf(cpos + 6, "%255s", cname) == 1) {
-                // Strip any '{' or trailing characters
-                for (int i = 0; cname[i]; ++i) {
-                    if (cname[i] == '{' || isspace((unsigned char)cname[i])) {
-                        cname[i] = '\0';
-                        break;
+            if (cpos) {
+                char cname[256];
+                if (sscanf(cpos + 6, "%255s", cname) == 1) {
+                    // Strip any '{' or trailing characters
+                    for (int i = 0; cname[i]; ++i) {
+                        if (cname[i] == '{' || isspace((unsigned char)cname[i])) {
+                            cname[i] = '\0';
+                            break;
+                        }
+                    }
+                    if (cname[0] != '\0') {
+                        strncpy(meta->class_name, cname, sizeof(meta->class_name) - 1);
                     }
                 }
-                strncpy(meta->class_name, cname, sizeof(meta->class_name) - 1);
             }
         }
 
@@ -632,10 +637,11 @@ int main(int argc, char** argv) {
     printf("[jl_pjc] JavaLang Primitive Java Compiler v%s (Tungsten Labs / WLFT)\n", PJC_VERSION);
     printf("[jl_pjc] FCS Architecture: Zero-BootJDK Bootstrap Kernel\n");
 
-    const char* in_source = "PJCF.java";
+    const char* in_source = "src/jdk.compiler/share/classes/com/sun/tools/javac/bootstrap/PJCF.java";
     const char* out_class = "PJCF.class";
     bool dump_cp_flag = false;
     bool embed_docs = true; // DEFAULT ACTIVE as requested!
+    int positional = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--dump-cp") == 0) {
@@ -643,10 +649,12 @@ int main(int argc, char** argv) {
         } else if (strcmp(argv[i], "--no-docs") == 0) {
             embed_docs = false;
         } else if (argv[i][0] != '-') {
-            if (strcmp(in_source, "PJCF.java") == 0) {
+            if (positional == 0) {
                 in_source = argv[i];
-            } else {
+                positional++;
+            } else if (positional == 1) {
                 out_class = argv[i];
+                positional++;
             }
         }
     }
