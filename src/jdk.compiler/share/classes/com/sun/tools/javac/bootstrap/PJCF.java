@@ -161,40 +161,61 @@ public final class PJCF {
 
     /**
      * Temporal Branching Table (TBT) Entry:
-     * Represents the reversible negative mirror of a control-flow branch.
-     * Provides deterministic rollback invariants, static BPU priming, and zero-deopt paths.
+     * Represents the formal propositional logic quadruplet of a control-flow branch:
+     * 1. Forward (p => q): "Eğer p ise q yap" (Canonical path)
+     * 2. Converse (q => p): "Eğer q olduysa p idi" (Reversible state reconstruction without memory reload)
+     * 3. Inverse (!p => !q): "Eğer p değilse q yapma" (Alternate path isolation)
+     * 4. Contrapositive (!q => !p): "Eğer q olmadıysa p olmamıştır" (Dead branch elimination, p=>q == !q=>!p)
      */
     public static final class TemporalBranchEntry {
         public final int branchId;
-        public final String forwardCondition;
-        public final String inverseCondition;
+        public final String forward;        // p => q
+        public final String converse;       // q => p (Reversible State Recovery)
+        public final String inverse;        // !p => !q
+        public final String contrapositive; // !q => !p (Dead Branch Pruning)
         public final String rollbackMutation;
-        public final int bpuHint; // 0=UNLIKELY, 1=LIKELY, 2=BALANCED
+        public final int bpuHint;           // 0=UNLIKELY, 1=LIKELY, 2=BALANCED
 
-        public TemporalBranchEntry(int branchId, String forwardCond, String inverseCond, String rollbackMutation, int bpuHint) {
+        public TemporalBranchEntry(int branchId,
+                                   String forward,
+                                   String converse,
+                                   String inverse,
+                                   String contrapositive,
+                                   String rollbackMutation,
+                                   int bpuHint) {
             this.branchId = branchId;
-            this.forwardCondition = forwardCond != null ? forwardCond : "";
-            this.inverseCondition = inverseCond != null ? inverseCond : "";
-            this.rollbackMutation = rollbackMutation != null ? rollbackMutation : "";
+            this.forward = (forward != null) ? forward : "";
+            this.converse = (converse != null) ? converse : "";
+            this.inverse = (inverse != null) ? inverse : "";
+            this.contrapositive = (contrapositive != null) ? contrapositive : "";
+            this.rollbackMutation = (rollbackMutation != null) ? rollbackMutation : "";
             this.bpuHint = bpuHint;
         }
 
         @Override
         public String toString() {
-            return "[TBT #" + branchId + "] Forward: (" + forwardCondition + ") <-> Inverse: (" +
-                   inverseCondition + ") | Rollback: " + rollbackMutation + " | BPU: " + bpuHint;
+            return "[TBT #" + branchId + " Logic Quadruplet]\n" +
+                   "  Forward (p => q):         " + forward + "\n" +
+                   "  Converse (q => p):        " + converse + "  [Reversible Recovery]\n" +
+                   "  Inverse (!p => !q):       " + inverse + "\n" +
+                   "  Contrapositive (!q => !p):" + contrapositive + " [Dead Branch Pruning]\n" +
+                   "  Rollback Delta:           " + rollbackMutation + " | BPU: " + bpuHint;
         }
     }
 
     /**
      * Temporal Branching Table (TBT):
-     * Emitted as ClassFile attribute (FCS_TBT) containing the full reversible symmetry of method branches.
+     * Emitted as ClassFile attribute (FCS_TBT) containing the full reversible propositional logic
+     * symmetry of method branches. VAC consumes this to reconstruct state, eliminate dead branches,
+     * and prime BPU statically with zero runtime profiling overhead.
      */
     public static final class TemporalBranchTable {
         public final List<TemporalBranchEntry> entries = new ArrayList<>();
 
-        public void registerBranch(String forwardCond, String inverseCond, String rollbackMutation, int bpuHint) {
-            entries.add(new TemporalBranchEntry(entries.size() + 1, forwardCond, inverseCond, rollbackMutation, bpuHint));
+        public void registerLogicQuadruplet(String forward, String converse, String inverse,
+                                            String contrapositive, String rollbackMutation, int bpuHint) {
+            entries.add(new TemporalBranchEntry(entries.size() + 1, forward, converse, inverse,
+                                                contrapositive, rollbackMutation, bpuHint));
         }
 
         public byte[] toAttributeBytes() {
@@ -204,19 +225,24 @@ public final class PJCF {
                 dos.writeShort(entries.size());
                 for (TemporalBranchEntry e : entries) {
                     dos.writeShort(e.branchId);
-                    byte[] fwd = e.forwardCondition.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                    dos.writeShort(fwd.length);
-                    dos.write(fwd);
-                    byte[] inv = e.inverseCondition.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                    dos.writeShort(inv.length);
-                    dos.write(inv);
+                    writeUtfString(dos, e.forward);
+                    writeUtfString(dos, e.converse);
+                    writeUtfString(dos, e.inverse);
+                    writeUtfString(dos, e.contrapositive);
+                    writeUtfString(dos, e.rollbackMutation);
                     dos.writeByte(e.bpuHint);
                 }
                 dos.flush();
             } catch (Exception ex) {
-                // In-memory operation
+                // In-memory exception-free
             }
             return bos.toByteArray();
+        }
+
+        private static void writeUtfString(java.io.DataOutputStream dos, String s) throws java.io.IOException {
+            byte[] bytes = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            dos.writeShort(bytes.length);
+            dos.write(bytes);
         }
     }
 
@@ -275,17 +301,38 @@ public final class PJCF {
                 if (pilfEnabled) {
                     if (isWhileLoop(cleanedExpr)) {
                         effectiveKind = StatementKind.PILF_LOOP;
-                        String originalCond = extractLoopCondition(cleanedExpr);
+                        String cond = extractLoopCondition(cleanedExpr);
                         cleanedExpr = invertLoopToBottomCondition(cleanedExpr);
-                        tbt.registerBranch(originalCond, "!(" + originalCond + ")", "/* rollback: rewind induction */", 1);
+                        tbt.registerLogicQuadruplet(
+                            cond + " => loopBody",
+                            "loopBody => " + cond,
+                            "!(" + cond + ") => exitLoop",
+                            "exitLoop => !(" + cond + ")",
+                            "/* rollback: rewind induction */",
+                            1 // BPU Hint: 1 (LIKELY)
+                        );
                     } else if (isNestedDefensiveGuard(cleanedExpr)) {
                         effectiveKind = StatementKind.PILF_GUARD;
-                        String guardCond = extractGuardCondition(cleanedExpr);
+                        String guard = extractGuardCondition(cleanedExpr);
                         cleanedExpr = invertGuardToEarlyExit(cleanedExpr);
-                        tbt.registerBranch("!(" + guardCond + ")", guardCond, "/* rollback: return void/null */", 0);
+                        tbt.registerLogicQuadruplet(
+                            "!(" + guard + ") => bailout",
+                            "bailout => !(" + guard + ")",
+                            guard + " => hotHighway",
+                            "hotHighway => " + guard,
+                            "/* rollback: return void/null */",
+                            0 // BPU Hint: 0 (UNLIKELY)
+                        );
                     } else if (cleanedExpr.startsWith("if (") || cleanedExpr.startsWith("if(")) {
                         String ifCond = extractGuardCondition(cleanedExpr);
-                        tbt.registerBranch(ifCond, "!(" + ifCond + ")", "/* rollback: restore stack */", 2);
+                        tbt.registerLogicQuadruplet(
+                            ifCond + " => branchTrue",
+                            "branchTrue => " + ifCond,
+                            "!(" + ifCond + ") => branchFalse",
+                            "branchFalse => !(" + ifCond + ")",
+                            "/* rollback: restore stack */",
+                            2 // BPU Hint: 2 (BALANCED)
+                        );
                     }
                 }
 
