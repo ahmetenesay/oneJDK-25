@@ -98,6 +98,19 @@
 #define OP_INVOKEVIRTUAL 0xB6
 #define OP_INVOKESPECIAL 0xB7
 #define OP_INVOKESTATIC  0xB8
+#define OP_IFEQ          0x99
+#define OP_IFNE          0x9A
+#define OP_GOTO          0xA7
+#define OP_NEWARRAY      0xBC
+#define OP_IASTORE       0x4F
+#define OP_BASTORE       0x54
+#define OP_IALOAD        0x2E
+#define OP_BALOAD        0x33
+
+// Array Type Tags (JVM Spec)
+#define T_BOOLEAN        4
+#define T_BYTE           8
+#define T_INT            10
 
 // ============================================================================
 // Constant Pool Builder
@@ -317,6 +330,26 @@ static void bc_emit_invokevirtual(bytecode_builder_t* b, uint16_t method_idx) {
 static void bc_emit_invokespecial(bytecode_builder_t* b, uint16_t method_idx) {
     bc_emit_op(b, OP_INVOKESPECIAL);
     bc_emit_u2(b, method_idx);
+}
+
+static void bc_emit_ifeq(bytecode_builder_t* b, int16_t offset) {
+    bc_emit_op(b, OP_IFEQ);
+    bc_emit_u2(b, (uint16_t)offset);
+}
+
+static void bc_emit_ifne(bytecode_builder_t* b, int16_t offset) {
+    bc_emit_op(b, OP_IFNE);
+    bc_emit_u2(b, (uint16_t)offset);
+}
+
+static void bc_emit_goto(bytecode_builder_t* b, int16_t offset) {
+    bc_emit_op(b, OP_GOTO);
+    bc_emit_u2(b, (uint16_t)offset);
+}
+
+static void bc_emit_newarray(bytecode_builder_t* b, uint8_t atype) {
+    bc_emit_op(b, OP_NEWARRAY);
+    bc_emit_u1(b, atype);
 }
 
 // ============================================================================

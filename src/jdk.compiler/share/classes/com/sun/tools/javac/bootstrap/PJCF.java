@@ -79,7 +79,9 @@ public final class PJCF {
      */
     public enum StatementKind {
         DEFINITION,           // Variable declarations, type definitions, pre-allocated slots
+        IMMUTABLE_ONCE,       // Write-once variable assignment hint (zero-alias scalar candidate for VAC)
         CONSTANT,             // Lifted immutable literals and loop-invariant setup
+        CONSTANT_ARRAY,       // Linearized static array / lookup table (AVX-512/NEON vector load candidate)
         CUSTOM_ASSET_PAYLOAD, // Generic embedded assets (GLSL/HLSL, XML, JSON, Base64, Lookup Tables)
         SEMANTIC_BARRIER,     // Programmatic string concatenations, DOM logic order (strictly un-reordered)
         EXECUTION,            // Arithmetic, method invocations, loop body
@@ -158,6 +160,13 @@ public final class PJCF {
      * Lightweight Pre-VAC Sorter Engine:
      * Partitions method statements into canonical blocks, isolates Custom Asset Payloads,
      * preserves internal comments, and guarantees safe semantic barrier ordering.
+     *
+     * Pre-VAC 5 High-Impact Optimizations:
+     * 1. Branch Polarity Normalization: Transforms inverted branches if(!c) into canonical positive branches.
+     * 2. Immutability / Write-Once Tracking: Marks single-assignment variables as IMMUTABLE_ONCE (zero-alias hint for VAC).
+     * 3. Dead Definition Pruning: Eliminates unused variable declarations at the AST level before VAC frame setup.
+     * 4. Static Array / Lookup Table Linearization: Groups array initializers into CONSTANT_ARRAY for direct vector loading.
+     * 5. Boolean & Identity Arithmetic Folding: Simplifies (b == true -> b, b == false -> !b, x * 0 -> 0, x + 0 -> x).
      */
     public static final class PreVacSorter {
 
@@ -166,15 +175,18 @@ public final class PJCF {
                 return new ArrayList<>();
             }
 
-            List<MethodStatement> definitions   = new ArrayList<>();
-            List<MethodStatement> constants     = new ArrayList<>();
-            List<MethodStatement> assetPayloads = new ArrayList<>();
-            List<MethodStatement> executions    = new ArrayList<>();
-            List<MethodStatement> storeReturns  = new ArrayList<>();
+            List<MethodStatement> definitions    = new ArrayList<>();
+            List<MethodStatement> immutableOnce  = new ArrayList<>();
+            List<MethodStatement> constants      = new ArrayList<>();
+            List<MethodStatement> constantArrays = new ArrayList<>();
+            List<MethodStatement> assetPayloads  = new ArrayList<>();
+            List<MethodStatement> executions     = new ArrayList<>();
+            List<MethodStatement> storeReturns   = new ArrayList<>();
 
             // Track string pool deduplication for static literals
             Map<String, String> deduplicatedAssets = new LinkedHashMap<>();
 
+            // Pass 1: Normalize expressions, categorize statements, and fold trivial constants
             for (MethodStatement stmt : rawStatements) {
                 // Rule 5: Trivial constant cleanup only for non-asset expressions
                 String cleanedExpr = stmt.rawExpression;
@@ -182,22 +194,33 @@ public final class PJCF {
                     cleanedExpr = cleanupTrivialConstants(stmt.rawExpression);
                 }
 
-                // Rule 4: Generic Custom Asset Identification (Payloads > 256 bytes)
+                // Rule 1: Branch Polarity Normalization (Canonical Positive Branching)
+                cleanedExpr = normalizeBranchPolarity(cleanedExpr);
+
+                // Rule 4: Static Array / Lookup Table Linearization
                 StatementKind effectiveKind = stmt.kind;
-                if (effectiveKind == StatementKind.CONSTANT && cleanedExpr.length() >= LARGE_BLOB_THRESHOLD_BYTES) {
+                if (isStaticArrayLiteral(cleanedExpr)) {
+                    effectiveKind = StatementKind.CONSTANT_ARRAY;
+                } else if (effectiveKind == StatementKind.CONSTANT && cleanedExpr.length() >= LARGE_BLOB_THRESHOLD_BYTES) {
+                    // Custom Asset Identification (Payloads >= 256 bytes)
                     effectiveKind = StatementKind.CUSTOM_ASSET_PAYLOAD;
                     deduplicatedAssets.putIfAbsent(cleanedExpr, stmt.originalVariableName);
                 }
 
-                // Internal comments and newlines are strictly preserved!
                 MethodStatement cleanStmt = new MethodStatement(effectiveKind, stmt.originalVariableName, cleanedExpr);
 
                 switch (effectiveKind) {
                     case DEFINITION:
                         definitions.add(cleanStmt);
                         break;
+                    case IMMUTABLE_ONCE:
+                        immutableOnce.add(cleanStmt);
+                        break;
                     case CONSTANT:
                         constants.add(cleanStmt);
+                        break;
+                    case CONSTANT_ARRAY:
+                        constantArrays.add(cleanStmt);
                         break;
                     case CUSTOM_ASSET_PAYLOAD:
                         assetPayloads.add(cleanStmt);
@@ -208,17 +231,24 @@ public final class PJCF {
                     case SEMANTIC_BARRIER:
                     case EXECUTION:
                     default:
-                        // Programmatic concatenations & DOM trees retain exact relative sequence
                         executions.add(cleanStmt);
                         break;
                 }
             }
 
+            // Pass 2: Rule 3 - Dead Definition Pruning (AST-level slot reduction)
+            List<MethodStatement> activeDefinitions = pruneDeadDefinitions(definitions, executions, storeReturns, constants);
+
+            // Pass 3: Rule 2 - Immutability / Write-Once Promotion
+            promoteWriteOnceVariables(activeDefinitions, immutableOnce, executions, storeReturns);
+
             // Assemble sorted canonical sequence:
-            // Definitions -> Constants -> CustomAssetPayloads -> Execution (with Semantic Barriers) -> Stores/Return
+            // Definitions -> ImmutableOnce -> Constants -> ConstantArrays -> CustomAssetPayloads -> Execution -> Stores/Return
             List<MethodStatement> sorted = new ArrayList<>(rawStatements.size());
-            sorted.addAll(definitions);
+            sorted.addAll(activeDefinitions);
+            sorted.addAll(immutableOnce);
             sorted.addAll(constants);
+            sorted.addAll(constantArrays);
             sorted.addAll(assetPayloads);
             sorted.addAll(executions);
             sorted.addAll(storeReturns);
@@ -227,19 +257,116 @@ public final class PJCF {
         }
 
         /**
-         * Rule 5: Trivial Constant Cleanup (AST-level peephole for identity operations).
+         * Rule 1: Branch Polarity Normalization.
+         * Normalizes negative inverted checks (e.g. if (!cond)) into canonical positive flow.
+         */
+        public static String normalizeBranchPolarity(String expr) {
+            if (expr == null || expr.isEmpty()) return "";
+            String res = expr.trim();
+            if (res.startsWith("if (!") && res.contains(")")) {
+                int closeParen = res.indexOf(")");
+                String innerCond = res.substring(5, closeParen).trim();
+                String rest = res.substring(closeParen + 1).trim();
+                return "if (" + innerCond + ") [inverted_branch] " + rest;
+            }
+            return res;
+        }
+
+        /**
+         * Rule 3: Dead Definition Pruning.
+         * Drops variable declarations whose names never appear anywhere in method executions or stores.
+         */
+        private static List<MethodStatement> pruneDeadDefinitions(List<MethodStatement> defs,
+                                                                   List<MethodStatement> execs,
+                                                                   List<MethodStatement> stores,
+                                                                   List<MethodStatement> consts) {
+            if (defs.isEmpty()) return defs;
+
+            // Build reference search corpus
+            StringBuilder corpus = new StringBuilder();
+            for (MethodStatement stmt : execs) corpus.append(' ').append(stmt.rawExpression);
+            for (MethodStatement stmt : stores) corpus.append(' ').append(stmt.rawExpression);
+            for (MethodStatement stmt : consts) corpus.append(' ').append(stmt.rawExpression);
+            String corpusStr = corpus.toString();
+
+            List<MethodStatement> liveDefs = new ArrayList<>(defs.size());
+            for (MethodStatement def : defs) {
+                String varName = def.originalVariableName;
+                // If variable name is empty or referenced in the corpus, retain it
+                if (varName.isEmpty() || corpusStr.contains(varName)) {
+                    liveDefs.add(def);
+                }
+            }
+            return liveDefs;
+        }
+
+        /**
+         * Rule 2: Immutability / Write-Once Variable Promotion.
+         * Identifies variables that are assigned exactly once and never modified again.
+         */
+        private static void promoteWriteOnceVariables(List<MethodStatement> defs,
+                                                      List<MethodStatement> immutableOnce,
+                                                      List<MethodStatement> execs,
+                                                      List<MethodStatement> stores) {
+            List<MethodStatement> promoted = new ArrayList<>();
+            for (MethodStatement def : defs) {
+                String varName = def.originalVariableName;
+                if (!varName.isEmpty() && countAssignments(varName, execs, stores) <= 1) {
+                    promoted.add(new MethodStatement(StatementKind.IMMUTABLE_ONCE, varName, def.rawExpression));
+                }
+            }
+            defs.removeAll(promoted);
+            immutableOnce.addAll(promoted);
+        }
+
+        private static int countAssignments(String varName, List<MethodStatement> execs, List<MethodStatement> stores) {
+            int count = 0;
+            String assignPattern = varName + " =";
+            for (MethodStatement s : execs) {
+                if (s.rawExpression.contains(assignPattern)) count++;
+            }
+            for (MethodStatement s : stores) {
+                if (s.rawExpression.contains(assignPattern)) count++;
+            }
+            return count;
+        }
+
+        /**
+         * Rule 4: Detect static array / lookup table literal.
+         */
+        private static boolean isStaticArrayLiteral(String expr) {
+            if (expr == null) return false;
+            String s = expr.trim();
+            return (s.startsWith("new int[]{") || s.startsWith("new byte[]{") ||
+                    s.startsWith("new long[]{") || s.startsWith("new float[]{") ||
+                    s.startsWith("new double[]{") || (s.startsWith("{") && s.endsWith("}")));
+        }
+
+        /**
+         * Rule 5: Trivial Constant Cleanup & Identity AST Folding.
+         * Handles arithmetic identities and boolean normalizations.
          */
         public static String cleanupTrivialConstants(String expr) {
             if (expr == null || expr.isEmpty()) return "";
 
             String res = expr.trim();
-            // Trivial identity cleanups: x + 0 -> x, x * 1 -> x, x - 0 -> x
+
+            // Boolean identity folds: b == true -> b, b == false -> !b
+            if (res.endsWith("== true")) {
+                res = res.substring(0, res.length() - 7).trim();
+            } else if (res.endsWith("== false")) {
+                res = "!(" + res.substring(0, res.length() - 8).trim() + ")";
+            }
+
+            // Arithmetic identity cleanups: x + 0 -> x, x - 0 -> x, x * 1 -> x, x * 0 -> 0
             if (res.endsWith("+ 0")) {
                 res = res.substring(0, res.length() - 3).trim();
             } else if (res.endsWith("- 0")) {
                 res = res.substring(0, res.length() - 3).trim();
             } else if (res.endsWith("* 1")) {
                 res = res.substring(0, res.length() - 3).trim();
+            } else if (res.endsWith("* 0")) {
+                res = "0";
             }
             return res;
         }
