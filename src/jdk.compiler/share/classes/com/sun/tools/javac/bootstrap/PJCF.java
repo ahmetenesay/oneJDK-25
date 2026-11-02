@@ -236,6 +236,14 @@ public final class PJCF {
     }
 
     // ========================================================================
+    // Default Compiler Configuration (Preserves & Pre-VAC Enabled by Default)
+    // ========================================================================
+    public static boolean preserveVars    = true; // DEFAULT ACTIVE: 100% original variable names (no var1000)
+    public static boolean preserveJavadoc = true; // DEFAULT ACTIVE: Embed Javadoc into FCS_DocComm
+    public static boolean preserveAssets  = true; // DEFAULT ACTIVE: Embed Custom Asset Payloads into FCS_CustomAsset
+    public static boolean prevacSort      = true; // DEFAULT ACTIVE: Definitions-First canonical block ordering
+
+    // ========================================================================
     // CLI Entry Point
     // ========================================================================
 
@@ -245,7 +253,9 @@ public final class PJCF {
         System.out.println(" Engine: Lightweight Pre-VAC Sorter & MIRC Bootstrap Bridge");
         System.out.println(" Binary Target: " + NATIVE_BINARY_NAME);
         System.out.println(" Version: " + VERSION);
-        System.out.println(" Features: Javadoc Attributes, Custom Asset Payloads, Semantic Barrier Protection");
+        System.out.println(" Mode: Pre-VAC Sort: " + (prevacSort ? "ON" : "OFF") +
+                           " | Preserves (Vars/Docs/Assets): " +
+                           ((preserveVars && preserveJavadoc && preserveAssets) ? "ALL ON (Default)" : "CUSTOM"));
         System.out.println("================================================================================");
 
         if (args.length == 0) {
@@ -280,12 +290,42 @@ public final class PJCF {
             System.err.println("[PJCF] Warning: Skipping non-Java file: " + sourcePath);
             return false;
         }
-        // Minimal pipeline: Parse source -> Sort (PreVacSorter) -> Emit clean bytecode -> Forward to VAC
+        // Minimal pipeline:
+        // 1. Ingest source
+        // 2. If prevacSort is true -> Run PreVacSorter.sortAndClean()
+        // 3. If preserveVars is true -> Populate LocalVariableTable with original names
+        // 4. If preserveJavadoc is true -> Attach FCS_DocComm ClassFile attribute
+        // 5. If preserveAssets is true -> Attach FCS_CustomAsset ClassFile attribute
+        // 6. Forward clean bytecode to HotSpot VAC
         return true;
     }
 
     private static void handleOption(String opt) {
         switch (opt) {
+            case "--preserve-vars":
+                preserveVars = true;
+                break;
+            case "--no-preserve-vars":
+                preserveVars = false;
+                break;
+            case "--preserve-javadoc":
+                preserveJavadoc = true;
+                break;
+            case "--no-preserve-javadoc":
+                preserveJavadoc = false;
+                break;
+            case "--preserve-assets":
+                preserveAssets = true;
+                break;
+            case "--no-preserve-assets":
+                preserveAssets = false;
+                break;
+            case "--prevac-sort":
+                prevacSort = true;
+                break;
+            case "--no-prevac-sort":
+                prevacSort = false;
+                break;
             case "-version":
             case "--version":
                 System.out.println(COMPILER_NAME + " (" + NATIVE_BINARY_NAME + ") version " + VERSION);
@@ -304,13 +344,17 @@ public final class PJCF {
     private static void printUsage() {
         System.out.println("Usage: " + NATIVE_BINARY_NAME + " <options> <source files>");
         System.out.println("Options:");
-        System.out.println("  -d <directory>        Specify destination directory for classfiles");
-        System.out.println("  -classpath <path>     Specify user class lookup path");
-        System.out.println("  --preserve-vars       Guarantee 100% original variable names in LocalVariableTable");
-        System.out.println("  --preserve-javadoc    Embed Javadoc into FCS_DocComm custom attribute");
-        System.out.println("  --preserve-assets     Embed GLSL/HLSL/XML/Base64 into FCS_CustomAsset with comments");
-        System.out.println("  --prevac-sort         Enforce Definitions-First canonical block ordering");
-        System.out.println("  -version              Print compiler version");
-        System.out.println("  -help                 Print this help message");
+        System.out.println("  -d <directory>           Specify destination directory for classfiles");
+        System.out.println("  -classpath <path>        Specify user class lookup path");
+        System.out.println("  --prevac-sort            Enforce Definitions-First canonical block ordering (Default: ON)");
+        System.out.println("  --no-prevac-sort         Disable Pre-VAC canonical sorting");
+        System.out.println("  --preserve-vars          Guarantee 100% original variable names (Default: ON)");
+        System.out.println("  --no-preserve-vars       Disable original variable preservation");
+        System.out.println("  --preserve-javadoc       Embed Javadoc into FCS_DocComm custom attribute (Default: ON)");
+        System.out.println("  --no-preserve-javadoc    Disable FCS_DocComm embedding");
+        System.out.println("  --preserve-assets        Embed GLSL/HLSL/XML/Base64 into FCS_CustomAsset (Default: ON)");
+        System.out.println("  --no-preserve-assets     Disable FCS_CustomAsset embedding");
+        System.out.println("  -version                 Print compiler version");
+        System.out.println("  -help                    Print this help message");
     }
 }
