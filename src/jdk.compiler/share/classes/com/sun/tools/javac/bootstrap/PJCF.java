@@ -49,15 +49,38 @@ import java.util.Map;
  *   5. Trivial constant cleanup (folds x+0, x*1, and simple literals at AST stage).
  * - All heavy optimizations (loop peeling, flow flattening, NoAlias, FMA, ABC) are strictly
  *   deferred to HotSpot C++ VAC!
+ *
+ * NOTE ON LIFECYCLE:
+ * - Annotated as @DeadCode: Once 'bin/jlc.exe' is synthesized by MIRC, this class remains in the
+ *   JDK distribution as a preserved, readable bootstrap artifact for inspection and compiler research.
  * ============================================================================
  */
+@PJCF.DeadCode(
+    reason = "Post-bootstrap ephemeral seed; native compilation is sealed into standalone bin/jlc.exe",
+    retainedFor = "Architecture inspection, compiler research, and historical bootstrap verification",
+    phase = "BOOTSTRAP_ONLY_SEED"
+)
 public final class PJCF {
+
+    /**
+     * Marker annotation designating an artifact as a build-time bootstrap seed.
+     * Post-bootstrap, all compilation duties are natively executed by 'bin/jlc.exe';
+     * this class is deliberately preserved in the JDK as readable dead code for inspection.
+     */
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+    @java.lang.annotation.Target({java.lang.annotation.ElementType.TYPE, java.lang.annotation.ElementType.METHOD})
+    public @interface DeadCode {
+        String reason() default "Post-bootstrap ephemeral seed; native compilation is handled by bin/jlc.exe";
+        String retainedFor() default "Architecture inspection, compiler research, and bootstrap verification";
+        String phase() default "BOOTSTRAP_ONLY_SEED";
+    }
 
     public static final String COMPILER_NAME      = "oneJDK-25 Primitive Java Compiler Frontend (PJCF / FCS)";
     public static final String NATIVE_BINARY_NAME = "jlc";
     public static final String VERSION            = "25.0.0-FCS-MIRC";
     public static final String ATTR_DOC_COMMENTS  = "FCS_DocComm";
     public static final String ATTR_CUSTOM_ASSET  = "FCS_CustomAsset";
+    public static final String ATTR_DEAD_CODE     = "FCS_DeadCode";
     public static final int    LARGE_BLOB_THRESHOLD_BYTES = 256;
 
     private PJCF() {
