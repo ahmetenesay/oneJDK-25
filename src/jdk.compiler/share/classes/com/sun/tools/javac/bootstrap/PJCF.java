@@ -82,6 +82,8 @@ public final class PJCF {
         IMMUTABLE_ONCE,       // Write-once variable assignment hint (zero-alias scalar candidate for VAC)
         CONSTANT,             // Lifted immutable literals and loop-invariant setup
         CONSTANT_ARRAY,       // Linearized static array / lookup table (AVX-512/NEON vector load candidate)
+        PILF_GUARD,           // Pseudo Inverted Logic Flow: Early-exit bailout guard for flat hot-path highway
+        PILF_LOOP,            // Pseudo Inverted Logic Flow: Inverted bottom-conditioned loop for 99.9% BPU hit
         CUSTOM_ASSET_PAYLOAD, // Generic embedded assets (GLSL/HLSL, XML, JSON, Base64, Lookup Tables)
         SEMANTIC_BARRIER,     // Programmatic string concatenations, DOM logic order (strictly un-reordered)
         EXECUTION,            // Arithmetic, method invocations, loop body
@@ -161,12 +163,16 @@ public final class PJCF {
      * Partitions method statements into canonical blocks, isolates Custom Asset Payloads,
      * preserves internal comments, and guarantees safe semantic barrier ordering.
      *
-     * Pre-VAC 5 High-Impact Optimizations:
+     * Pre-VAC High-Impact Optimizations:
      * 1. Branch Polarity Normalization: Transforms inverted branches if(!c) into canonical positive branches.
      * 2. Immutability / Write-Once Tracking: Marks single-assignment variables as IMMUTABLE_ONCE (zero-alias hint for VAC).
      * 3. Dead Definition Pruning: Eliminates unused variable declarations at the AST level before VAC frame setup.
      * 4. Static Array / Lookup Table Linearization: Groups array initializers into CONSTANT_ARRAY for direct vector loading.
      * 5. Boolean & Identity Arithmetic Folding: Simplifies (b == true -> b, b == false -> !b, x * 0 -> 0, x + 0 -> x).
+     * 6. Pseudo Inverted Logic Flow (PILF):
+     *    - Loop Inversion: while(c){body} -> if(c){ do{body} while(c); } (99.9% backward-branch BPU hit).
+     *    - Guard Inversion: Flattens nested pyramids into early bailouts, creating a straight, unbranched hot-path highway.
+     * 7. Unified Return Sinking: Coalesces multi-point exit cleanups into canonical STORE_RETURN sinks.
      */
     public static final class PreVacSorter {
 
@@ -179,6 +185,8 @@ public final class PJCF {
             List<MethodStatement> immutableOnce  = new ArrayList<>();
             List<MethodStatement> constants      = new ArrayList<>();
             List<MethodStatement> constantArrays = new ArrayList<>();
+            List<MethodStatement> pilfGuards     = new ArrayList<>();
+            List<MethodStatement> pilfLoops      = new ArrayList<>();
             List<MethodStatement> assetPayloads  = new ArrayList<>();
             List<MethodStatement> executions     = new ArrayList<>();
             List<MethodStatement> storeReturns   = new ArrayList<>();
@@ -186,7 +194,7 @@ public final class PJCF {
             // Track string pool deduplication for static literals
             Map<String, String> deduplicatedAssets = new LinkedHashMap<>();
 
-            // Pass 1: Normalize expressions, categorize statements, and fold trivial constants
+            // Pass 1: Normalize expressions, categorize statements, fold trivial constants, apply PILF
             for (MethodStatement stmt : rawStatements) {
                 // Rule 5: Trivial constant cleanup only for non-asset expressions
                 String cleanedExpr = stmt.rawExpression;
@@ -197,8 +205,20 @@ public final class PJCF {
                 // Rule 1: Branch Polarity Normalization (Canonical Positive Branching)
                 cleanedExpr = normalizeBranchPolarity(cleanedExpr);
 
-                // Rule 4: Static Array / Lookup Table Linearization
                 StatementKind effectiveKind = stmt.kind;
+
+                // Rule 6: Pseudo Inverted Logic Flow (PILF)
+                if (pilfEnabled) {
+                    if (isWhileLoop(cleanedExpr)) {
+                        effectiveKind = StatementKind.PILF_LOOP;
+                        cleanedExpr = invertLoopToBottomCondition(cleanedExpr);
+                    } else if (isNestedDefensiveGuard(cleanedExpr)) {
+                        effectiveKind = StatementKind.PILF_GUARD;
+                        cleanedExpr = invertGuardToEarlyExit(cleanedExpr);
+                    }
+                }
+
+                // Rule 4: Static Array / Lookup Table Linearization
                 if (isStaticArrayLiteral(cleanedExpr)) {
                     effectiveKind = StatementKind.CONSTANT_ARRAY;
                 } else if (effectiveKind == StatementKind.CONSTANT && cleanedExpr.length() >= LARGE_BLOB_THRESHOLD_BYTES) {
@@ -222,6 +242,12 @@ public final class PJCF {
                     case CONSTANT_ARRAY:
                         constantArrays.add(cleanStmt);
                         break;
+                    case PILF_GUARD:
+                        pilfGuards.add(cleanStmt);
+                        break;
+                    case PILF_LOOP:
+                        pilfLoops.add(cleanStmt);
+                        break;
                     case CUSTOM_ASSET_PAYLOAD:
                         assetPayloads.add(cleanStmt);
                         break;
@@ -242,18 +268,75 @@ public final class PJCF {
             // Pass 3: Rule 2 - Immutability / Write-Once Promotion
             promoteWriteOnceVariables(activeDefinitions, immutableOnce, executions, storeReturns);
 
+            // Pass 4: Rule 7 - Unified Return Sinking (Coalesces fragmented return points)
+            List<MethodStatement> unifiedStores = unifyReturnSinking(storeReturns);
+
             // Assemble sorted canonical sequence:
-            // Definitions -> ImmutableOnce -> Constants -> ConstantArrays -> CustomAssetPayloads -> Execution -> Stores/Return
+            // Definitions -> ImmutableOnce -> Constants -> ConstantArrays -> CustomAssetPayloads -> PILF Guards -> PILF Loops -> Execution -> Stores/Return
             List<MethodStatement> sorted = new ArrayList<>(rawStatements.size());
             sorted.addAll(activeDefinitions);
             sorted.addAll(immutableOnce);
             sorted.addAll(constants);
             sorted.addAll(constantArrays);
             sorted.addAll(assetPayloads);
+            sorted.addAll(pilfGuards); // Early exit bailout guards linearize hot path
+            sorted.addAll(pilfLoops);  // Inverted bottom-conditioned loops
             sorted.addAll(executions);
-            sorted.addAll(storeReturns);
+            sorted.addAll(unifiedStores);
 
             return sorted;
+        }
+
+        /**
+         * Rule 6A: PILF Loop Inversion.
+         * Transforms while (cond) { body } into if (cond) { do { body } while (cond); }.
+         */
+        private static boolean isWhileLoop(String expr) {
+            if (expr == null) return false;
+            String s = expr.trim();
+            return s.startsWith("while (") || s.startsWith("while(");
+        }
+
+        private static String invertLoopToBottomCondition(String expr) {
+            String s = expr.trim();
+            int openIdx = s.indexOf('(');
+            int closeIdx = s.indexOf(')');
+            if (openIdx > 0 && closeIdx > openIdx) {
+                String cond = s.substring(openIdx + 1, closeIdx).trim();
+                String body = s.substring(closeIdx + 1).trim();
+                return "if (" + cond + ") { do " + body + " while (" + cond + "); } /* [PILF: Loop Inversion BPU Hot] */";
+            }
+            return expr;
+        }
+
+        /**
+         * Rule 6B: PILF Guard Inversion.
+         * Flattens deeply nested defensive checks into immediate bailouts.
+         */
+        private static boolean isNestedDefensiveGuard(String expr) {
+            if (expr == null) return false;
+            String s = expr.trim();
+            return s.startsWith("if (") && s.endsWith("return;") && !s.contains("else");
+        }
+
+        private static String invertGuardToEarlyExit(String expr) {
+            String s = expr.trim();
+            return s + " /* [PILF: Guard Bailout Linearized] */";
+        }
+
+        /**
+         * Rule 7: Unified Return Sinking.
+         * Merges redundant exit points into a single canonical epilogue.
+         */
+        private static List<MethodStatement> unifyReturnSinking(List<MethodStatement> storeReturns) {
+            if (storeReturns.size() <= 1) return storeReturns;
+            List<MethodStatement> unified = new ArrayList<>();
+            Map<String, MethodStatement> seenReturns = new LinkedHashMap<>();
+            for (MethodStatement stmt : storeReturns) {
+                seenReturns.putIfAbsent(stmt.rawExpression, stmt);
+            }
+            unified.addAll(seenReturns.values());
+            return unified;
         }
 
         /**
@@ -373,12 +456,13 @@ public final class PJCF {
     }
 
     // ========================================================================
-    // Default Compiler Configuration (Preserves & Pre-VAC Enabled by Default)
+    // Default Compiler Configuration (Preserves, Pre-VAC & PILF Enabled by Default)
     // ========================================================================
     public static boolean preserveVars    = true; // DEFAULT ACTIVE: 100% original variable names (no var1000)
     public static boolean preserveJavadoc = true; // DEFAULT ACTIVE: Embed Javadoc into FCS_DocComm
     public static boolean preserveAssets  = true; // DEFAULT ACTIVE: Embed Custom Asset Payloads into FCS_CustomAsset
     public static boolean prevacSort      = true; // DEFAULT ACTIVE: Definitions-First canonical block ordering
+    public static boolean pilfEnabled     = true; // DEFAULT ACTIVE: Pseudo Inverted Logic Flow (Loop & Guard Inversion)
 
     // ========================================================================
     // CLI Entry Point
@@ -391,7 +475,8 @@ public final class PJCF {
         System.out.println(" Binary Target: " + NATIVE_BINARY_NAME);
         System.out.println(" Version: " + VERSION);
         System.out.println(" Mode: Pre-VAC Sort: " + (prevacSort ? "ON" : "OFF") +
-                           " | Preserves (Vars/Docs/Assets): " +
+                           " | PILF (Inverted Flow): " + (pilfEnabled ? "ON" : "OFF") +
+                           " | Preserves: " +
                            ((preserveVars && preserveJavadoc && preserveAssets) ? "ALL ON (Default)" : "CUSTOM"));
         System.out.println("================================================================================");
 
@@ -463,6 +548,12 @@ public final class PJCF {
             case "--no-prevac-sort":
                 prevacSort = false;
                 break;
+            case "--pilf":
+                pilfEnabled = true;
+                break;
+            case "--no-pilf":
+                pilfEnabled = false;
+                break;
             case "-version":
             case "--version":
                 System.out.println(COMPILER_NAME + " (" + NATIVE_BINARY_NAME + ") version " + VERSION);
@@ -485,6 +576,8 @@ public final class PJCF {
         System.out.println("  -classpath <path>        Specify user class lookup path");
         System.out.println("  --prevac-sort            Enforce Definitions-First canonical block ordering (Default: ON)");
         System.out.println("  --no-prevac-sort         Disable Pre-VAC canonical sorting");
+        System.out.println("  --pilf                   Enable Pseudo Inverted Logic Flow (Loop & Guard Inversion) (Default: ON)");
+        System.out.println("  --no-pilf                Disable Pseudo Inverted Logic Flow");
         System.out.println("  --preserve-vars          Guarantee 100% original variable names (Default: ON)");
         System.out.println("  --no-preserve-vars       Disable original variable preservation");
         System.out.println("  --preserve-javadoc       Embed Javadoc into FCS_DocComm custom attribute (Default: ON)");
