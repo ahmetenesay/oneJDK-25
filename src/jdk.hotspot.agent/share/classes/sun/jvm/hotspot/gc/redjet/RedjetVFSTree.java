@@ -101,9 +101,10 @@ public class RedjetVFSTree {
     b.add(new BranchDesc("/heap/on_heap/runway/pitstop", "Puzzler dynamic duel and code replacement lobby", false));
     b.add(new BranchDesc("/heap/on_heap/runway/falline", "Pre-trashing hearse lane for condemned objects", false));
 
-    // Puzzle Arena
+    // Puzzle Arena & Park Arena
     b.add(new BranchDesc("/heap/on_heap/puzzle_arena/stagnant", "Objects pending profile evaluation in puzzler arena", false));
     b.add(new BranchDesc("/heap/on_heap/puzzle_arena/eval", "Active duel evaluation and benchmarking arena", false));
+    b.add(new BranchDesc("/heap/on_heap/park_arena", "Java to Native pinned transition buffer (is_pinned = 1)", false));
 
     // Landfill
     b.add(new BranchDesc("/heap/on_heap/landfill/trash_pit/matured", "Totally dead objects ready for irreversible sweep", false));
@@ -132,7 +133,7 @@ public class RedjetVFSTree {
   }
 
   public static void printSummary(PrintStream tty) {
-    tty.println("RedjetGC VFS Memory Tree (39 Canonical Branches):");
+    tty.println("RedjetGC VFS Memory Tree (40 Canonical Branches):");
     for (BranchDesc b : BRANCHES) {
       tty.printf("  %-58s [%s] %s%n", b.path(), b.isOffHeap() ? "OFF-HEAP" : "ON-HEAP", b.purpose());
     }

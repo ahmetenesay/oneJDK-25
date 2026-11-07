@@ -100,7 +100,7 @@ public:
   bool check_wx_access(const char* path, uint64_t access_key);
 
   // PLAN.md Section 9.3: Tetrasexagesimal 64-Bit Recovery Matrix and Verification
-  static const uint64_t GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[42];
+  static const uint64_t GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[43];
   bool verify_and_restore_golden_vfs();
   RedjetVFSNode* resolve_or_heal_branch(const char* path);
 

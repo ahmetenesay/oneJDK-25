@@ -70,8 +70,9 @@ RJ_API hs_critical_simd_e hs_get_critical_simd_mode(void);
 /* 3. SIMD VECTOR LANE HEAT DECAY SWEEPS (SacFor_VM.cpp:8368-8415)           */
 /* ========================================================================= */
 
-RJ_API void hs_decay_heats_avx2(float* heats, size_t count, float decay_f, uint64_t* sweep_counts);
 RJ_API void hs_decay_heats_avx512(float* heats, size_t count, float decay_f, uint64_t* sweep_counts);
+RJ_API void hs_decay_heats_avx2(float* heats, size_t count, float decay_f, uint64_t* sweep_counts);
+RJ_API void hs_decay_heats_sse42(float* heats, size_t count, float decay_f, uint64_t* sweep_counts);
 RJ_API void hs_decay_heats_neon(float* heats, size_t count, float decay_f, uint64_t* sweep_counts);
 RJ_API void hs_decay_heats_scalar(float* heats, size_t count, float decay_f, uint64_t* sweep_counts);
 
@@ -79,8 +80,9 @@ RJ_API void hs_decay_heats_scalar(float* heats, size_t count, float decay_f, uin
 /* 4. SIMD VECTOR LIVE STATE FILTERING                                       */
 /* ========================================================================= */
 
-RJ_API size_t hs_filter_live_states_avx2(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
 RJ_API size_t hs_filter_live_states_avx512(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
+RJ_API size_t hs_filter_live_states_avx2(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
+RJ_API size_t hs_filter_live_states_sse42(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
 RJ_API size_t hs_filter_live_states_neon(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
 RJ_API size_t hs_filter_live_states_scalar(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
 
@@ -110,8 +112,12 @@ public:
 
     static size_t filter_live_states(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
 
-    static bool has_avx2();
+    static bool has_avx10();
+    static bool has_avx10_2();
     static bool has_avx512();
+    static bool has_avx2();
+    static bool has_sse42();
+    static bool has_fma();
     static bool has_neon();
     static bool has_3d_vcache();
 

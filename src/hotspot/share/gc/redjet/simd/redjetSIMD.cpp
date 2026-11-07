@@ -42,33 +42,29 @@
 static std::atomic<uint8_t> g_hs_critical_simd_mode{ static_cast<uint8_t>(hs_critical_simd_e::AUTO) };
 static std::atomic<bool>    g_hs_has_vcache{ false };
 static std::atomic<bool>    g_hs_topo_checked{ false };
-static std::atomic<bool>    g_hs_has_avx2{ false };
+static std::atomic<bool>    g_hs_has_avx10_2{ false };
+static std::atomic<bool>    g_hs_has_avx10{ false };
 static std::atomic<bool>    g_hs_has_avx512{ false };
+static std::atomic<bool>    g_hs_has_avx2{ false };
+static std::atomic<bool>    g_hs_has_sse42{ false };
+static std::atomic<bool>    g_hs_has_fma{ false };
+static std::atomic<bool>    g_hs_has_neon{ false };
 
 static void hs_detect_cpu_features() {
     if (g_hs_topo_checked.exchange(true, std::memory_order_acq_rel)) return;
 
+    isMacrowebHolder::initialize();
+
+    g_hs_has_avx10_2.store(isMacrowebHolder::IS_AVX10_2(), std::memory_order_release);
+    g_hs_has_avx10.store(isMacrowebHolder::IS_AVX10(), std::memory_order_release);
+    g_hs_has_avx512.store(isMacrowebHolder::IS_AVX512(), std::memory_order_release);
+    g_hs_has_avx2.store(isMacrowebHolder::IS_AVX2(), std::memory_order_release);
+    g_hs_has_sse42.store(isMacrowebHolder::IS_SSE4_2(), std::memory_order_release);
+    g_hs_has_fma.store(isMacrowebHolder::IS_FMA(), std::memory_order_release);
+    g_hs_has_neon.store(isMacrowebHolder::IS_NEON(), std::memory_order_release);
+
 #if defined(_M_X64) || defined(__x86_64__)
     int info[4] = { 0 };
-    __cpuid(info, 0);
-    int nIds = info[0];
-
-    char vendor[13] = { 0 };
-    memcpy(vendor + 0, &info[1], 4);
-    memcpy(vendor + 4, &info[3], 4);
-    memcpy(vendor + 8, &info[2], 4);
-
-    if (nIds >= 1) {
-        __cpuidex(info, 1, 0);
-    }
-    if (nIds >= 7) {
-        __cpuidex(info, 7, 0);
-        bool avx2 = (info[1] & (1 << 5)) != 0;
-        bool avx512f = (info[1] & (1 << 16)) != 0;
-        g_hs_has_avx2.store(avx2, std::memory_order_release);
-        g_hs_has_avx512.store(avx512f, std::memory_order_release);
-    }
-
     // Check AMD 3D V-Cache (L3 >= 64MB or specific AMD extended CPUID leaves)
     __cpuid(info, 0x80000000);
     unsigned int nExIds = info[0];
@@ -294,6 +290,27 @@ RJ_API void hs_decay_heats_avx512(float* heats, size_t count, float decay_f, uin
 #endif
 }
 
+RJ_API void hs_decay_heats_sse42(float* heats, size_t count, float decay_f, uint64_t* sweep_counts) {
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
+    __m128 v_decay = _mm_set1_ps(decay_f);
+    size_t b = 0;
+    for (; b + 4 <= count; b += 4) {
+        __m128 v_h = _mm_loadu_ps(heats + b);
+        v_h = _mm_mul_ps(v_h, v_decay);
+        _mm_storeu_ps(heats + b, v_h);
+        if (sweep_counts) {
+            for (size_t k = 0; k < 4; ++k) sweep_counts[b + k]++;
+        }
+    }
+    for (; b < count; ++b) {
+        heats[b] *= decay_f;
+        if (sweep_counts) sweep_counts[b]++;
+    }
+#else
+    hs_decay_heats_scalar(heats, count, decay_f, sweep_counts);
+#endif
+}
+
 RJ_API void hs_decay_heats_neon(float* heats, size_t count, float decay_f, uint64_t* sweep_counts) {
 #if defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
     float32x4_t v_decay = vdupq_n_f32(decay_f);
@@ -335,6 +352,39 @@ RJ_API size_t hs_filter_live_states_avx2(const uint8_t* states, size_t count, ui
         __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(states + b));
         __m256i cmp = _mm256_cmpeq_epi8(chunk, v_target);
         unsigned int mask = static_cast<unsigned int>(_mm256_movemask_epi8(cmp));
+        while (mask != 0) {
+#if defined(_MSC_VER)
+            unsigned long bit_pos;
+            _BitScanForward(&bit_pos, mask);
+#else
+            unsigned int bit_pos = __builtin_ctz(mask);
+#endif
+            if (out_indices) out_indices[matched] = b + bit_pos;
+            matched++;
+            mask &= mask - 1;
+        }
+    }
+    for (; b < count; ++b) {
+        if (states[b] == target_state) {
+            if (out_indices) out_indices[matched] = b;
+            matched++;
+        }
+    }
+#else
+    matched = hs_filter_live_states_scalar(states, count, target_state, out_indices);
+#endif
+    return matched;
+}
+
+RJ_API size_t hs_filter_live_states_sse42(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices) {
+    size_t matched = 0;
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
+    __m128i v_target = _mm_set1_epi8(static_cast<char>(target_state));
+    size_t b = 0;
+    for (; b + 16 <= count; b += 16) {
+        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(states + b));
+        __m128i cmp = _mm_cmpeq_epi8(chunk, v_target);
+        unsigned int mask = static_cast<unsigned int>(_mm_movemask_epi8(cmp));
         while (mask != 0) {
 #if defined(_MSC_VER)
             unsigned long bit_pos;
@@ -439,16 +489,16 @@ void RedjetSIMD::decay_heats(float* heats, size_t count, float decay_f, uint64_t
     if (!heats || count == 0) return;
     hs_detect_cpu_features();
 
-    if (g_hs_has_avx512.load(std::memory_order_relaxed)) {
+    if (isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() || isMacrowebHolder::IS_AVX512()) {
         hs_decay_heats_avx512(heats, count, decay_f, sweep_counts);
-    } else if (g_hs_has_avx2.load(std::memory_order_relaxed)) {
+    } else if (isMacrowebHolder::IS_AVX2() || isMacrowebHolder::IS_AVX()) {
         hs_decay_heats_avx2(heats, count, decay_f, sweep_counts);
-    } else {
-#if defined(__aarch64__) || defined(_M_ARM64)
+    } else if (isMacrowebHolder::IS_SSE4_2() || isMacrowebHolder::IS_SSE2() || isMacrowebHolder::IS_SSE()) {
+        hs_decay_heats_sse42(heats, count, decay_f, sweep_counts);
+    } else if (isMacrowebHolder::IS_NEON()) {
         hs_decay_heats_neon(heats, count, decay_f, sweep_counts);
-#else
+    } else {
         hs_decay_heats_scalar(heats, count, decay_f, sweep_counts);
-#endif
     }
 }
 
@@ -456,25 +506,41 @@ size_t RedjetSIMD::filter_live_states(const uint8_t* states, size_t count, uint8
     if (!states || count == 0) return 0;
     hs_detect_cpu_features();
 
-    if (g_hs_has_avx512.load(std::memory_order_relaxed)) {
+    if (isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() || isMacrowebHolder::IS_AVX512()) {
         return hs_filter_live_states_avx512(states, count, target_state, out_indices);
-    } else if (g_hs_has_avx2.load(std::memory_order_relaxed)) {
+    } else if (isMacrowebHolder::IS_AVX2() || isMacrowebHolder::IS_AVX()) {
         return hs_filter_live_states_avx2(states, count, target_state, out_indices);
-    } else {
-#if defined(__aarch64__) || defined(_M_ARM64)
+    } else if (isMacrowebHolder::IS_SSE4_2() || isMacrowebHolder::IS_SSE2() || isMacrowebHolder::IS_SSE()) {
+        return hs_filter_live_states_sse42(states, count, target_state, out_indices);
+    } else if (isMacrowebHolder::IS_NEON()) {
         return hs_filter_live_states_neon(states, count, target_state, out_indices);
-#else
+    } else {
         return hs_filter_live_states_scalar(states, count, target_state, out_indices);
-#endif
     }
+}
+
+bool RedjetSIMD::has_avx10() {
+    return isMacrowebHolder::IS_AVX10();
+}
+
+bool RedjetSIMD::has_avx10_2() {
+    return isMacrowebHolder::IS_AVX10_2();
+}
+
+bool RedjetSIMD::has_avx512() {
+    return isMacrowebHolder::IS_AVX512();
 }
 
 bool RedjetSIMD::has_avx2() {
     return isMacrowebHolder::IS_AVX2();
 }
 
-bool RedjetSIMD::has_avx512() {
-    return isMacrowebHolder::IS_AVX512();
+bool RedjetSIMD::has_sse42() {
+    return isMacrowebHolder::IS_SSE4_2();
+}
+
+bool RedjetSIMD::has_fma() {
+    return isMacrowebHolder::IS_FMA();
 }
 
 bool RedjetSIMD::has_neon() {
@@ -507,6 +573,11 @@ bool RedjetSIMD::should_use_simd(bool is_latency_critical) {
         return false;
     }
 
-    // 3. Fallback to vector execution if hardware supports SIMD
-    return has_avx2() || has_avx512() || has_neon();
+    // 3. Fallback to vector execution if hardware supports SIMD via universal ISA ladder
+    return isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() ||
+           isMacrowebHolder::IS_AVX512() || isMacrowebHolder::IS_AVX2() ||
+           isMacrowebHolder::IS_AVX() || isMacrowebHolder::IS_SSE4_2() ||
+           isMacrowebHolder::IS_SSE2() || isMacrowebHolder::IS_NEON() ||
+           isMacrowebHolder::IS_SVE() || isMacrowebHolder::IS_SVE2() ||
+           isMacrowebHolder::IS_RVV();
 }

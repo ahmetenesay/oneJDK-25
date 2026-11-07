@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -393,3 +393,79 @@ int RedjetPitstop::register_callback(void* ptr, hs_object_ready_callback_t callb
     }
     return 0;
 }
+
+/* ========================================================================= */
+/* DEEPENED PUZZLER OPTIMIZATION STOP IMPLEMENTATION                         */
+/* ========================================================================= */
+
+sacculus_pitstop_entry_t* RedjetPitstop::admit_for_puzzler(hsLiveHeader* obj, uint32_t duel_id) {
+    if (!obj) return nullptr;
+    _total_puzzler_admissions.fetch_add(1, std::memory_order_relaxed);
+
+    sacculus_pitstop_entry_t* entry = admit(obj);
+    if (entry) {
+        entry->active_duel_id = duel_id;
+        entry->puzzler_state.store(static_cast<uint8_t>(hs_pitstop_state_e::STAGED_FOR_PUZZLER), std::memory_order_release);
+        hs_hotlog_emit(HS_Ebin0_PROBE, HS_Ebin1_INFO, obj->function_id, duel_id,
+                       obj->generation, obj->region, 0, 0, 0, "pitstop_admit_puzzler");
+    }
+    return entry;
+}
+
+bool RedjetPitstop::update_puzzler_state(void* slot_addr, hs_pitstop_state_e new_state) {
+    if (!slot_addr) return false;
+    sacculus_pitstop_entry_t* entry = find_by_slot(slot_addr, /*retain_ref=*/false);
+    if (!entry) return false;
+
+    entry->puzzler_state.store(static_cast<uint8_t>(new_state), std::memory_order_release);
+    return true;
+}
+
+hs_pitstop_state_e RedjetPitstop::get_puzzler_state(const void* slot_addr) const noexcept {
+    if (!slot_addr) return hs_pitstop_state_e::STAGED_FOR_PUZZLER;
+    hs_ticket_guard_t g(const_cast<hs_ticket_lock_t&>(_lock));
+    for (auto* cur = _head; cur; cur = cur->next) {
+        if (cur->slot_addr == slot_addr) {
+            return static_cast<hs_pitstop_state_e>(cur->puzzler_state.load(std::memory_order_acquire));
+        }
+    }
+    return hs_pitstop_state_e::READY_TO_RETURN;
+}
+
+bool RedjetPitstop::record_duel_metrics(void* slot_addr, uint64_t cand_cycles, uint64_t base_cycles, float max_err) {
+    if (!slot_addr) return false;
+    sacculus_pitstop_entry_t* entry = find_by_slot(slot_addr, /*retain_ref=*/false);
+    if (!entry) return false;
+
+    entry->candidate_cycles = cand_cycles;
+    entry->baseline_cycles = base_cycles;
+    entry->duel_max_err = max_err;
+    entry->puzzler_state.store(static_cast<uint8_t>(hs_pitstop_state_e::DUEL_IN_PROGRESS), std::memory_order_release);
+    _total_duels_completed.fetch_add(1, std::memory_order_relaxed);
+
+    if (base_cycles > cand_cycles) {
+        _total_cycles_saved.fetch_add(base_cycles - cand_cycles, std::memory_order_relaxed);
+    }
+    return true;
+}
+
+bool RedjetPitstop::commit_puzzler_winner(void* slot_addr, uint16_t winning_simd_idx, uint64_t cycles_gained) {
+    if (!slot_addr) return false;
+    auto* obj = static_cast<hsLiveHeader*>(slot_addr);
+    return morph_isa_to_fledgling(obj, winning_simd_idx, cycles_gained);
+}
+
+bool RedjetPitstop::try_read_shadow_snapshot(void* slot_addr, void* out_buf, size_t max_bytes) {
+    if (!slot_addr || !out_buf || max_bytes == 0) return false;
+    sacculus_pitstop_entry_t* entry = find_by_slot(slot_addr, /*retain_ref=*/true);
+    if (!entry) return false;
+
+    // Mutator fast-path bypass: read header / payload safely from staged shadow
+    size_t copy_bytes = (max_bytes < sizeof(HS_hotspot_live_header_t)) ? max_bytes : sizeof(HS_hotspot_live_header_t);
+    std::memcpy(out_buf, &entry->saved_header, copy_bytes);
+    entry->release();
+
+    _total_shadow_reads.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+

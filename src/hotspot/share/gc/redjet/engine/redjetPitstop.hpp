@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -47,10 +47,19 @@ enum class hs_puzzler_morph_e : uint8_t {
 };
 #endif
 
+enum class hs_pitstop_state_e : uint8_t {
+    STAGED_FOR_PUZZLER = 0,
+    PROFILING_ACTIVE   = 1,
+    DUEL_IN_PROGRESS   = 2,
+    MORPHING_APPLIED   = 3,
+    HOTSWAP_VERIFYING  = 4,
+    READY_TO_RETURN    = 5
+};
+
 using hs_object_ready_callback_t = void (*)(void* obj_ptr, void* user_data);
 
 /* ========================================================================= */
-/* 1. PITSTOP ENTRY (ISA MORPHING & REPLACEMENT BAY)                         */
+/* 1. PITSTOP ENTRY (ISA MORPHING, PUZZLER OPTIMIZATION & REPLACEMENT BAY)   */
 /* ========================================================================= */
 
 struct sacculus_pitstop_entry_t {
@@ -58,9 +67,15 @@ struct sacculus_pitstop_entry_t {
     void*                      slot_addr{ nullptr };
     size_t                     slot_bytes{ 0 };
     hs_puzzler_morph_e         mode{ hs_puzzler_morph_e::SHADOW_RCU };
+    std::atomic<uint8_t>       puzzler_state{ static_cast<uint8_t>(hs_pitstop_state_e::STAGED_FOR_PUZZLER) };
     std::atomic<bool>          is_busy{ false };
     std::atomic<bool>          pause_engaged{ false };
     std::atomic<uint32_t>      ref_count{ 1 };
+    uint32_t                   active_duel_id{ 0 };
+    uint64_t                   baseline_cycles{ 0 };
+    uint64_t                   candidate_cycles{ 0 };
+    float                      duel_max_err{ 0.0f };
+
     std::mutex                 wait_mtx;
     std::condition_variable    wait_cv;
     hs_object_ready_callback_t ready_callback{ nullptr };
@@ -90,6 +105,12 @@ private:
     hs_ticket_lock_t          _lock;
     std::atomic<size_t>       _total_morphed{ 0 };
 
+    // Deepened Puzzler Telemetry
+    std::atomic<uint64_t>     _total_puzzler_admissions{ 0 };
+    std::atomic<uint64_t>     _total_duels_completed{ 0 };
+    std::atomic<uint64_t>     _total_cycles_saved{ 0 };
+    std::atomic<uint64_t>     _total_shadow_reads{ 0 };
+
     static hs_puzzler_morph_e resolve_morph_mode() noexcept;
 
 public:
@@ -107,10 +128,22 @@ public:
     int await_ready(void* ptr, uint32_t timeout_ms = 0);
     int register_callback(void* ptr, hs_object_ready_callback_t callback, void* user_data);
 
+    // Deepened Puzzler Optimization Stop Interfaces
+    RJ_API sacculus_pitstop_entry_t* admit_for_puzzler(hsLiveHeader* obj, uint32_t duel_id);
+    RJ_API bool update_puzzler_state(void* slot_addr, hs_pitstop_state_e new_state);
+    RJ_API hs_pitstop_state_e get_puzzler_state(const void* slot_addr) const noexcept;
+    RJ_API bool record_duel_metrics(void* slot_addr, uint64_t cand_cycles, uint64_t base_cycles, float max_err);
+    RJ_API bool commit_puzzler_winner(void* slot_addr, uint16_t winning_simd_idx, uint64_t cycles_gained);
+    RJ_API bool try_read_shadow_snapshot(void* slot_addr, void* out_buf, size_t max_bytes);
+
     void destroy();
 
     size_t count() const noexcept { return _count; }
     size_t total_morphed() const noexcept { return _total_morphed.load(std::memory_order_relaxed); }
+    uint64_t puzzler_admissions() const noexcept { return _total_puzzler_admissions.load(std::memory_order_relaxed); }
+    uint64_t duels_completed() const noexcept { return _total_duels_completed.load(std::memory_order_relaxed); }
+    uint64_t total_cycles_saved() const noexcept { return _total_cycles_saved.load(std::memory_order_relaxed); }
+    uint64_t shadow_reads() const noexcept { return _total_shadow_reads.load(std::memory_order_relaxed); }
 };
 
 using sacculus_pitstop_t = RedjetPitstop;

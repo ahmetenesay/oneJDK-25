@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "gc/redjet/vfs/redjetVFSTree.hpp"
+#include "gc/redjet/vfs/redjetVFSCrypto.hpp"
 #ifdef REDJET_STANDALONE_BUILD
 #include "gc/redjet/runtime/redjetFlags.hpp"
 static const bool RedjetVFSStrict = true;
@@ -88,15 +89,18 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/puzzle_arena/stagnant");
   mkdir_p("/heap/on_heap/puzzle_arena/eval");
 
-  // 6. Landfill (Matured, Rehabilitation & Meta Storage)
+  // 6. Park Arena (Branch 40) - Java <-> Native Pinned Buffer Transitions (is_pinned = 1)
+  mkdir_p("/heap/on_heap/park_arena");
+
+  // 7. Landfill (Matured, Rehabilitation & Meta Storage)
   mkdir_p("/heap/on_heap/landfill/trash_pit/matured");
   mkdir_p("/heap/on_heap/landfill/trash_pit/rehab");
   mkdir_p("/heap/on_heap/landfill/header_pane");
 
-  // 7. Reference Harbingers(TailTraces Signals) Storage - Reference Predicting Signal Storage
+  // 8. Reference Harbingers(TailTraces Signals) Storage - Reference Predicting Signal Storage
   mkdir_p("/heap/on_heap/rpss");
 
-  // 8. Off-Heap Pieces
+  // 9. Off-Heap Pieces
   mkdir_p("/heap/off_heap/code_boot/rawcode_cell");
   mkdir_p("/heap/off_heap/code_boot/vac_processed_code_chunk");
   mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1");
@@ -105,7 +109,7 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/off_heap/log_boot/coldlog");
   mkdir_p("/heap/off_heap/reserved_boot");
 
-  log_info(gc, init)("Redjet VFS Memory Tree: Initialized 39 standard hierarchical heap branches");
+  log_info(gc, init)("Redjet VFS Memory Tree: Initialized 40 standard hierarchical heap branches");
 }
 
 void RedjetVFSTree::destroy() {
@@ -211,7 +215,7 @@ RedjetVFSNode* RedjetVFSTree::mkdir_p(const char* path, size_t quota_bytes) {
 RedjetVFSNode* RedjetVFSTree::resolve_or_heal_branch(const char* path) {
   if (path == nullptr) return nullptr;
   // Stage 1: Try in-memory repair if path matches one of the standard golden branches
-  for (size_t i = 0; i < 39; ++i) {
+  for (size_t i = 0; i < 40; ++i) {
     if (strcmp(GOLDEN_VFS_BRANCHES[i], path) == 0) {
       log_warning(gc)("Redjet VFS: Stage 1 repair restoring missing branch: %s", path);
       return mkdir_p(path);
@@ -308,16 +312,7 @@ const uint64_t RedjetVFSTree::KEY_MIRC_READ = RedjetVFSTree::derive_crypto_key(M
 
 bool RedjetVFSTree::check_wx_access(const char* path, uint64_t access_key) {
   if (path == nullptr) return false;
-  if (strstr(path, "rawcode_cell") != nullptr) {
-    return access_key == KEY_VAC_READ;
-  }
-  if (strstr(path, "vac_processed_code_chunk") != nullptr) {
-    return access_key == KEY_MIRC_READ;
-  }
-  if (strstr(path, "mirc_execution_ready_page") != nullptr) {
-    return (access_key == KEY_MIRC_READ || access_key == KEY_VAC_READ);
-  }
-  return true;
+  return RedjetVFSCrypto::check_vfs_path_permission(path, access_key);
 }
 
 // ============================================================================
@@ -325,8 +320,8 @@ bool RedjetVFSTree::check_wx_access(const char* path, uint64_t access_key) {
 // Format: 64-bit Quadwords (0x...ULL) representing the hardened binary image
 // ============================================================================
 
-const uint64_t RedjetVFSTree::GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[42] = {
-  0x524A564601000027ULL, // [0]  Magic 'RJVF' + Format Ver 1 + 39 Branches (0x27)
+const uint64_t RedjetVFSTree::GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[43] = {
+  0x524A564601000028ULL, // [0]  Magic 'RJVF' + Format Ver 1 + 40 Branches (0x28)
   0xCAFEF00D20262027ULL, // [1]  FCS Magic 0xCAFEF00D + oneJDK Tag 0x20262027
   0x9A4F81C2DEADBEEFULL, // [2]  CRC32 Integrity Checksum + Security Seal
   0x0001000000001001ULL, // [3]  /heap/on_heap/runway/motherline/egg/young/tank
@@ -357,20 +352,21 @@ const uint64_t RedjetVFSTree::GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[42] = {
   0x001A000000002002ULL, // [28] /heap/on_heap/runway/falline
   0x001B000000003001ULL, // [29] /heap/on_heap/puzzle_arena/stagnant
   0x001C000000003002ULL, // [30] /heap/on_heap/puzzle_arena/eval
-  0x001D000000004001ULL, // [31] /heap/on_heap/landfill/trash_pit/matured
-  0x001E000000004002ULL, // [32] /heap/on_heap/landfill/trash_pit/rehab
-  0x001F000000004003ULL, // [33] /heap/on_heap/landfill/header_pane
-  0x0020000000005001ULL, // [34] /heap/on_heap/rpss (TailTraces Signal Storage)
-  0x0021000000006001ULL, // [35] /heap/off_heap/code_boot/rawcode_cell (W^X Protected)
-  0x0022000000006002ULL, // [36] /heap/off_heap/code_boot/vac_processed_code_chunk
-  0x0023000000006003ULL, // [37] /heap/off_heap/code_boot/mirc_execution_ready_page/lvl1
-  0x0024000000006004ULL, // [38] /heap/off_heap/code_boot/mirc_execution_ready_page/lvl2
-  0x0025000000007001ULL, // [39] /heap/off_heap/log_boot/hotlog
-  0x0026000000007002ULL, // [40] /heap/off_heap/log_boot/coldlog
-  0x0027000000008001ULL  // [41] /heap/off_heap/reserved_boot
+  0x0028000000003003ULL, // [31] /heap/on_heap/park_arena (Java <-> Native Pinned Buffer)
+  0x001D000000004001ULL, // [32] /heap/on_heap/landfill/trash_pit/matured
+  0x001E000000004002ULL, // [33] /heap/on_heap/landfill/trash_pit/rehab
+  0x001F000000004003ULL, // [34] /heap/on_heap/landfill/header_pane
+  0x0020000000005001ULL, // [35] /heap/on_heap/rpss (TailTraces Signal Storage)
+  0x0021000000006001ULL, // [36] /heap/off_heap/code_boot/rawcode_cell (W^X Protected)
+  0x0022000000006002ULL, // [37] /heap/off_heap/code_boot/vac_processed_code_chunk
+  0x0023000000006003ULL, // [38] /heap/off_heap/code_boot/mirc_execution_ready_page/lvl1
+  0x0024000000006004ULL, // [39] /heap/off_heap/code_boot/mirc_execution_ready_page/lvl2
+  0x0025000000007001ULL, // [40] /heap/off_heap/log_boot/hotlog
+  0x0026000000007002ULL, // [41] /heap/off_heap/log_boot/coldlog
+  0x0027000000008001ULL  // [42] /heap/off_heap/reserved_boot
 };
 
-static const char* const GOLDEN_VFS_BRANCHES[39] = {
+static const char* const GOLDEN_VFS_BRANCHES[40] = {
   "/heap/on_heap/runway/motherline/egg/young/tank",
   "/heap/on_heap/runway/motherline/egg/young/demand",
   "/heap/on_heap/runway/motherline/egg/young/middle",
@@ -399,6 +395,7 @@ static const char* const GOLDEN_VFS_BRANCHES[39] = {
   "/heap/on_heap/runway/falline",
   "/heap/on_heap/puzzle_arena/stagnant",
   "/heap/on_heap/puzzle_arena/eval",
+  "/heap/on_heap/park_arena",
   "/heap/on_heap/landfill/trash_pit/matured",
   "/heap/on_heap/landfill/trash_pit/rehab",
   "/heap/on_heap/landfill/header_pane",
@@ -414,7 +411,7 @@ static const char* const GOLDEN_VFS_BRANCHES[39] = {
 
 bool RedjetVFSTree::verify_and_restore_golden_vfs() {
   // Validate Tetrasexagesimal matrix header and magic tag
-  if (GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[0] != 0x524A564601000027ULL ||
+  if (GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[0] != 0x524A564601000028ULL ||
       GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[1] != 0xCAFEF00D20262027ULL) {
     log_error(gc)("Redjet VFS: Fatal corruption in GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX header!");
     return false;
@@ -422,7 +419,7 @@ bool RedjetVFSTree::verify_and_restore_golden_vfs() {
 
   lock();
   bool repaired = false;
-  for (size_t i = 0; i < 39; ++i) {
+  for (size_t i = 0; i < 40; ++i) {
     const char* path = GOLDEN_VFS_BRANCHES[i];
     if (_find_node_unlocked(path) == nullptr) {
       _mkdir_p_unlocked(path);

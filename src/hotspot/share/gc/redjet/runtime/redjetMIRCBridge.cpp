@@ -58,6 +58,9 @@ bool RedjetMIRCBridge::register_mirc_duel(ciMethod* method, MIRC_Lvl1_Table* lvl
   mirc_hotswap_delta_t delta;
   if (arena->submit_duel(nullptr, lvl1_tab, &delta)) {
     arena->apply_hotswap_delta_2points(delta);
+    hs_hotlog_emit(HS_Ebin0_HOTSWAP, HS_Ebin1_INFO, delta.method_id, delta.new_simd_idx,
+                   0, 0, 0, delta.cycles_gained, (uint32_t)(delta.speedup * 100.0),
+                   "MIRC_DUEL_WON_HOTSWAP");
     return true;
   }
   return false;

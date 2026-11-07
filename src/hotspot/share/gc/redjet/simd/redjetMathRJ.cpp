@@ -23,6 +23,7 @@
  */
 
 #include "gc/redjet/simd/redjetMathRJ.hpp"
+#include "is/isMacrowebHolder.hpp"
 #include "gc/redjet/runtime/redjetIntentCLI.hpp"
 #include "gc/redjet/allocator/redjetPagefile.hpp"
 #include "gc/redjet/allocator/redjetRunway.hpp"
@@ -612,6 +613,8 @@ RJ_API msimd_status_t hs_init_with_config(msimd_context* out_ctx, msimd_isa_t is
         ctx->cpu_info.l3_mb              = static_cast<int>(nexus->topology.l3.size_kb / 1024);
     }
 
+    isMacrowebHolder::initialize();
+
 #if defined(_M_X64) || defined(__x86_64__)
     int regs[4] = { 0 };
     hs_math_cpuid(regs, 0);
@@ -619,38 +622,30 @@ RJ_API msimd_status_t hs_init_with_config(msimd_context* out_ctx, msimd_isa_t is
     std::memcpy(&ctx->cpu_info.vendor[4], &regs[3], 4);
     std::memcpy(&ctx->cpu_info.vendor[8], &regs[2], 4);
     ctx->cpu_info.vendor[12] = '\0';
-
-    hs_math_cpuid(regs, 1);
-    ctx->cpu_info.has_fma = (regs[2] & (1 << 12)) ? 1 : 0;
-
-    hs_math_cpuid(regs, 7, 0);
-    ctx->cpu_info.has_avx2        = (regs[1] & (1 << 5))  ? 1 : 0;
-    ctx->cpu_info.has_avx512      = (regs[1] & (1 << 16)) ? 1 : 0;
-    ctx->cpu_info.has_avx512_vnni = (regs[2] & (1 << 11)) ? 1 : 0;
-    ctx->cpu_info.has_amx         = (regs[3] & (1 << 24)) ? 1 : 0;
-
-    hs_math_cpuid(regs, 7, 1);
-    ctx->cpu_info.has_avx_vnni    = (regs[0] & (1 << 4)) ? 1 : 0;
-    ctx->cpu_info.has_avx512_bf16 = (regs[0] & (1 << 5)) ? 1 : 0;
 #elif defined(__aarch64__) || defined(_M_ARM64)
     std::snprintf(ctx->cpu_info.vendor, sizeof(ctx->cpu_info.vendor), "ARM");
-#if defined(__ARM_FEATURE_SVE)
-    ctx->cpu_info.has_sve = 1;
-#endif
-#if defined(__ARM_FEATURE_SVE2)
-    ctx->cpu_info.has_sve2 = 1;
-#endif
-#if defined(__ARM_FEATURE_SME)
-    ctx->cpu_info.has_sme = 1;
-#endif
+#else
+    std::snprintf(ctx->cpu_info.vendor, sizeof(ctx->cpu_info.vendor), "GENERIC");
 #endif
 
-    if (ctx->cpu_info.has_amx || ctx->cpu_info.has_sme) {
+    ctx->cpu_info.has_fma         = isMacrowebHolder::IS_FMA() ? 1 : 0;
+    ctx->cpu_info.has_avx2        = isMacrowebHolder::IS_AVX2() ? 1 : 0;
+    ctx->cpu_info.has_avx512      = isMacrowebHolder::IS_AVX512() ? 1 : 0;
+    ctx->cpu_info.has_avx512_vnni = isMacrowebHolder::IS_VNNI() ? 1 : 0;
+    ctx->cpu_info.has_amx         = isMacrowebHolder::IS_AMX() ? 1 : 0;
+    ctx->cpu_info.has_sve         = isMacrowebHolder::IS_SVE() ? 1 : 0;
+    ctx->cpu_info.has_sve2        = isMacrowebHolder::IS_SVE2() ? 1 : 0;
+    ctx->cpu_info.has_rvv         = isMacrowebHolder::IS_RVV() ? 1 : 0;
+
+    // Canonical Tier Selection via isMacrowebHolder Universal ISA Ladder
+    if (ctx->cpu_info.has_amx || isMacrowebHolder::IS_AMX()) {
         ctx->cpu_info.tier = RJ_TIER_0_MATRIX_TILES;
-    } else if (ctx->cpu_info.has_avx512 || ctx->cpu_info.has_sve2 || ctx->cpu_info.has_lasx || ctx->cpu_info.has_rvv) {
+    } else if (isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() || isMacrowebHolder::IS_AVX512() || ctx->cpu_info.has_sve2 || ctx->cpu_info.has_rvv) {
         ctx->cpu_info.tier = RJ_TIER_1_WIDE_VECTOR;
-    } else if (ctx->cpu_info.has_avx2 || ctx->cpu_info.has_sve) {
+    } else if (isMacrowebHolder::IS_AVX2() || isMacrowebHolder::IS_AVX() || isMacrowebHolder::IS_NEON() || ctx->cpu_info.has_sve) {
         ctx->cpu_info.tier = RJ_TIER_2_BASIC_SIMD;
+    } else if (isMacrowebHolder::IS_SSE4_2() || isMacrowebHolder::IS_SSE2()) {
+        ctx->cpu_info.tier = RJ_TIER_3_COPROCESSORS;
     } else {
         ctx->cpu_info.tier = RJ_TIER_4_SCALAR_FPU;
     }
@@ -732,7 +727,16 @@ RJ_API msimd_status_t hs_calibrate_pipeline(msimd_context ctx, int* out_best_lev
     double measured_gflops = (total_flops / elapsed_s) / 1e9;
     if (measured_gflops < 1.0) measured_gflops = 64.0;
 
-    int best_lvl = ctx->cpu_info.has_avx512 ? 0 : (ctx->cpu_info.has_avx2 ? 1 : 2);
+    int best_lvl = 2;
+    if (isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() || isMacrowebHolder::IS_AVX512()) {
+        best_lvl = 0;
+    } else if (isMacrowebHolder::IS_AVX2() || isMacrowebHolder::IS_AVX()) {
+        best_lvl = 1;
+    } else if (isMacrowebHolder::IS_SSE4_2() || isMacrowebHolder::IS_SSE2() || isMacrowebHolder::IS_NEON()) {
+        best_lvl = 2;
+    } else {
+        best_lvl = 3;
+    }
     ctx->optimal_ladder_level = best_lvl;
     if (out_best_level) *out_best_level = best_lvl;
     if (out_gflops)     *out_gflops     = measured_gflops;

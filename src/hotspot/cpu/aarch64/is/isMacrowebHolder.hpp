@@ -66,9 +66,14 @@ public:
   static inline bool IS_AVX10()   { return false; }
   static inline bool IS_AVX10_2() { return false; }
   static inline bool IS_AVX2()    { return false; }
-  static inline bool IS_FMA()     { return has_feature(FEATURE_FP); }
+  static inline bool IS_AVX()     { return false; }
+  static inline bool IS_SSE()     { return false; }
+  static inline bool IS_SSE2()    { return false; }
   static inline bool IS_SSE4_2()  { return false; }
+  static inline bool IS_FMA()     { return has_feature(FEATURE_FP); }
   static inline bool IS_BMI2()    { return false; }
+  static inline bool IS_AMX()     { return false; }
+  static inline bool IS_VNNI()    { return false; }
   static inline bool IS_RVV()     { return false; }
 
   // Hierarchical Fallback Resolution for ARM: SVE2 -> SVE -> NEON -> Scalar

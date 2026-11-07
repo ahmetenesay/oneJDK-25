@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -1640,14 +1640,14 @@ RJ_API void HS_hotspot_puzzle_print_telemetry(void) {
 bool RedjetPuzzleArena::submit_duel(const VAC_Table_Snapshot* vac_tab,
                                     MIRC_Lvl1_Table* lvl1_tab,
                                     mirc_hotswap_delta_t* out_delta) {
-    if (!vac_tab || !lvl1_tab) return false;
+    if (!lvl1_tab) return false;
 
     _telemetry_experiments.fetch_add(1, std::memory_order_relaxed);
 
     // 1. Determine Precision Requirements:
     // If no PrecisionTarget is specified (or strictfp is requested):
     // Strictly enforce 100% IEEE 754 standard (machine epsilon: FLT_EPSILON)
-    const bool is_strictfp = lvl1_tab->is_strictfp || vac_tab->is_strictfp();
+    const bool is_strictfp = lvl1_tab->is_strictfp || (vac_tab != nullptr && vac_tab->is_strictfp());
     const float allowed_epsilon = is_strictfp ? 1.192092896e-07f : lvl1_tab->target_epsilon;
 
     const uint16_t current_active_idx = lvl1_tab->active_idx;
@@ -1763,7 +1763,8 @@ bool RedjetPuzzleArena::submit_duel(const VAC_Table_Snapshot* vac_tab,
     }
 
     // Dynamic Hybrid Rung Check (Slot 16 Candidate Discovery)
-    if (vac_tab->arithmetic_intensity() >= 1.5 && vac_tab->no_alias_proven()) {
+    const bool allow_hybrid = (vac_tab == nullptr) || (vac_tab->arithmetic_intensity() >= 1.5 && vac_tab->no_alias_proven());
+    if (allow_hybrid) {
         uint64_t h_start = sacculus_rdtsc();
         for (size_t i = 0; i < DUEL_SAMPLE_ELEMS; i += 8) {
             cand_out[i + 0] = src_a[i + 0] * src_b[i + 0] + 0.125f;
