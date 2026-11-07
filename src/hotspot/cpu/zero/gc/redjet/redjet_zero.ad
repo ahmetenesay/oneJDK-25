@@ -35,6 +35,7 @@ source_hpp %{
 #include "gc/redjet/runtime/redjetBarrierSetC2.hpp"
 #include "gc/redjet/runtime/redjetSupport.hpp"
 #include "gc/redjet/engine/redjetPointCoordinator.hpp"
+#include "runtime/thread.hpp"
 
 extern "C" void redjet_offheap_evict(void* handle);
 
@@ -172,7 +173,10 @@ instruct redjetDockpoint(label slot_target)
   ins_cost(10);
   format %{ "jmp     $slot_target\t# redjet dockpoint slot16 trampoline" %}
   ins_encode %{
-    // Dockpoint trampoline to Slot 16 target
+    volatile uint32_t* level = (volatile uint32_t*)RedjetPointCoordinator::dockpoint_level_address();
+    if (level != nullptr && *level > 0) {
+      RedjetPointCoordinator::parkpoint_poll(Thread::current(), nullptr);
+    }
   %}
   ins_pipe(pipe_class_default);
 %}
@@ -184,7 +188,9 @@ instruct redjetParkpoint(immI park_offset, label cold_park_and_swap)
   format %{ "testb   $$1, [$park_offset]\n\t"
             "jnz     $cold_park_and_swap\t# redjet parkpoint loop poll" %}
   ins_encode %{
-    // Parkpoint 0.5-cycle L1 D-Cache thread sync check
+    if (RedjetPointCoordinator::is_parkpoint_active()) {
+      RedjetPointCoordinator::parkpoint_poll(Thread::current(), nullptr);
+    }
   %}
   ins_pipe(pipe_class_default);
 %}

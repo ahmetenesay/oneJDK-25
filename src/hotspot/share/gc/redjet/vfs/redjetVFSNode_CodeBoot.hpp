@@ -85,6 +85,7 @@ private:
   // Dedicated sub-partitions
   RedjetVFSNode*        _node_rawcode_cell{ nullptr };
   RedjetVFSNode*        _node_vac_processed{ nullptr };
+  RedjetVFSNode*        _node_mirc_ready{ nullptr };
   RedjetVFSNode*        _node_mirc_lvl1{ nullptr };
   RedjetVFSNode*        _node_mirc_lvl2{ nullptr };
 
@@ -125,10 +126,11 @@ public:
   RJ_API bool free_code_page(void* page_addr);
 
   // Sub-node accessors
-  RedjetVFSNode* rawcode_node()   const noexcept { return _node_rawcode_cell; }
-  RedjetVFSNode* vac_chunk_node() const noexcept { return _node_vac_processed; }
-  RedjetVFSNode* mirc_lvl1_node() const noexcept { return _node_mirc_lvl1; }
-  RedjetVFSNode* mirc_lvl2_node() const noexcept { return _node_mirc_lvl2; }
+  RedjetVFSNode* rawcode_node()    const noexcept { return _node_rawcode_cell; }
+  RedjetVFSNode* vac_chunk_node()  const noexcept { return _node_vac_processed; }
+  RedjetVFSNode* mirc_ready_node() const noexcept { return _node_mirc_ready; }
+  RedjetVFSNode* mirc_lvl1_node()  const noexcept { return _node_mirc_lvl1; }
+  RedjetVFSNode* mirc_lvl2_node()  const noexcept { return _node_mirc_lvl2; }
 
   // Telemetry accessors
   uint64_t pages_allocated()      const noexcept { return _total_pages_allocated.load(std::memory_order_relaxed); }

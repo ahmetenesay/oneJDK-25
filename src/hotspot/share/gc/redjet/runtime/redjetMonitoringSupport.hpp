@@ -28,14 +28,14 @@
 #include "memory/allocation.hpp"
 
 class GenerationCounters;
-class HSpaceCounter;
+class RedjetSpaceCounters;
 class RedjetHeap;
 class PerfVariable;
 
 class RedjetMonitoringSupport : public CHeapObj<mtGC> {
 private:
-  GenerationCounters* _heap_counters;
-  HSpaceCounter*      _space_counters;
+  GenerationCounters*  _heap_counters;
+  RedjetSpaceCounters* _space_counters;
 
   // EmptyBox live telemetry
   PerfVariable*       _emptybox_created;

@@ -85,6 +85,7 @@ private:
   RedjetHardwareTask                 _tasks[QUEUE_CAPACITY];
   alignas(64) std::atomic<uint64_t>  _head{ 0 };
   alignas(64) std::atomic<uint64_t>  _tail{ 0 };
+  hs_ticket_lock_t                   _queue_lock;
 
   uint32_t                           _core_id{ 0 };
   uint32_t                           _ccd_id{ 0 };

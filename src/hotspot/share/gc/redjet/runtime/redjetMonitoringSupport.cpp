@@ -98,7 +98,7 @@ public:
 
 RedjetMonitoringSupport::RedjetMonitoringSupport(RedjetHeap* heap) {
   _heap_counters  = new RedjetGenerationCounters(heap);
-  _space_counters = (HSpaceCounter*)new RedjetSpaceCounters("Heap", 0, heap->max_capacity(), 0, _heap_counters);
+  _space_counters = new RedjetSpaceCounters("Heap", 0, heap->max_capacity(), 0, _heap_counters);
 
   _emptybox_created      = nullptr;
   _emptybox_claimed      = nullptr;
@@ -151,7 +151,7 @@ void RedjetMonitoringSupport::update_counters() {
     size_t used = heap->used();
     size_t capacity = heap->capacity();
     ((RedjetGenerationCounters*)_heap_counters)->update_all();
-    ((RedjetSpaceCounters*)_space_counters)->update_all(capacity, used);
+    _space_counters->update_all(capacity, used);
 
     // Update EmptyBox live telemetry
     RedjetEmptyBoxTelemetry eb = RedjetEmptyBoxManager::get_telemetry();
@@ -161,6 +161,8 @@ void RedjetMonitoringSupport::update_counters() {
     if (_emptybox_active_bytes != nullptr) _emptybox_active_bytes->set_value((jlong)eb.active_reserved_bytes);
 
     // Update MLTC live telemetry
+    if (_mltc_bandwidth != nullptr) _mltc_bandwidth->set_value((jlong)g_hs_mltc_solver.velocity_mbps);
+    if (_mltc_congestion_score != nullptr) _mltc_congestion_score->set_value((jlong)(g_hs_mltc_solver.latest_snapshot.congestion_score * 100.0f));
     RedjetMLTCPacer& pacer = heap->mltc_pacer();
     RedjetMLTCLeakDetector& leak = heap->mltc_leak_detector();
     if (_mltc_paced_allocs != nullptr) _mltc_paced_allocs->set_value((jlong)pacer.total_paced_allocations());

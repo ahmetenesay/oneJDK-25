@@ -105,7 +105,7 @@ bool NativeFCS_ThreadPool::steal_task_for_core(uint32_t core_id, void** out_func
   if (_bare_metal_scheduler != nullptr) {
     RedjetHardwareTask task;
     if (_bare_metal_scheduler->steal_mesh_aware(core_id, &task)) {
-      *out_func = reinterpret_cast<void*>(task.func);
+      *out_func = reinterpret_cast<void*>(task.func.load(std::memory_order_relaxed));
       *out_data = task.data;
       return true;
     }

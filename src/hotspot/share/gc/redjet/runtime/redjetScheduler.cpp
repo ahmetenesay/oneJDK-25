@@ -60,6 +60,8 @@ void RedjetPerCoreQueue::init(uint32_t core_id, uint32_t ccd_id, uint32_t socket
   _socket_id = socket_id;
   _head.store(0, std::memory_order_relaxed);
   _tail.store(0, std::memory_order_relaxed);
+  _queue_lock.next_ticket.store(0, std::memory_order_relaxed);
+  _queue_lock.now_serving.store(0, std::memory_order_relaxed);
   _tasks_executed.store(0, std::memory_order_relaxed);
   _tasks_stolen_out.store(0, std::memory_order_relaxed);
   _tasks_stolen_in.store(0, std::memory_order_relaxed);
@@ -76,21 +78,21 @@ void RedjetPerCoreQueue::init(uint32_t core_id, uint32_t ccd_id, uint32_t socket
 bool RedjetPerCoreQueue::push_local(void (*func)(void*), void* data, uint32_t priority) {
   if (func == nullptr) return false;
 
+  hs_ticket_guard_t guard(_queue_lock);
+  uint64_t head = _head.load(std::memory_order_relaxed);
   uint64_t tail = _tail.load(std::memory_order_relaxed);
-  do {
-    uint64_t head = _head.load(std::memory_order_acquire);
-    if (tail - head >= QUEUE_CAPACITY) {
-      return false; // Queue full backpressure
-    }
-  } while (!_tail.compare_exchange_weak(tail, tail + 1, std::memory_order_acq_rel, std::memory_order_relaxed));
+
+  if (tail - head >= QUEUE_CAPACITY) {
+    return false; // Queue full backpressure
+  }
 
   size_t idx = static_cast<size_t>(tail & QUEUE_MASK);
   _tasks[idx].data = data;
   _tasks[idx].affinity_core = _core_id;
   _tasks[idx].priority = priority;
   _tasks[idx].enqueue_tsc = sacculus_rdtsc();
-  // Store function pointer with release semantics
   _tasks[idx].func.store(func, std::memory_order_release);
+  _tail.store(tail + 1, std::memory_order_release);
 
   return true;
 }
@@ -98,8 +100,9 @@ bool RedjetPerCoreQueue::push_local(void (*func)(void*), void* data, uint32_t pr
 bool RedjetPerCoreQueue::pop_local(RedjetHardwareTask* out_task) {
   if (out_task == nullptr) return false;
 
+  hs_ticket_guard_t guard(_queue_lock);
+  uint64_t head = _head.load(std::memory_order_relaxed);
   uint64_t tail = _tail.load(std::memory_order_relaxed);
-  uint64_t head = _head.load(std::memory_order_acquire);
 
   if (tail <= head) {
     return false; // Empty
@@ -107,8 +110,6 @@ bool RedjetPerCoreQueue::pop_local(RedjetHardwareTask* out_task) {
 
   // LIFO pop from tail for hot L1/L2 data cache reuse
   uint64_t target_tail = tail - 1;
-  _tail.store(target_tail, std::memory_order_relaxed);
-
   size_t idx = static_cast<size_t>(target_tail & QUEUE_MASK);
   auto fn_ptr = _tasks[idx].func.exchange(nullptr, std::memory_order_acq_rel);
 
@@ -118,20 +119,20 @@ bool RedjetPerCoreQueue::pop_local(RedjetHardwareTask* out_task) {
     out_task->affinity_core = _tasks[idx].affinity_core;
     out_task->priority = _tasks[idx].priority;
     out_task->enqueue_tsc = _tasks[idx].enqueue_tsc;
+    _tail.store(target_tail, std::memory_order_release);
     _tasks_executed.fetch_add(1, std::memory_order_relaxed);
     return true;
   }
 
-  // Contention with remote stealer: restore tail
-  _tail.store(tail, std::memory_order_relaxed);
   return false;
 }
 
 bool RedjetPerCoreQueue::steal_remote(RedjetHardwareTask* out_task) {
   if (out_task == nullptr) return false;
 
-  uint64_t head = _head.load(std::memory_order_acquire);
-  uint64_t tail = _tail.load(std::memory_order_acquire);
+  hs_ticket_guard_t guard(_queue_lock);
+  uint64_t head = _head.load(std::memory_order_relaxed);
+  uint64_t tail = _tail.load(std::memory_order_relaxed);
 
   if (head >= tail) {
     return false; // Empty
@@ -139,20 +140,17 @@ bool RedjetPerCoreQueue::steal_remote(RedjetHardwareTask* out_task) {
 
   // FIFO steal from head for fairness
   size_t idx = static_cast<size_t>(head & QUEUE_MASK);
-  auto fn_ptr = _tasks[idx].func.load(std::memory_order_acquire);
+  auto fn_ptr = _tasks[idx].func.exchange(nullptr, std::memory_order_acq_rel);
 
   if (fn_ptr != nullptr) {
-    if (_tasks[idx].func.compare_exchange_strong(fn_ptr, nullptr, std::memory_order_acq_rel)) {
-      out_task->func.store(fn_ptr, std::memory_order_relaxed);
-      out_task->data = _tasks[idx].data;
-      out_task->affinity_core = _tasks[idx].affinity_core;
-      out_task->priority = _tasks[idx].priority;
-      out_task->enqueue_tsc = _tasks[idx].enqueue_tsc;
-
-      _head.compare_exchange_strong(head, head + 1, std::memory_order_release);
-      _tasks_stolen_out.fetch_add(1, std::memory_order_relaxed);
-      return true;
-    }
+    out_task->func.store(fn_ptr, std::memory_order_relaxed);
+    out_task->data = _tasks[idx].data;
+    out_task->affinity_core = _tasks[idx].affinity_core;
+    out_task->priority = _tasks[idx].priority;
+    out_task->enqueue_tsc = _tasks[idx].enqueue_tsc;
+    _head.store(head + 1, std::memory_order_release);
+    _tasks_stolen_out.fetch_add(1, std::memory_order_relaxed);
+    return true;
   }
 
   return false;

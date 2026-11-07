@@ -93,17 +93,22 @@ RedjetVFSNode_CodeBoot::RedjetVFSNode_CodeBoot(const char* name,
   _node_vac_processed  = new RedjetVFSNode("vac_processed_code_chunk",
                                            "/heap/off_heap/code_boot/vac_processed_code_chunk",
                                            this, sub_quota);
+  _node_mirc_ready     = new RedjetVFSNode("mirc_execution_ready_page",
+                                           "/heap/off_heap/code_boot/mirc_execution_ready_page",
+                                           this, sub_quota * 2);
   _node_mirc_lvl1      = new RedjetVFSNode("lvl1",
                                            "/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1",
-                                           this, sub_quota);
+                                           _node_mirc_ready, sub_quota);
   _node_mirc_lvl2      = new RedjetVFSNode("lvl2",
                                            "/heap/off_heap/code_boot/mirc_execution_ready_page/lvl2",
-                                           this, sub_quota);
+                                           _node_mirc_ready, sub_quota);
+
+  _node_mirc_ready->_children.append(_node_mirc_lvl1);
+  _node_mirc_ready->_children.append(_node_mirc_lvl2);
 
   _children.append(_node_rawcode_cell);
   _children.append(_node_vac_processed);
-  _children.append(_node_mirc_lvl1);
-  _children.append(_node_mirc_lvl2);
+  _children.append(_node_mirc_ready);
 }
 
 RedjetVFSNode_CodeBoot::~RedjetVFSNode_CodeBoot() {
@@ -215,6 +220,9 @@ void* RedjetVFSNode_CodeBoot::alloc_mirc_ready_page(size_t bytes, uint32_t metho
 
   _total_pages_allocated.fetch_add(1, std::memory_order_relaxed);
   add_used(aligned_sz);
+  if (_node_mirc_ready != nullptr) {
+    _node_mirc_ready->add_used(aligned_sz);
+  }
   if (mirc_level >= 2) {
     if (_node_mirc_lvl2 != nullptr) _node_mirc_lvl2->add_used(aligned_sz);
   } else {
@@ -314,10 +322,15 @@ bool RedjetVFSNode_CodeBoot::free_code_page(void* page_addr) {
     _node_rawcode_cell->sub_used(sz);
   } else if (tier == RedjetCodePageTier::VAC_PROCESSED_CHUNK && _node_vac_processed != nullptr) {
     _node_vac_processed->sub_used(sz);
-  } else if (tier == RedjetCodePageTier::MIRC_READY_PAGE_LVL1 && _node_mirc_lvl1 != nullptr) {
-    _node_mirc_lvl1->sub_used(sz);
-  } else if (tier == RedjetCodePageTier::MIRC_READY_PAGE_LVL2 && _node_mirc_lvl2 != nullptr) {
-    _node_mirc_lvl2->sub_used(sz);
+  } else if (tier == RedjetCodePageTier::MIRC_READY_PAGE_LVL1 || tier == RedjetCodePageTier::MIRC_READY_PAGE_LVL2) {
+    if (_node_mirc_ready != nullptr) {
+      _node_mirc_ready->sub_used(sz);
+    }
+    if (tier == RedjetCodePageTier::MIRC_READY_PAGE_LVL1 && _node_mirc_lvl1 != nullptr) {
+      _node_mirc_lvl1->sub_used(sz);
+    } else if (tier == RedjetCodePageTier::MIRC_READY_PAGE_LVL2 && _node_mirc_lvl2 != nullptr) {
+      _node_mirc_lvl2->sub_used(sz);
+    }
   }
 
   return true;

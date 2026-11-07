@@ -169,6 +169,9 @@ public:
   sacculus_hotlog_t*     hotlog()       { return &_hotlog; }
   sacculus_coldlog_t*    coldlog()      { return &_coldlog; }
   RedjetVFSTree*         vfs()          { return &_vfs_tree; }
+  RedjetVFSTree*         vfs_tree()     { return &_vfs_tree; }
+  RedjetMLTCPacer&       mltc_pacer()   { return g_hs_mltc_solver.pacer; }
+  RedjetMLTCLeakDetector& mltc_leak_detector() { return g_hs_mltc_solver.leak_detector; }
   RedjetFalline*         falline()      { return &_falline; }
   RedjetTBBArenaManager* tbb_arenas()   { return &_tbb_arenas; }
   RedjetMotherline*      motherline()   { return &_motherline; }
