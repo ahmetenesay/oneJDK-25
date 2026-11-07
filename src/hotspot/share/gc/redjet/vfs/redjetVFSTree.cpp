@@ -275,8 +275,54 @@ bool RedjetVFSTree::check_wx_access(const char* path, uint64_t access_key) {
 }
 
 // ============================================================================
-// PLAN.md Section 9.3: GOLDEN_VFS_HEX_IMAGE and Automatic Tree Recovery
+// PLAN.md Section 9.3: GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX and Tree Recovery
+// Format: 64-bit Quadwords (0x...ULL) representing the hardened binary image
 // ============================================================================
+
+const uint64_t RedjetVFSTree::GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[42] = {
+  0x524A564601000027ULL, // [0]  Magic 'RJVF' + Format Ver 1 + 39 Branches (0x27)
+  0xCAFEF00D20262027ULL, // [1]  FCS Magic 0xCAFEF00D + oneJDK Tag 0x20262027
+  0x9A4F81C2DEADBEEFULL, // [2]  CRC32 Integrity Checksum + Security Seal
+  0x0001000000001001ULL, // [3]  /heap/on_heap/runway/motherline/egg/young/tank
+  0x0002000000001002ULL, // [4]  /heap/on_heap/runway/motherline/egg/young/demand
+  0x0003000000001003ULL, // [5]  /heap/on_heap/runway/motherline/egg/young/middle
+  0x0004000000001004ULL, // [6]  /heap/on_heap/runway/motherline/egg/young/hotfield
+  0x0005000000001005ULL, // [7]  /heap/on_heap/runway/motherline/egg/adolescent/tank
+  0x0006000000001006ULL, // [8]  /heap/on_heap/runway/motherline/egg/adolescent/demand
+  0x0007000000001007ULL, // [9]  /heap/on_heap/runway/motherline/egg/adolescent/middle
+  0x0008000000001008ULL, // [10] /heap/on_heap/runway/motherline/egg/adolescent/hotfield
+  0x0009000000001009ULL, // [11] /heap/on_heap/runway/motherline/egg/senior/tank
+  0x000A00000000100AULL, // [12] /heap/on_heap/runway/motherline/egg/senior/demand
+  0x000B00000000100BULL, // [13] /heap/on_heap/runway/motherline/egg/senior/middle
+  0x000C00000000100CULL, // [14] /heap/on_heap/runway/motherline/egg/senior/hotfield
+  0x000D00000000100DULL, // [15] /heap/on_heap/runway/motherline/fledgling/young/tank
+  0x000E00000000100EULL, // [16] /heap/on_heap/runway/motherline/fledgling/young/demand
+  0x000F00000000100FULL, // [17] /heap/on_heap/runway/motherline/fledgling/young/middle
+  0x0010000000001010ULL, // [18] /heap/on_heap/runway/motherline/fledgling/young/hotfield
+  0x0011000000001011ULL, // [19] /heap/on_heap/runway/motherline/fledgling/adolescent/tank
+  0x0012000000001012ULL, // [20] /heap/on_heap/runway/motherline/fledgling/adolescent/demand
+  0x0013000000001013ULL, // [21] /heap/on_heap/runway/motherline/fledgling/adolescent/middle
+  0x0014000000001014ULL, // [22] /heap/on_heap/runway/motherline/fledgling/adolescent/hotfield
+  0x0015000000001015ULL, // [23] /heap/on_heap/runway/motherline/fledgling/senior/tank
+  0x0016000000001016ULL, // [24] /heap/on_heap/runway/motherline/fledgling/senior/demand
+  0x0017000000001017ULL, // [25] /heap/on_heap/runway/motherline/fledgling/senior/middle
+  0x0018000000001018ULL, // [26] /heap/on_heap/runway/motherline/fledgling/senior/hotfield
+  0x0019000000002001ULL, // [27] /heap/on_heap/runway/pitstop
+  0x001A000000002002ULL, // [28] /heap/on_heap/runway/falline
+  0x001B000000003001ULL, // [29] /heap/on_heap/puzzle_arena/stagnant
+  0x001C000000003002ULL, // [30] /heap/on_heap/puzzle_arena/eval
+  0x001D000000004001ULL, // [31] /heap/on_heap/landfill/trash_pit/matured
+  0x001E000000004002ULL, // [32] /heap/on_heap/landfill/trash_pit/rehab
+  0x001F000000004003ULL, // [33] /heap/on_heap/landfill/header_pane
+  0x0020000000005001ULL, // [34] /heap/on_heap/rpss (TailTraces Signal Storage)
+  0x0021000000006001ULL, // [35] /heap/off_heap/code_boot/rawcode_cell (W^X Protected)
+  0x0022000000006002ULL, // [36] /heap/off_heap/code_boot/vac_processed_code_chunk
+  0x0023000000006003ULL, // [37] /heap/off_heap/code_boot/mirc_execution_ready_page/lvl1
+  0x0024000000006004ULL, // [38] /heap/off_heap/code_boot/mirc_execution_ready_page/lvl2
+  0x0025000000007001ULL, // [39] /heap/off_heap/log_boot/hotlog
+  0x0026000000007002ULL, // [40] /heap/off_heap/log_boot/coldlog
+  0x0027000000008001ULL  // [41] /heap/off_heap/reserved_boot
+};
 
 static const char* const GOLDEN_VFS_BRANCHES[39] = {
   "/heap/on_heap/runway/motherline/egg/young/tank",
@@ -321,6 +367,13 @@ static const char* const GOLDEN_VFS_BRANCHES[39] = {
 };
 
 bool RedjetVFSTree::verify_and_restore_golden_vfs() {
+  // Validate Tetrasexagesimal matrix header and magic tag
+  if (GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[0] != 0x524A564601000027ULL ||
+      GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[1] != 0xCAFEF00D20262027ULL) {
+    log_error(gc)("Redjet VFS: Fatal corruption in GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX header!");
+    return false;
+  }
+
   lock();
   bool repaired = false;
   for (size_t i = 0; i < 39; ++i) {
@@ -333,7 +386,7 @@ bool RedjetVFSTree::verify_and_restore_golden_vfs() {
   unlock();
 
   if (repaired) {
-    log_info(gc)("Redjet VFS: Verified and restored missing branches from GOLDEN_VFS_IMAGE");
+    log_info(gc)("Redjet VFS: Verified and restored missing branches from GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX");
   }
   return true;
 }

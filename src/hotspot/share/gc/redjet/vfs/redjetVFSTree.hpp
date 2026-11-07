@@ -97,7 +97,8 @@ public:
   // PLAN.md Section 9.2: W^X Memory Protection Check
   bool check_wx_access(const char* path, uint64_t access_key);
 
-  // PLAN.md Section 9.3: Two-stage VFS verification and Golden Image Recovery
+  // PLAN.md Section 9.3: Tetrasexagesimal 64-Bit Recovery Matrix and Verification
+  static const uint64_t GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[42];
   bool verify_and_restore_golden_vfs();
 
   void print_on(outputStream* st) const;
