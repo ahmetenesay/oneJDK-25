@@ -36,6 +36,7 @@ import java.util.List;
  * 1. On-Heap:
  *    - /heap/on_heap/runway (motherline egg/fledgling, pitstop, falline)
  *    - /heap/on_heap/puzzle_arena (stagnant, eval)
+ *    - /heap/on_heap/park_arena (pinned native buffers, EmptyBox tombstones)
  *    - /heap/on_heap/landfill (matured, rehab, header_pane)
  *    - /heap/on_heap/rpss (TailTraces reference harbingers)
  * 2. Off-Heap:
@@ -46,19 +47,37 @@ import java.util.List;
 public class RedjetVFSTree {
 
   public static class BranchDesc {
-    private final String path;
-    private final String purpose;
+    private final String  path;
+    private final String  purpose;
     private final boolean isOffHeap;
+    private long          usedBytes;
+    private long          quotaBytes;
+    private long          emptyBoxReservations;
+    private String        rmrpState = "RESIDENT_HOT";
 
     public BranchDesc(String path, String purpose, boolean isOffHeap) {
       this.path = path;
       this.purpose = purpose;
       this.isOffHeap = isOffHeap;
+      this.usedBytes = 0;
+      this.quotaBytes = 0;
+      this.emptyBoxReservations = 0;
     }
 
     public String path() { return path; }
     public String purpose() { return purpose; }
     public boolean isOffHeap() { return isOffHeap; }
+    public long usedBytes() { return usedBytes; }
+    public long quotaBytes() { return quotaBytes; }
+    public long emptyBoxReservations() { return emptyBoxReservations; }
+    public String rmrpState() { return rmrpState; }
+
+    public void updateTelemetry(long used, long quota, long emptyBoxes, String rmrp) {
+      this.usedBytes = used;
+      this.quotaBytes = quota;
+      this.emptyBoxReservations = emptyBoxes;
+      if (rmrp != null) this.rmrpState = rmrp;
+    }
   }
 
   private static final List<BranchDesc> BRANCHES;
@@ -132,10 +151,24 @@ public class RedjetVFSTree {
     return BRANCHES;
   }
 
-  public static void printSummary(PrintStream tty) {
-    tty.println("RedjetGC VFS Memory Tree (40 Canonical Branches):");
+  public static BranchDesc findBranch(String path) {
+    if (path == null) return null;
     for (BranchDesc b : BRANCHES) {
-      tty.printf("  %-58s [%s] %s%n", b.path(), b.isOffHeap() ? "OFF-HEAP" : "ON-HEAP", b.purpose());
+      if (b.path().equals(path)) {
+        return b;
+      }
+    }
+    return null;
+  }
+
+  public static void printSummary(PrintStream tty) {
+    tty.println("RedjetGC VFS Memory Tree (40 Canonical Branches with EmptyBox & RMRP Telemetry):");
+    for (BranchDesc b : BRANCHES) {
+      tty.printf("  %-58s [%-8s] [%s] %s%n",
+                 b.path(),
+                 b.isOffHeap() ? "OFF-HEAP" : "ON-HEAP",
+                 b.rmrpState(),
+                 b.purpose());
     }
   }
 }

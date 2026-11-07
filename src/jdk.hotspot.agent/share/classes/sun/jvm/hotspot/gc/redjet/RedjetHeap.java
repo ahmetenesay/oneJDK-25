@@ -42,6 +42,67 @@ public class RedjetHeap extends CollectedHeap {
   private ContiguousSpace space;
   private VirtualSpace virtualSpace;
 
+  // EmptyBox live telemetry record
+  public static class EmptyBoxTelemetry {
+    public long reservationsCreated;
+    public long reservationsClaimed;
+    public long timeoutsDetected;
+    public long theftAttemptsPrevented;
+    public long activeReservedBytes;
+
+    public void printOn(PrintStream tty) {
+      tty.println("  EmptyBox Phantom Reservation Subsystem (0xEB0C5107):");
+      tty.println("    Created reservations:  " + reservationsCreated);
+      tty.println("    Claimed reservations:  " + reservationsClaimed);
+      tty.println("    Timeouts detected:     " + timeoutsDetected);
+      tty.println("    Theft prevented:       " + theftAttemptsPrevented);
+      tty.println("    Active reserved bytes: " + activeReservedBytes + " bytes");
+    }
+  }
+
+  // MLTC live telemetry record
+  public static class MLTCTelemetry {
+    public float  bandwidthMbps;
+    public float  congestionScore;
+    public String congestionLevel = "CONGESTION_FREE";
+    public long   pacedAllocations;
+    public long   stallDelayNs;
+    public String leakRiskTier = "LEAK_CLEAN";
+
+    public void printOn(PrintStream tty) {
+      tty.println("  MLTC Multi-Level Traffic Controller & Leak Detector:");
+      tty.printf("    Bus bandwidth:         %.2f MB/s%n", bandwidthMbps);
+      tty.printf("    Congestion score:      %.2f [%s]%n", congestionScore, congestionLevel);
+      tty.println("    Paced allocations:     " + pacedAllocations);
+      tty.println("    Total stall delay:     " + (stallDelayNs / 1000000) + " ms");
+      tty.println("    Leak risk tier:        " + leakRiskTier);
+    }
+  }
+
+  // RMRP live telemetry record
+  public static class RMRPTelemetry {
+    public long   plumpReclaimedBytes;
+    public long   sequentialReclaimedBytes;
+    public long   vfsReclaimedBytes;
+    public long   zeroDeduplicatedBytes;
+    public long   reclamationCycles;
+    public long   vfsCompactionTriggers;
+
+    public void printOn(PrintStream tty) {
+      tty.println("  RMRP (Reduce Memory Resident Set Propagation):");
+      tty.println("    Plump reclaimed:       " + (plumpReclaimedBytes / 1024) + " KB");
+      tty.println("    Sequential reclaimed:  " + (sequentialReclaimedBytes / 1024) + " KB");
+      tty.println("    VFS reclaimed:         " + (vfsReclaimedBytes / 1024) + " KB");
+      tty.println("    Zero-page dedup:       " + (zeroDeduplicatedBytes / 1024) + " KB");
+      tty.println("    Total cycles:          " + reclamationCycles);
+      tty.println("    VFS auto-compactions:  " + vfsCompactionTriggers);
+    }
+  }
+
+  private EmptyBoxTelemetry emptyBoxTelemetry = new EmptyBoxTelemetry();
+  private MLTCTelemetry     mltcTelemetry     = new MLTCTelemetry();
+  private RMRPTelemetry     rmrpTelemetry     = new RMRPTelemetry();
+
   static {
     VM.registerVMInitializedObserver(new Observer() {
       public void update(Observable o, Object data) {
@@ -84,6 +145,18 @@ public class RedjetHeap extends CollectedHeap {
     return space;
   }
 
+  public EmptyBoxTelemetry getEmptyBoxTelemetry() {
+    return emptyBoxTelemetry;
+  }
+
+  public MLTCTelemetry getMLTCTelemetry() {
+    return mltcTelemetry;
+  }
+
+  public RMRPTelemetry getRMRPTelemetry() {
+    return rmrpTelemetry;
+  }
+
   @Override
   public void liveRegionsIterate(LiveRegionsClosure closure) {
     if (space != null) {
@@ -100,6 +173,13 @@ public class RedjetHeap extends CollectedHeap {
     if (space != null) {
       tty.println(" used:      [" + space.bottom() + ", " + space.top() + "]");
     }
+    tty.println();
+    emptyBoxTelemetry.printOn(tty);
+    tty.println();
+    mltcTelemetry.printOn(tty);
+    tty.println();
+    rmrpTelemetry.printOn(tty);
+    tty.println();
     RedjetVFSTree.printSummary(tty);
   }
 }

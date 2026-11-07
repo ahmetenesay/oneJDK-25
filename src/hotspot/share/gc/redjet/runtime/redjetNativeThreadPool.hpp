@@ -38,6 +38,8 @@
 #endif
 #endif
 
+class RedjetBareMetalScheduler;
+
 // ============================================================================
 // Bare-Metal Native FCS Task Slot & Ring-Buffer Thread Pool (PLAN.md Section 7.4)
 // ============================================================================
@@ -60,12 +62,16 @@ private:
   alignas(64) std::atomic<uint64_t> head_idx{0};
   alignas(64) std::atomic<uint64_t> tail_idx{0};
 
+  RedjetBareMetalScheduler* _bare_metal_scheduler{ nullptr };
+
 public:
   NativeFCS_ThreadPool();
 
   RJ_API void push_task(void (*func)(void*), void* data, uint32_t affinity);
   RJ_API bool steal_task_for_core(uint32_t core_id, void** out_func, void** out_data);
   RJ_API size_t pending_tasks() const;
+  RJ_API void attach_scheduler(RedjetBareMetalScheduler* sched) { _bare_metal_scheduler = sched; }
+  RJ_API RedjetBareMetalScheduler* scheduler() const { return _bare_metal_scheduler; }
 };
 
 // ============================================================================

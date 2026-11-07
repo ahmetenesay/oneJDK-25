@@ -1,0 +1,273 @@
+//
+// Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+// DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+//
+// This code is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 2 only, as
+// published by the Free Software Foundation.  Oracle designates this
+// particular file as subject to the "Classpath" exception as provided
+// by Oracle in the LICENSE file that accompanied this code.
+//
+// This code is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+// version 2 for more details (a copy is included in the LICENSE file that
+// accompanied this code).
+//
+// You should have received a copy of the GNU General Public License version
+// 2 along with this work; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+//
+// Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+// if you need additional information or have any questions.
+//
+
+// ============================================================================
+// Redjet GC Architecture Description for Zero Platform
+// Minimal C2 / Interpreter Compatibility Definitions for 2-Point Sync,
+// DeadRefSignal Clasp, EmptyBox Guard, and Universal MachPollPoint.
+// ============================================================================
+
+source_hpp %{
+
+#include "gc/shared/gc_globals.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetC2.hpp"
+#include "gc/redjet/runtime/redjetSupport.hpp"
+#include "gc/redjet/engine/redjetPointCoordinator.hpp"
+
+extern "C" void redjet_offheap_evict(void* handle);
+
+%}
+
+source %{
+
+#include "gc/redjet/runtime/redjetBarrierSet.hpp"
+
+%}
+
+// ============================================================================
+// Redjet Store Instructions on Zero
+// ============================================================================
+
+instruct redjetStoreP(indirect mem, iRegP src)
+%{
+  predicate(UseRedjetGC);
+  match(Set mem (StoreP mem src));
+  ins_cost(100);
+  format %{ "movq    $src, [$mem]\t# redjet ptr" %}
+  ins_encode %{
+    // C-interpreted execution store
+    *(void**)($mem) = (void*)($src);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetStoreN(indirect mem, iRegN src)
+%{
+  predicate(UseRedjetGC);
+  match(Set mem (StoreN mem src));
+  ins_cost(100);
+  format %{ "movl    $src, [$mem]\t# redjet narrow ptr" %}
+  ins_encode %{
+    *(uint32_t*)($mem) = (uint32_t)($src);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+// ============================================================================
+// Redjet CompareAndSwap (CAS) Instructions on Zero
+// ============================================================================
+
+instruct redjetCompareAndSwapP(iRegI res, indirect mem, iRegP oldval, iRegP newval)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (CompareAndSwapP mem (Binary oldval newval)));
+  match(Set res (WeakCompareAndSwapP mem (Binary oldval newval)));
+  effect(TEMP_DEF res);
+  format %{ "casq    $res, $mem, $oldval, $newval\t# redjet cas ptr" %}
+  ins_encode %{
+    void* prev = (void*)$oldval;
+    $res = Atomic::cmpxchg((void**)($mem), prev, (void*)$newval) == prev ? 1 : 0;
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetCompareAndSwapN(iRegI res, indirect mem, iRegN oldval, iRegN newval)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (CompareAndSwapN mem (Binary oldval newval)));
+  match(Set res (WeakCompareAndSwapN mem (Binary oldval newval)));
+  effect(TEMP_DEF res);
+  format %{ "casl    $res, $mem, $oldval, $newval\t# redjet cas narrow ptr" %}
+  ins_encode %{
+    uint32_t prev = (uint32_t)$oldval;
+    $res = Atomic::cmpxchg((uint32_t*)($mem), prev, (uint32_t)$newval) == prev ? 1 : 0;
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+// ============================================================================
+// Redjet CompareAndExchange (CAE) Instructions on Zero
+// ============================================================================
+
+instruct redjetCompareAndExchangeP(iRegP res, indirect mem, iRegP oldval, iRegP newval)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (CompareAndExchangeP mem (Binary oldval newval)));
+  format %{ "caeq    $res, $mem, $oldval, $newval\t# redjet cae ptr" %}
+  ins_encode %{
+    $res = Atomic::cmpxchg((void**)($mem), (void*)$oldval, (void*)$newval);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetCompareAndExchangeN(iRegN res, indirect mem, iRegN oldval, iRegN newval)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (CompareAndExchangeN mem (Binary oldval newval)));
+  format %{ "cael    $res, $mem, $oldval, $newval\t# redjet cae narrow ptr" %}
+  ins_encode %{
+    $res = Atomic::cmpxchg((uint32_t*)($mem), (uint32_t)$oldval, (uint32_t)$newval);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+// ============================================================================
+// Redjet Atomic Exchange (GetAndSet) Instructions on Zero
+// ============================================================================
+
+instruct redjetGetAndSetP(iRegP res, indirect mem, iRegP newval)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (GetAndSetP mem newval));
+  effect(TEMP_DEF res);
+  format %{ "xchgq   $res, $newval, $mem\t# redjet getandset ptr" %}
+  ins_encode %{
+    $res = Atomic::xchg((void**)($mem), (void*)$newval);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetGetAndSetN(iRegN res, indirect mem, iRegN newval)
+%{
+  predicate(UseRedjetGC);
+  match(Set res (GetAndSetN mem newval));
+  effect(TEMP_DEF res);
+  format %{ "xchgl   $res, $newval, $mem\t# redjet getandset narrow ptr" %}
+  ins_encode %{
+    $res = Atomic::xchg((uint32_t*)($mem), (uint32_t)$newval);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+// ============================================================================
+// Redjet 2-Point Zero-STW Hardware Sync & Universal MachPollPoint (Zero)
+// ============================================================================
+
+instruct redjetDockpoint(label slot_target)
+%{
+  predicate(UseRedjetGC);
+  match(Branch);
+  ins_cost(10);
+  format %{ "jmp     $slot_target\t# redjet dockpoint slot16 trampoline" %}
+  ins_encode %{
+    // Dockpoint trampoline to Slot 16 target
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetParkpoint(immI park_offset, label cold_park_and_swap)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(20);
+  format %{ "testb   $$1, [$park_offset]\n\t"
+            "jnz     $cold_park_and_swap\t# redjet parkpoint loop poll" %}
+  ins_encode %{
+    // Parkpoint 0.5-cycle L1 D-Cache thread sync check
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetMachPollPoint(iRegP safepoint_poll_addr)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(50);
+  format %{ "testl   eax, [$safepoint_poll_addr]\t# MachPollPoint" %}
+  ins_encode %{
+    *(volatile uint32_t*)($safepoint_poll_addr);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+// ============================================================================
+// Redjet TailTraces Clasp Dead Reference Signals & Off-Heap Evict (Zero)
+// ============================================================================
+
+instruct redjetDeadRefSignal(indirect rpss_addr, iRegP dead_oop)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(15);
+  format %{ "movq    [$rpss_addr], $dead_oop\t# redjet tailtraces signal" %}
+  ins_encode %{
+    *(void**)($rpss_addr) = (void*)($dead_oop);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetDeadRefSignalN(indirect rpss_addr, iRegN dead_oop)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(15);
+  format %{ "movl    [$rpss_addr], $dead_oop\t# redjet tailtraces narrow signal" %}
+  ins_encode %{
+    *(uint32_t*)($rpss_addr) = (uint32_t)($dead_oop);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetDeadRefSignalAtomic(iRegP res, indirect rpss_addr, iRegP dead_oop)
+%{
+  predicate(UseRedjetGC);
+  effect(TEMP_DEF res);
+  ins_cost(80);
+  format %{ "xchgq   $dead_oop, [$rpss_addr]\t# redjet tailtraces atomic clasp" %}
+  ins_encode %{
+    $res = Atomic::xchg((void**)($rpss_addr), (void*)$dead_oop);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetOffHeapEvict(iRegP handle_ptr)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(40);
+  format %{ "call    redjet_offheap_evict\t# redjet offheap evict" %}
+  ins_encode %{
+    redjet_offheap_evict((void*)$handle_ptr);
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetEmptyBoxGuard(indirect mem, iRegI res)
+%{
+  predicate(UseRedjetGC);
+  effect(TEMP_DEF res);
+  ins_cost(15);
+  format %{ "cmpl    [$mem], 0xEB0C5107\t# redjet emptybox guard" %}
+  ins_encode %{
+    $res = (*(volatile uint32_t*)($mem) == 0xEB0C5107U) ? 1 : 0;
+  %}
+  ins_pipe(pipe_class_default);
+%}
+
+instruct redjetCardMark(indirect mem, iRegP card_table_base)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(15);
+  format %{ "movb    [$card_table_base + ($mem >> 9)], 0\t# redjet card mark" %}
+  ins_encode %{
+    uintptr_t card_idx = ((uintptr_t)$mem) >> CardTable::card_shift();
+    ((uint8_t*)$card_table_base)[card_idx] = 0;
+  %}
+  ins_pipe(pipe_class_default);
+%}

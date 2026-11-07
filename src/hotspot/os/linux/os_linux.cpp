@@ -23,6 +23,7 @@
  *
  */
 
+#include <sched.h>
 #include "classfile/vmSymbols.hpp"
 #include "code/vtableStubs.hpp"
 #include "compiler/compileBroker.hpp"
@@ -4405,8 +4406,57 @@ int os::java_to_os_priority[CriticalPriority + 1] = {
   -5               // 11 CriticalPriority
 };
 
+static void apply_linux_thread_affinity(pid_t tid, const char* aff_str) {
+  if (aff_str == nullptr || tid <= 0) {
+    return;
+  }
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  bool set_any = false;
+
+  if (strncmp(aff_str, "0x", 2) == 0 || strncmp(aff_str, "0X", 2) == 0) {
+    uint64_t mask = strtoull(aff_str, nullptr, 16);
+    for (int c = 0; c < 64; ++c) {
+      if ((mask >> c) & 1ULL) {
+        CPU_SET(c, &cpuset);
+        set_any = true;
+      }
+    }
+  } else if (strchr(aff_str, '-') != nullptr) {
+    int start_core = 0, end_core = 0;
+    if (sscanf(aff_str, "%d-%d", &start_core, &end_core) == 2 && start_core >= 0 && end_core >= start_core) {
+      for (int c = start_core; c <= end_core && c < CPU_SETSIZE; ++c) {
+        CPU_SET(c, &cpuset);
+        set_any = true;
+      }
+    }
+  } else if (strchr(aff_str, ',') != nullptr) {
+    const char* p = aff_str;
+    while (*p != '\0') {
+      int c = atoi(p);
+      if (c >= 0 && c < CPU_SETSIZE) {
+        CPU_SET(c, &cpuset);
+        set_any = true;
+      }
+      const char* next = strchr(p, ',');
+      if (next == nullptr) break;
+      p = next + 1;
+    }
+  } else {
+    int c = atoi(aff_str);
+    if (c >= 0 && c < CPU_SETSIZE) {
+      CPU_SET(c, &cpuset);
+      set_any = true;
+    }
+  }
+
+  if (set_any) {
+    sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
+  }
+}
+
 static int prio_init() {
-  if (ThreadPriorityPolicy == 1) {
+  if (ThreadPriorityPolicy == 1 || JavaThreadPriorityPolicy == 1) {
     if (geteuid() != 0) {
       if (!FLAG_IS_DEFAULT(ThreadPriorityPolicy) && !FLAG_IS_JIMAGE_RESOURCE(ThreadPriorityPolicy)) {
         warning("-XX:ThreadPriorityPolicy=1 may require system level permission, " \
@@ -4422,10 +4472,63 @@ static int prio_init() {
 }
 
 OSReturn os::set_native_priority(Thread* thread, int newpri) {
-  if (!UseThreadPriorities || ThreadPriorityPolicy == 0) return OS_OK;
+  if (!UseThreadPriorities || (ThreadPriorityPolicy == 0 && JavaThreadPriorityPolicy == 0)) return OS_OK;
 
-  int ret = setpriority(PRIO_PROCESS, thread->osthread()->thread_id(), newpri);
-  return (ret == 0) ? OS_OK : OS_ERR;
+  int target_pri = newpri;
+
+  if (thread != nullptr && thread->osthread() != nullptr) {
+    pid_t tid = thread->osthread()->thread_id();
+    const char* tname = thread->name();
+    bool is_redjet_gc = thread->is_ConcurrentGC_thread() || thread->is_Worker_thread() ||
+                        (tname != nullptr && (strstr(tname, "Redjet") != nullptr || strstr(tname, "redjet") != nullptr));
+    bool is_puzzler   = (tname != nullptr && (strstr(tname, "Puzzler") != nullptr || strstr(tname, "puzzler") != nullptr || strstr(tname, "Coach") != nullptr));
+    bool is_compiler  = thread->is_Compiler_thread() || (tname != nullptr && strstr(tname, "Compiler") != nullptr);
+
+    if (is_redjet_gc) {
+      if (RedjetAffinity != nullptr) {
+        apply_linux_thread_affinity(tid, RedjetAffinity);
+      }
+      if (RedjetPriority >= 10) {
+        struct sched_param sp;
+        sp.sched_priority = 90;
+        if (sched_setscheduler(tid, SCHED_FIFO, &sp) == 0) {
+          return OS_OK;
+        }
+        target_pri = -20; // Fallback to highest static nice priority
+      } else if (RedjetPriority >= 8) {
+        target_pri = -15;
+      }
+    } else if (is_puzzler) {
+      if (RedjetAffinity != nullptr) {
+        apply_linux_thread_affinity(tid, RedjetAffinity);
+      }
+      target_pri = -15;
+    } else if (is_compiler) {
+      if (CompilerAffinity != nullptr) {
+        apply_linux_thread_affinity(tid, CompilerAffinity);
+      }
+      int comp_prio = MAX2(VACPriority, MIRCPriority);
+      if (comp_prio >= 10) {
+        struct sched_param sp;
+        sp.sched_priority = 80;
+        if (sched_setscheduler(tid, SCHED_FIFO, &sp) == 0) {
+          return OS_OK;
+        }
+        target_pri = -20;
+      } else if (comp_prio >= 8) {
+        target_pri = -10;
+      }
+    } else if (thread->is_Java_thread()) {
+      if (JavaAppAffinity != nullptr) {
+        apply_linux_thread_affinity(tid, JavaAppAffinity);
+      }
+    }
+
+    int ret = setpriority(PRIO_PROCESS, tid, target_pri);
+    return (ret == 0) ? OS_OK : OS_ERR;
+  }
+
+  return OS_ERR;
 }
 
 OSReturn os::get_native_priority(const Thread* const thread,

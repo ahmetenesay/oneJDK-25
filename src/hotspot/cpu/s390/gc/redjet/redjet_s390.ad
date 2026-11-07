@@ -1,4 +1,4 @@
-﻿//
+//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 //
@@ -191,6 +191,132 @@ instruct redjetGetAndSetN(indirect mem_ptr, iRegN_P2N newval, iRegN res, flagsRe
     __ bind(retry);
     __ z_cs($res$$Register, $newval$$Register, Address($mem_ptr$$Register));
     __ z_brne(retry);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+// ============================================================================
+// Redjet 2-Point Zero-STW Hardware Sync & Universal MachPollPoint (s390x)
+// ============================================================================
+
+instruct redjetDockpoint(label slot_target)
+%{
+  predicate(UseRedjetGC);
+  match(Branch);
+  ins_cost(BRANCH_COST);
+  format %{ "jg      $slot_target\t# redjet dockpoint slot16 trampoline" %}
+  ins_encode %{
+    Label* L = $slot_target$$Label;
+    __ z_jg(*L);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redjetParkpoint(iRegI tmp, iRegP park_base, immI park_offset, label cold_park_and_swap, flagsReg cr)
+%{
+  predicate(UseRedjetGC);
+  effect(TEMP tmp, KILL cr);
+  ins_cost(MEMORY_REF_COST + BRANCH_COST);
+  format %{ "cli     $park_offset($park_base), 0\n\t"
+            "jne     $cold_park_and_swap\t# redjet parkpoint loop poll" %}
+  ins_encode %{
+    Label* L = $cold_park_and_swap$$Label;
+    __ z_cli(Address($park_base$$Register, $park_offset$$constant), 0);
+    __ z_brne(*L);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redjetMachPollPoint(iRegP safepoint_poll_addr, flagsReg cr)
+%{
+  predicate(UseRedjetGC);
+  effect(KILL cr);
+  ins_cost(MEMORY_REF_COST);
+  format %{ "l       Z_R0, 0($safepoint_poll_addr)\t# MachPollPoint" %}
+  ins_encode %{
+    __ z_l(Z_R0, Address($safepoint_poll_addr$$Register));
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+// ============================================================================
+// Redjet TailTraces Clasp Dead Reference Signals & Off-Heap Evict (s390x)
+// ============================================================================
+
+instruct redjetDeadRefSignal(indirect rpss_addr, iRegP dead_oop)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(MEMORY_REF_COST);
+  format %{ "stg     $dead_oop, 0($rpss_addr)\t# redjet tailtraces signal" %}
+  ins_encode %{
+    __ z_stg($dead_oop$$Register, Address($rpss_addr$$Register));
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redjetDeadRefSignalN(indirect rpss_addr, iRegN dead_oop)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(MEMORY_REF_COST);
+  format %{ "st      $dead_oop, 0($rpss_addr)\t# redjet tailtraces narrow signal" %}
+  ins_encode %{
+    __ z_st($dead_oop$$Register, Address($rpss_addr$$Register));
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redjetDeadRefSignalAtomic(iRegP res, indirect rpss_addr, iRegP dead_oop, flagsReg cr)
+%{
+  predicate(UseRedjetGC);
+  effect(TEMP res, KILL cr);
+  ins_cost(200);
+  format %{ "atomic_csg $res, $dead_oop, $rpss_addr\t# redjet tailtraces atomic clasp" %}
+  ins_encode %{
+    Label retry;
+    __ z_lg($res$$Register, Address($rpss_addr$$Register));
+    __ bind(retry);
+    __ z_csg($res$$Register, $dead_oop$$Register, Address($rpss_addr$$Register));
+    __ z_brne(retry);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redjetOffHeapEvict(iRegP handle_ptr)
+%{
+  predicate(UseRedjetGC);
+  ins_cost(CALL_COST);
+  format %{ "brasl   Z_R14, redjet_offheap_evict\t# redjet offheap evict" %}
+  ins_encode %{
+    __ z_lgr(Z_ARG1, $handle_ptr$$Register);
+    __ call_VM_leaf(CAST_FROM_FN_PTR(address, redjet_offheap_evict), Z_ARG1);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redjetEmptyBoxGuard(indirect mem, iRegI tmp, flagsReg cr)
+%{
+  predicate(UseRedjetGC);
+  effect(TEMP tmp, KILL cr);
+  ins_cost(MEMORY_REF_COST + DEFAULT_COST);
+  format %{ "l       $tmp, 0($mem)\n\t"
+            "clfi    $tmp, 0xEB0C5107\t# redjet emptybox guard" %}
+  ins_encode %{
+    __ z_l($tmp$$Register, Address($mem$$Register));
+    __ z_clfi($tmp$$Register, 0xEB0C5107);
+  %}
+  ins_pipe(pipe_class_dummy);
+%}
+
+instruct redjetCardMark(indirect mem, iRegP card_table_base, flagsReg cr)
+%{
+  predicate(UseRedjetGC);
+  effect(KILL cr);
+  ins_cost(MEMORY_REF_COST);
+  format %{ "srlg    Z_R1, $mem, 9\n\t"
+            "mvi     0(Z_R1, $card_table_base), 0\t# redjet card mark" %}
+  ins_encode %{
+    __ z_srlg(Z_R1, $mem$$Register, CardTable::card_shift());
+    __ z_mvi(Address($card_table_base$$Register, Z_R1), 0);
   %}
   ins_pipe(pipe_class_dummy);
 %}

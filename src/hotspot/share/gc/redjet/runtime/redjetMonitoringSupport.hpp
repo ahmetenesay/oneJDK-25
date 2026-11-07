@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -30,11 +30,32 @@
 class GenerationCounters;
 class HSpaceCounter;
 class RedjetHeap;
+class PerfVariable;
 
 class RedjetMonitoringSupport : public CHeapObj<mtGC> {
 private:
   GenerationCounters* _heap_counters;
   HSpaceCounter*      _space_counters;
+
+  // EmptyBox live telemetry
+  PerfVariable*       _emptybox_created;
+  PerfVariable*       _emptybox_claimed;
+  PerfVariable*       _emptybox_timeouts;
+  PerfVariable*       _emptybox_active_bytes;
+
+  // MLTC live telemetry
+  PerfVariable*       _mltc_bandwidth;
+  PerfVariable*       _mltc_congestion_score;
+  PerfVariable*       _mltc_paced_allocs;
+  PerfVariable*       _mltc_stall_ns;
+  PerfVariable*       _mltc_leak_tier;
+
+  // RMRP live telemetry
+  PerfVariable*       _rmrp_plump_reclaimed;
+  PerfVariable*       _rmrp_seq_reclaimed;
+  PerfVariable*       _rmrp_vfs_reclaimed;
+  PerfVariable*       _rmrp_zero_dedup;
+  PerfVariable*       _rmrp_vfs_triggers;
 
 public:
   RedjetMonitoringSupport(RedjetHeap* heap);

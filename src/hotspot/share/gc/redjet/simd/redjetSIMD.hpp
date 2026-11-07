@@ -121,9 +121,19 @@ public:
     static bool has_neon();
     static bool has_3d_vcache();
 
-    // Dynamic SIMD Throttling & Congestion Fallback
+    // Dynamic SIMD Throttling & Congestion Fallback (-XX:+RedjetSIMDFallbackOnCongestion)
     static bool is_simd_congested();
     static bool should_use_simd(bool is_latency_critical = true);
+    static float vector_alu_pressure_ratio();
+    static void clear_memory_congestion_aware(void* dst, size_t bytes);
+    static void decay_heats_adaptive(float* heats, size_t count, float decay_f, uint64_t* sweep_counts = nullptr);
+    static size_t filter_live_states_adaptive(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
+
+    // Telemetry
+    static uint64_t total_simd_invocations() noexcept;
+    static uint64_t total_scalar_fallbacks() noexcept;
+    static void record_simd_invocation() noexcept;
+    static void record_scalar_fallback() noexcept;
 };
 
 #endif // SHARE_GC_REDJET_REDJETSIMD_HPP

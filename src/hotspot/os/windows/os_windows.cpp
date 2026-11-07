@@ -3848,9 +3848,49 @@ int prio_policy1[CriticalPriority + 1] = {
   THREAD_PRIORITY_TIME_CRITICAL                 // 11 CriticalPriority
 };
 
+static void apply_windows_thread_affinity(Thread* thread, const char* aff_str) {
+  if (aff_str == nullptr || thread == nullptr || thread->osthread() == nullptr) {
+    return;
+  }
+  HANDLE h = thread->osthread()->thread_handle();
+  if (h == nullptr || h == INVALID_HANDLE_VALUE) {
+    return;
+  }
+  DWORD_PTR mask = 0;
+  if (strncmp(aff_str, "0x", 2) == 0 || strncmp(aff_str, "0X", 2) == 0) {
+    mask = (DWORD_PTR)strtoull(aff_str, nullptr, 16);
+  } else if (strchr(aff_str, '-') != nullptr) {
+    int start_core = 0, end_core = 0;
+    if (sscanf(aff_str, "%d-%d", &start_core, &end_core) == 2 && start_core >= 0 && end_core >= start_core) {
+      for (int c = start_core; c <= end_core && c < 64; ++c) {
+        mask |= ((DWORD_PTR)1 << c);
+      }
+    }
+  } else if (strchr(aff_str, ',') != nullptr) {
+    const char* p = aff_str;
+    while (*p != '\0') {
+      int c = atoi(p);
+      if (c >= 0 && c < 64) {
+        mask |= ((DWORD_PTR)1 << c);
+      }
+      const char* next = strchr(p, ',');
+      if (next == nullptr) break;
+      p = next + 1;
+    }
+  } else {
+    int c = atoi(aff_str);
+    if (c >= 0 && c < 64) {
+      mask = (((DWORD_PTR)1) << c);
+    }
+  }
+  if (mask != 0) {
+    SetThreadAffinityMask(h, mask);
+  }
+}
+
 static int prio_init() {
-  // If ThreadPriorityPolicy is 1, switch tables
-  if (ThreadPriorityPolicy == 1) {
+  // If ThreadPriorityPolicy is 1 or JavaThreadPriorityPolicy is 1, switch tables
+  if (ThreadPriorityPolicy == 1 || JavaThreadPriorityPolicy == 1) {
     int i;
     for (i = 0; i < CriticalPriority + 1; i++) {
       os::java_to_os_priority[i] = prio_policy1[i];
@@ -3864,7 +3904,50 @@ static int prio_init() {
 
 OSReturn os::set_native_priority(Thread* thread, int priority) {
   if (!UseThreadPriorities) return OS_OK;
-  bool ret = SetThreadPriority(thread->osthread()->thread_handle(), priority) != 0;
+
+  int target_priority = priority;
+
+  if (thread != nullptr && thread->osthread() != nullptr) {
+    const char* tname = thread->name();
+    bool is_redjet_gc = thread->is_ConcurrentGC_thread() || thread->is_Worker_thread() ||
+                        (tname != nullptr && (strstr(tname, "Redjet") != nullptr || strstr(tname, "redjet") != nullptr));
+    bool is_puzzler   = (tname != nullptr && (strstr(tname, "Puzzler") != nullptr || strstr(tname, "puzzler") != nullptr || strstr(tname, "Coach") != nullptr));
+    bool is_compiler  = thread->is_Compiler_thread() || (tname != nullptr && strstr(tname, "Compiler") != nullptr);
+
+    if (is_redjet_gc) {
+      if (RedjetPriority >= 10) {
+        target_priority = THREAD_PRIORITY_TIME_CRITICAL;
+      } else if (RedjetPriority >= 8) {
+        target_priority = THREAD_PRIORITY_HIGHEST;
+      } else if (RedjetPriority > 0) {
+        target_priority = os::java_to_os_priority[MIN2(RedjetPriority, (int)CriticalPriority)];
+      }
+      if (RedjetAffinity != nullptr) {
+        apply_windows_thread_affinity(thread, RedjetAffinity);
+      }
+    } else if (is_puzzler) {
+      target_priority = THREAD_PRIORITY_HIGHEST;
+      if (RedjetAffinity != nullptr) {
+        apply_windows_thread_affinity(thread, RedjetAffinity);
+      }
+    } else if (is_compiler) {
+      int comp_prio = MAX2(VACPriority, MIRCPriority);
+      if (comp_prio >= 10) {
+        target_priority = THREAD_PRIORITY_TIME_CRITICAL;
+      } else if (comp_prio >= 8) {
+        target_priority = THREAD_PRIORITY_HIGHEST;
+      }
+      if (CompilerAffinity != nullptr) {
+        apply_windows_thread_affinity(thread, CompilerAffinity);
+      }
+    } else if (thread->is_Java_thread()) {
+      if (JavaAppAffinity != nullptr) {
+        apply_windows_thread_affinity(thread, JavaAppAffinity);
+      }
+    }
+  }
+
+  bool ret = SetThreadPriority(thread->osthread()->thread_handle(), target_priority) != 0;
   return ret ? OS_OK : OS_ERR;
 }
 

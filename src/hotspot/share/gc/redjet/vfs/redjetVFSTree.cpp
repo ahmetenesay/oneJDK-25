@@ -26,6 +26,9 @@
 #include <cstdlib>
 #include "gc/redjet/vfs/redjetVFSTree.hpp"
 #include "gc/redjet/vfs/redjetVFSCrypto.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_RPSS.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_CodeBoot.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_Pitstop.hpp"
 #ifdef REDJET_STANDALONE_BUILD
 #include "gc/redjet/runtime/redjetFlags.hpp"
 static const bool RedjetVFSStrict = true;
@@ -79,8 +82,11 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/senior/middle");
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/senior/hotfield");
 
-  // 3. Optimization Lobby
+  // 3. Optimization Lobby (Pitstop Memory Controller)
+  _pitstop_controller = new RedjetVFSNode_Pitstop("pitstop", "/heap/on_heap/runway/pitstop", _root);
   mkdir_p("/heap/on_heap/runway/pitstop");
+  mkdir_p("/heap/on_heap/runway/ccd_runways");
+  mkdir_p("/heap/on_heap/runway/striped");
 
   // 4. Pretrashing Coffin
   mkdir_p("/heap/on_heap/runway/falline");
@@ -98,9 +104,11 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/landfill/header_pane");
 
   // 8. Reference Harbingers(TailTraces Signals) Storage - Reference Predicting Signal Storage
+  _rpss_controller = new RedjetVFSNode_RPSS("rpss", "/heap/on_heap/rpss", _root);
   mkdir_p("/heap/on_heap/rpss");
 
-  // 9. Off-Heap Pieces
+  // 9. Off-Heap Pieces (CodeBoot W^X Controller)
+  _codeboot_controller = new RedjetVFSNode_CodeBoot("code_boot", "/heap/off_heap/code_boot", _root);
   mkdir_p("/heap/off_heap/code_boot/rawcode_cell");
   mkdir_p("/heap/off_heap/code_boot/vac_processed_code_chunk");
   mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1");
@@ -109,11 +117,14 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/off_heap/log_boot/coldlog");
   mkdir_p("/heap/off_heap/reserved_boot");
 
-  log_info(gc, init)("Redjet VFS Memory Tree: Initialized 40 standard hierarchical heap branches");
+  log_info(gc, init)("Redjet VFS Memory Tree: Initialized hierarchical heap branches with dedicated node controllers");
 }
 
 void RedjetVFSTree::destroy() {
   lock();
+  _rpss_controller = nullptr;
+  _codeboot_controller = nullptr;
+  _pitstop_controller = nullptr;
   if (_root != nullptr) {
     delete _root;
     _root = nullptr;

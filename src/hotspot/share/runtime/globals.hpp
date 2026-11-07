@@ -1618,6 +1618,42 @@ const int ObjectAlignmentInBytes = 8;
   product(bool, ThreadPriorityVerbose, false,                               \
           "Print priority changes")                                         \
                                                                             \
+  product(int, JavaThreadPriorityPolicy, 1,                                 \
+          "Thread priority policy for Java threads "                        \
+          "(0: default VM policy, 1: realtime aggressive OS priority map)") \
+          range(0, 1)                                                       \
+                                                                            \
+  product(int, RedjetPriority, 10,                                          \
+          "Native OS priority for Redjet GC concurrent and worker threads " \
+          "(1..11, 10: MaxPriority/TIME_CRITICAL, 11: CriticalPriority)")  \
+          range(1, 11)                                                      \
+                                                                            \
+  product(int, VACPriority, 8,                                              \
+          "Native OS priority for VAC (C1) compiler threads (1..11)")       \
+          range(1, 11)                                                      \
+                                                                            \
+  product(int, MIRCPriority, 8,                                             \
+          "Native OS priority for MIRC (C2) compiler threads (1..11)")      \
+          range(1, 11)                                                      \
+                                                                            \
+  product(ccstr, RedjetAffinity, nullptr,                                   \
+          "CPU core affinity bitmask or core list for Redjet GC threads "   \
+          "(e.g. \"0-3\", \"0x0F\")")                                       \
+                                                                            \
+  product(ccstr, CompilerAffinity, nullptr,                                 \
+          "CPU core affinity bitmask or core list for VAC/MIRC compilers "  \
+          "(e.g. \"4-7\")")                                                 \
+                                                                            \
+  product(ccstr, JavaAppAffinity, nullptr,                                  \
+          "CPU core affinity bitmask or core list for Java app threads")    \
+                                                                            \
+  product(bool, UseTBBManagedJavaThreads, false,                            \
+          "Use Intel TBB task scheduler for Java thread pools & fibers")    \
+                                                                            \
+  product(bool, RedjetSIMDFallbackOnCongestion, true,                       \
+          "Dynamically fallback to scalar loops when vector ALUs/ports "    \
+          "are saturated by mutators")                                      \
+                                                                            \
   product(int, CompilerThreadPriority, -1,                                  \
           "The native priority at which compiler threads should run "       \
           "(-1 means no change)")                                           \

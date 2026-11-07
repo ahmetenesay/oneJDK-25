@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,6 +24,9 @@
 
 #include "gc/redjet/allocator/redjetHeap.hpp"
 #include "gc/redjet/runtime/redjetMonitoringSupport.hpp"
+#include "gc/redjet/runtime/redjetEmptyBox.hpp"
+#include "gc/redjet/allocator/redjet_mltc.hpp"
+#include "gc/redjet/allocator/redjet_rmrp.hpp"
 #include "gc/shared/generationCounters.hpp"
 #include "memory/allocation.hpp"
 #include "memory/metaspaceCounters.hpp"
@@ -96,6 +99,48 @@ public:
 RedjetMonitoringSupport::RedjetMonitoringSupport(RedjetHeap* heap) {
   _heap_counters  = new RedjetGenerationCounters(heap);
   _space_counters = (HSpaceCounter*)new RedjetSpaceCounters("Heap", 0, heap->max_capacity(), 0, _heap_counters);
+
+  _emptybox_created      = nullptr;
+  _emptybox_claimed      = nullptr;
+  _emptybox_timeouts     = nullptr;
+  _emptybox_active_bytes = nullptr;
+
+  _mltc_bandwidth        = nullptr;
+  _mltc_congestion_score = nullptr;
+  _mltc_paced_allocs     = nullptr;
+  _mltc_stall_ns         = nullptr;
+  _mltc_leak_tier        = nullptr;
+
+  _rmrp_plump_reclaimed  = nullptr;
+  _rmrp_seq_reclaimed    = nullptr;
+  _rmrp_vfs_reclaimed    = nullptr;
+  _rmrp_zero_dedup       = nullptr;
+  _rmrp_vfs_triggers     = nullptr;
+
+  if (UsePerfData) {
+    EXCEPTION_MARK;
+    ResourceMark rm;
+
+    // EmptyBox live telemetry counters
+    _emptybox_created      = PerfDataManager::create_variable(SUN_GC, "redjet.emptybox.reservationsCreated", PerfData::U_Events, (jlong)0, CHECK);
+    _emptybox_claimed      = PerfDataManager::create_variable(SUN_GC, "redjet.emptybox.reservationsClaimed", PerfData::U_Events, (jlong)0, CHECK);
+    _emptybox_timeouts     = PerfDataManager::create_variable(SUN_GC, "redjet.emptybox.timeoutsDetected", PerfData::U_Events, (jlong)0, CHECK);
+    _emptybox_active_bytes = PerfDataManager::create_variable(SUN_GC, "redjet.emptybox.activeReservedBytes", PerfData::U_Bytes, (jlong)0, CHECK);
+
+    // MLTC live telemetry counters
+    _mltc_bandwidth        = PerfDataManager::create_variable(SUN_GC, "redjet.mltc.bandwidthMbps", PerfData::U_None, (jlong)0, CHECK);
+    _mltc_congestion_score = PerfDataManager::create_variable(SUN_GC, "redjet.mltc.congestionScore", PerfData::U_None, (jlong)0, CHECK);
+    _mltc_paced_allocs     = PerfDataManager::create_variable(SUN_GC, "redjet.mltc.pacedAllocations", PerfData::U_Events, (jlong)0, CHECK);
+    _mltc_stall_ns         = PerfDataManager::create_variable(SUN_GC, "redjet.mltc.stallDelayNs", PerfData::U_None, (jlong)0, CHECK);
+    _mltc_leak_tier        = PerfDataManager::create_variable(SUN_GC, "redjet.mltc.leakTier", PerfData::U_None, (jlong)0, CHECK);
+
+    // RMRP live telemetry counters
+    _rmrp_plump_reclaimed  = PerfDataManager::create_variable(SUN_GC, "redjet.rmrp.plumpReclaimedBytes", PerfData::U_Bytes, (jlong)0, CHECK);
+    _rmrp_seq_reclaimed    = PerfDataManager::create_variable(SUN_GC, "redjet.rmrp.sequentialReclaimedBytes", PerfData::U_Bytes, (jlong)0, CHECK);
+    _rmrp_vfs_reclaimed    = PerfDataManager::create_variable(SUN_GC, "redjet.rmrp.vfsReclaimedBytes", PerfData::U_Bytes, (jlong)0, CHECK);
+    _rmrp_zero_dedup       = PerfDataManager::create_variable(SUN_GC, "redjet.rmrp.zeroDeduplicatedBytes", PerfData::U_Bytes, (jlong)0, CHECK);
+    _rmrp_vfs_triggers     = PerfDataManager::create_variable(SUN_GC, "redjet.rmrp.vfsCompactionTriggers", PerfData::U_Events, (jlong)0, CHECK);
+  }
 }
 
 void RedjetMonitoringSupport::update_counters() {
@@ -107,6 +152,28 @@ void RedjetMonitoringSupport::update_counters() {
     size_t capacity = heap->capacity();
     ((RedjetGenerationCounters*)_heap_counters)->update_all();
     ((RedjetSpaceCounters*)_space_counters)->update_all(capacity, used);
+
+    // Update EmptyBox live telemetry
+    RedjetEmptyBoxTelemetry eb = RedjetEmptyBoxManager::get_telemetry();
+    if (_emptybox_created != nullptr) _emptybox_created->set_value((jlong)eb.total_reservations_created);
+    if (_emptybox_claimed != nullptr) _emptybox_claimed->set_value((jlong)eb.total_reservations_claimed);
+    if (_emptybox_timeouts != nullptr) _emptybox_timeouts->set_value((jlong)eb.total_timeouts_detected);
+    if (_emptybox_active_bytes != nullptr) _emptybox_active_bytes->set_value((jlong)eb.active_reserved_bytes);
+
+    // Update MLTC live telemetry
+    RedjetMLTCPacer& pacer = heap->mltc_pacer();
+    RedjetMLTCLeakDetector& leak = heap->mltc_leak_detector();
+    if (_mltc_paced_allocs != nullptr) _mltc_paced_allocs->set_value((jlong)pacer.total_paced_allocations());
+    if (_mltc_stall_ns != nullptr) _mltc_stall_ns->set_value((jlong)pacer.total_stall_delay_ns());
+    if (_mltc_leak_tier != nullptr) _mltc_leak_tier->set_value((jlong)leak.current_risk_tier());
+
+    // Update RMRP live telemetry
+    if (_rmrp_plump_reclaimed != nullptr) _rmrp_plump_reclaimed->set_value((jlong)RedjetRMRP::total_plump_reclaimed());
+    if (_rmrp_seq_reclaimed != nullptr) _rmrp_seq_reclaimed->set_value((jlong)RedjetRMRP::total_sequential_reclaimed());
+    if (_rmrp_vfs_reclaimed != nullptr) _rmrp_vfs_reclaimed->set_value((jlong)RedjetRMRP::total_vfs_reclaimed());
+    if (_rmrp_zero_dedup != nullptr) _rmrp_zero_dedup->set_value((jlong)RedjetRMRP::total_zero_bytes_deduplicated());
+    if (_rmrp_vfs_triggers != nullptr) _rmrp_vfs_triggers->set_value((jlong)RedjetRMRP::total_vfs_compactions());
+
     MetaspaceCounters::update_performance_counters();
   }
 }

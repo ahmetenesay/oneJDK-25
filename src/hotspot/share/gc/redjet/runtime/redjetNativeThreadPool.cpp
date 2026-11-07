@@ -23,6 +23,7 @@
  */
 
 #include "gc/redjet/runtime/redjetNativeThreadPool.hpp"
+#include "gc/redjet/runtime/redjetScheduler.hpp"
 #include <cstdlib>
 #include <cstring>
 
@@ -97,6 +98,16 @@ bool NativeFCS_ThreadPool::steal_task_for_core(uint32_t core_id, void** out_func
           return true;
         }
       }
+    }
+  }
+
+  // Ring buffer empty: fall back to Bare-Metal Scheduler hardware core queues
+  if (_bare_metal_scheduler != nullptr) {
+    RedjetHardwareTask task;
+    if (_bare_metal_scheduler->steal_mesh_aware(core_id, &task)) {
+      *out_func = reinterpret_cast<void*>(task.func);
+      *out_data = task.data;
+      return true;
     }
   }
 

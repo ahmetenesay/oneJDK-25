@@ -38,6 +38,7 @@ public class RedjetHeapRegion extends VMObject {
     RUNWAY_PITSTOP("Runway/Pitstop"),
     RUNWAY_FALLINE("Runway/Falline"),
     PUZZLE_ARENA("PuzzleArena"),
+    PARK_ARENA("ParkArena"),
     LANDFILL_MATURED("Landfill/Matured"),
     LANDFILL_REHAB("Landfill/Rehab"),
     LANDFILL_HEADER_PANE("Landfill/HeaderPane"),
@@ -51,11 +52,27 @@ public class RedjetHeapRegion extends VMObject {
     public String description() { return description; }
   }
 
-  private String name;
-  private Address bottom;
-  private Address top;
-  private Address end;
-  private RegionType type;
+  public enum RMRPResidentState {
+    RESIDENT_HOT("Hot"),
+    RESIDENT_WARM("Warm"),
+    RESIDENT_COLD("Cold"),
+    DECOMMITTED_IDLE("Decommitted"),
+    DEDUPLICATED_ZERO("ZeroDeduplicated");
+
+    private final String label;
+    RMRPResidentState(String l) { this.label = l; }
+    public String label() { return label; }
+  }
+
+  private String            name;
+  private Address           bottom;
+  private Address           top;
+  private Address           end;
+  private RegionType        type;
+  private long              emptyBoxTombstones;
+  private long              mltcPacedAllocations;
+  private RMRPResidentState rmrpState = RMRPResidentState.RESIDENT_HOT;
+  private int               idleSweeps;
 
   public RedjetHeapRegion(String name, Address bottom, Address top, Address end, RegionType type) {
     super(bottom != null ? bottom : VM.getVM().getDebugger().newAddress(0));
@@ -64,6 +81,9 @@ public class RedjetHeapRegion extends VMObject {
     this.top = top;
     this.end = end;
     this.type = type;
+    this.emptyBoxTombstones = 0;
+    this.mltcPacedAllocations = 0;
+    this.idleSweeps = 0;
   }
 
   public String name() { return name; }
@@ -71,6 +91,18 @@ public class RedjetHeapRegion extends VMObject {
   public Address top() { return top; }
   public Address end() { return end; }
   public RegionType type() { return type; }
+
+  public long emptyBoxTombstones() { return emptyBoxTombstones; }
+  public long mltcPacedAllocations() { return mltcPacedAllocations; }
+  public RMRPResidentState rmrpState() { return rmrpState; }
+  public int idleSweeps() { return idleSweeps; }
+
+  public void setTelemetry(long tombstones, long pacedAllocs, RMRPResidentState state, int sweeps) {
+    this.emptyBoxTombstones = tombstones;
+    this.mltcPacedAllocations = pacedAllocs;
+    if (state != null) this.rmrpState = state;
+    this.idleSweeps = sweeps;
+  }
 
   public long used() {
     return (top != null && bottom != null) ? top.minus(bottom) : 0;
@@ -81,7 +113,8 @@ public class RedjetHeapRegion extends VMObject {
   }
 
   public void printOn(PrintStream tty) {
-    tty.println("RedjetRegion [" + name + "] type: " + type.description() +
-                " [" + bottom + ", " + top + ", " + end + "] used: " + used() + " bytes");
+    tty.printf("RedjetRegion [%s] type: %-20s [%s, %s, %s] used: %d bytes [EmptyBox: %d, MLTC Paced: %d, RMRP: %s (idle sweeps: %d)]%n",
+               name, type.description(), bottom, top, end, used(),
+               emptyBoxTombstones, mltcPacedAllocations, rmrpState.label(), idleSweeps);
   }
 }

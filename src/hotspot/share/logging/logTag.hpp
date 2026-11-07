@@ -77,6 +77,7 @@ class outputStream;
   NOT_PRODUCT(LOG_TAG(downcall)) \
   LOG_TAG(dump) \
   LOG_TAG(dynamic) \
+  LOG_TAG(emptybox) \
   LOG_TAG(ergo) \
   LOG_TAG(event) \
   LOG_TAG(exceptions) \
@@ -164,8 +165,10 @@ class outputStream;
   LOG_TAG(preview)   /* Trace loading of preview feature types */ \
   LOG_TAG(promotion) \
   LOG_TAG(ptrqueue) \
+  LOG_TAG(puzzler) \
   LOG_TAG(purge) \
   LOG_TAG(record) \
+  LOG_TAG(redjet) \
   LOG_TAG(redefine) \
   LOG_TAG(ref) \
   LOG_TAG(refine) \
@@ -216,6 +219,7 @@ class outputStream;
   LOG_TAG(valuebasedclasses) \
   LOG_TAG(verification) \
   LOG_TAG(verify) \
+  LOG_TAG(vfs) \
   LOG_TAG(vmmutex) \
   LOG_TAG(vmoperation) \
   LOG_TAG(vmthread) \

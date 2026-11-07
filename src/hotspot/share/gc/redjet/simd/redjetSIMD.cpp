@@ -551,33 +551,103 @@ bool RedjetSIMD::has_3d_vcache() {
     return hs_has_massive_sram_vcache();
 }
 
+static std::atomic<uint64_t> g_total_simd_invocations{ 0 };
+static std::atomic<uint64_t> g_total_scalar_fallbacks{ 0 };
+
+uint64_t RedjetSIMD::total_simd_invocations() noexcept {
+    return g_total_simd_invocations.load(std::memory_order_relaxed);
+}
+
+uint64_t RedjetSIMD::total_scalar_fallbacks() noexcept {
+    return g_total_scalar_fallbacks.load(std::memory_order_relaxed);
+}
+
+void RedjetSIMD::record_simd_invocation() noexcept {
+    g_total_simd_invocations.fetch_add(1, std::memory_order_relaxed);
+}
+
+void RedjetSIMD::record_scalar_fallback() noexcept {
+    g_total_scalar_fallbacks.fetch_add(1, std::memory_order_relaxed);
+}
+
+float RedjetSIMD::vector_alu_pressure_ratio() {
+    extern hs_alu_dispatch_nexus_t g_hs_alu_nexus;
+    uint32_t total_depth = 0;
+    for (size_t i = 0; i < hs_alu_dispatch_nexus_t::NUM_ALU_LANES; ++i) {
+        total_depth += g_hs_alu_nexus.pipelines[i].queue_depth.load(std::memory_order_relaxed);
+    }
+    constexpr float max_capacity = static_cast<float>(hs_alu_dispatch_nexus_t::NUM_ALU_LANES * hs_alu_dispatch_nexus_t::SATURATION_THRESHOLD);
+    return static_cast<float>(total_depth) / max_capacity;
+}
+
 bool RedjetSIMD::is_simd_congested() {
-    // Check ALU nexus queue depths on primary vector lanes
+    extern bool RedjetSIMDFallbackOnCongestion;
+    if (!RedjetSIMDFallbackOnCongestion) {
+        return false;
+    }
     extern hs_alu_dispatch_nexus_t g_hs_alu_nexus;
     uint32_t depth0 = g_hs_alu_nexus.pipelines[0].queue_depth.load(std::memory_order_relaxed);
     uint32_t depth1 = g_hs_alu_nexus.pipelines[1].queue_depth.load(std::memory_order_relaxed);
-    return (depth0 >= hs_alu_dispatch_nexus_t::SATURATION_THRESHOLD) ||
-           (depth1 >= hs_alu_dispatch_nexus_t::SATURATION_THRESHOLD);
+
+    if (depth0 >= hs_alu_dispatch_nexus_t::SATURATION_THRESHOLD ||
+        depth1 >= hs_alu_dispatch_nexus_t::SATURATION_THRESHOLD) {
+        return true;
+    }
+
+    return vector_alu_pressure_ratio() >= 0.70f;
 }
 
 bool RedjetSIMD::should_use_simd(bool is_latency_critical) {
-    // 1. If explicit Critical SIMD Only is enforced, non-critical sweeps fallback to scalar
     extern bool RedjetCriticalSIMDOnly;
     if (RedjetCriticalSIMDOnly && !is_latency_critical) {
+        record_scalar_fallback();
         return false;
     }
 
-    // 2. If Dynamic SIMD Fallback is active and mutators saturate vector ALUs, fallback to scalar
-    extern bool RedjetDynamicSIMDFallback;
-    if (RedjetDynamicSIMDFallback && is_simd_congested()) {
+    if (is_simd_congested()) {
+        record_scalar_fallback();
         return false;
     }
 
-    // 3. Fallback to vector execution if hardware supports SIMD via universal ISA ladder
-    return isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() ||
-           isMacrowebHolder::IS_AVX512() || isMacrowebHolder::IS_AVX2() ||
-           isMacrowebHolder::IS_AVX() || isMacrowebHolder::IS_SSE4_2() ||
-           isMacrowebHolder::IS_SSE2() || isMacrowebHolder::IS_NEON() ||
-           isMacrowebHolder::IS_SVE() || isMacrowebHolder::IS_SVE2() ||
-           isMacrowebHolder::IS_RVV();
+    bool has_vector_hw = isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() ||
+                         isMacrowebHolder::IS_AVX512() || isMacrowebHolder::IS_AVX2() ||
+                         isMacrowebHolder::IS_AVX() || isMacrowebHolder::IS_SSE4_2() ||
+                         isMacrowebHolder::IS_SSE2() || isMacrowebHolder::IS_NEON() ||
+                         isMacrowebHolder::IS_SVE() || isMacrowebHolder::IS_SVE2() ||
+                         isMacrowebHolder::IS_RVV();
+
+    if (has_vector_hw) {
+        record_simd_invocation();
+        return true;
+    }
+
+    record_scalar_fallback();
+    return false;
+}
+
+void RedjetSIMD::clear_memory_congestion_aware(void* dst, size_t bytes) {
+    if (!dst || bytes == 0) return;
+    if (should_use_simd(false)) {
+        hs_critical_clear_memory_core_adaptive(dst, bytes, false);
+    } else {
+        memset(dst, 0, bytes);
+    }
+}
+
+void RedjetSIMD::decay_heats_adaptive(float* heats, size_t count, float decay_f, uint64_t* sweep_counts) {
+    if (!heats || count == 0) return;
+    if (should_use_simd(false)) {
+        decay_heats(heats, count, decay_f, sweep_counts);
+    } else {
+        hs_decay_heats_scalar(heats, count, decay_f, sweep_counts);
+    }
+}
+
+size_t RedjetSIMD::filter_live_states_adaptive(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices) {
+    if (!states || count == 0) return 0;
+    if (should_use_simd(false)) {
+        return filter_live_states(states, count, target_state, out_indices);
+    } else {
+        return hs_filter_live_states_scalar(states, count, target_state, out_indices);
+    }
 }

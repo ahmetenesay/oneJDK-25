@@ -54,10 +54,17 @@ public:
 #include "utilities/ostream.hpp"
 #endif
 
+class RedjetVFSNode_RPSS;
+class RedjetVFSNode_CodeBoot;
+class RedjetVFSNode_Pitstop;
+
 class RedjetVFSTree : public CHeapObj<mtGC> {
 private:
-  RedjetVFSNode*    _root;
-  std::atomic<bool> _lock;
+  RedjetVFSNode*          _root;
+  RedjetVFSNode_RPSS*     _rpss_controller{ nullptr };
+  RedjetVFSNode_CodeBoot* _codeboot_controller{ nullptr };
+  RedjetVFSNode_Pitstop*  _pitstop_controller{ nullptr };
+  std::atomic<bool>       _lock;
 
   inline void lock() {
     while (_lock.exchange(true, std::memory_order_acquire)) {
@@ -90,6 +97,10 @@ public:
   RedjetVFSNode* mkdir_p(const char* path, size_t quota_bytes = 0);
   RedjetVFSNode* find_node(const char* path);
   size_t get_used_bytes(const char* path);
+
+  RedjetVFSNode_RPSS*     rpss_node()     const noexcept { return _rpss_controller; }
+  RedjetVFSNode_CodeBoot* codeboot_node() const noexcept { return _codeboot_controller; }
+  RedjetVFSNode_Pitstop*  pitstop_node()  const noexcept { return _pitstop_controller; }
 
   // PLAN.md Section 9.2: 7-Key Cryptographic Derivation
   static uint64_t derive_crypto_key(const uint64_t K[7]);
