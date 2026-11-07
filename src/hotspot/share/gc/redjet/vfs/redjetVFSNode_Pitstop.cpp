@@ -79,11 +79,13 @@ RedjetPitstopMemSlot* RedjetVFSNode_Pitstop::admit_slot(void* original_slot,
   if (mode == RedjetPitstopMorphMode::SHADOW_RCU) {
     size_t alloc_sz = (slot_bytes + 63) & ~63;
     entry->shadow_buffer = malloc(alloc_sz);
-    if (entry->shadow_buffer != nullptr) {
-      memcpy(entry->shadow_buffer, original_slot, slot_bytes);
-      entry->shadow_bytes = alloc_sz;
-      total_alloc_bytes += alloc_sz;
+    if (entry->shadow_buffer == nullptr) {
+      delete entry;
+      return nullptr;
     }
+    memcpy(entry->shadow_buffer, original_slot, slot_bytes);
+    entry->shadow_bytes = alloc_sz;
+    total_alloc_bytes += alloc_sz;
   }
 
   _slot_lock.lock();

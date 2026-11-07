@@ -134,13 +134,10 @@ void* RedjetVFSNode_CodeBoot::alloc_rawcode_cell(size_t bytes, uint32_t method_i
   desc->page_size = aligned_sz;
   desc->used_bytes = bytes;
   desc->tier = RedjetCodePageTier::RAWCODE_CELL;
-  desc->wx_state = RedjetWXState::WX_SEALED_RO;
+  desc->wx_state = RedjetWXState::WX_WRITABLE; // Starts writable so caller can populate bytecode
   desc->auth_seal = RedjetVFSCrypto::derive_7cipher_key(RedjetVFSCrypto::DEFAULT_VAC_SECRETS);
   desc->method_id = method_id;
   desc->alloc_tsc = sacculus_rdtsc();
-
-  // Seal page as read-only
-  protect_os_pages(mem, aligned_sz, RedjetWXState::WX_SEALED_RO);
 
   _page_lock.lock();
   desc->next = _pages_head;
@@ -251,6 +248,14 @@ bool RedjetVFSNode_CodeBoot::transition_wx(void* page_addr, size_t bytes, Redjet
   // If moving to EXECUTABLE, page must first be flushed from I-Cache and write access revoked
   bool ok = protect_os_pages(page_addr, cur->page_size, target_state);
   if (ok) {
+    if (target_state == RedjetWXState::WX_EXECUTABLE) {
+#if defined(_WIN32)
+      FlushInstructionCache(GetCurrentProcess(), page_addr, cur->page_size);
+#elif defined(__GNUC__) || defined(__clang__)
+      __builtin___clear_cache(reinterpret_cast<char*>(page_addr),
+                              reinterpret_cast<char*>(page_addr) + cur->page_size);
+#endif
+    }
     cur->wx_state = target_state;
     _total_wx_transitions.fetch_add(1, std::memory_order_relaxed);
   }

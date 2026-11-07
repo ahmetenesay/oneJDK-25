@@ -25,6 +25,7 @@
 source_hpp %{
 
 #include "gc/shared/gc_globals.hpp"
+#include "gc/shared/cardTable.hpp"
 #include "gc/redjet/runtime/redjetBarrierSetC2.hpp"
 #include "gc/redjet/runtime/redjetSupport.hpp"
 #include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"

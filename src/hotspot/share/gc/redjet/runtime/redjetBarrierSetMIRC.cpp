@@ -264,9 +264,10 @@ void RedjetBarrierSetMIRC::emit_emptybox_guard(GraphKit* kit, Node* mem_ptr) {
   Node* magic = kit->intcon(static_cast<jint>(RedjetEmptyBox::HS_EMPTYBOX_MAGIC));
   Node* cmp = gvn.transform(new CmpINode(hdr, magic));
   Node* tst = gvn.transform(new BoolNode(cmp, BoolTest::ne));
-  IfNode* iff = kit->create_and_map_if(kit->control(), tst, PROB_LIKELY_MAG(5), COUNT_UNKNOWN);
-  Node* if_valid = gvn.transform(new IfTrueNode(iff));
-  kit->set_control(if_valid);
+  {
+    BuildCutout unless(kit, tst, PROB_LIKELY_MAG(5));
+    kit->uncommon_trap(Deoptimization::Reason_predicate, Deoptimization::Action_none);
+  }
 #else
   (void)kit;
   (void)mem_ptr;

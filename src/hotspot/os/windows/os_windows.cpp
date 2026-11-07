@@ -3869,8 +3869,11 @@ static void apply_windows_thread_affinity(Thread* thread, const char* aff_str) {
   } else if (strchr(aff_str, ',') != nullptr) {
     const char* p = aff_str;
     while (*p != '\0') {
-      int c = atoi(p);
-      if (c >= 0 && c < 64) {
+      while (*p == ' ' || *p == '\t') p++;
+      if (*p == '\0') break;
+      char* endptr = nullptr;
+      long c = strtol(p, &endptr, 10);
+      if (endptr != p && c >= 0 && c < 64) {
         mask |= ((DWORD_PTR)1 << c);
       }
       const char* next = strchr(p, ',');
@@ -3878,8 +3881,11 @@ static void apply_windows_thread_affinity(Thread* thread, const char* aff_str) {
       p = next + 1;
     }
   } else {
-    int c = atoi(aff_str);
-    if (c >= 0 && c < 64) {
+    const char* p = aff_str;
+    while (*p == ' ' || *p == '\t') p++;
+    char* endptr = nullptr;
+    long c = strtol(p, &endptr, 10);
+    if (endptr != p && c >= 0 && c < 64) {
       mask = (((DWORD_PTR)1) << c);
     }
   }

@@ -4433,9 +4433,12 @@ static void apply_linux_thread_affinity(pid_t tid, const char* aff_str) {
   } else if (strchr(aff_str, ',') != nullptr) {
     const char* p = aff_str;
     while (*p != '\0') {
-      int c = atoi(p);
-      if (c >= 0 && c < CPU_SETSIZE) {
-        CPU_SET(c, &cpuset);
+      while (*p == ' ' || *p == '\t') p++;
+      if (*p == '\0') break;
+      char* endptr = nullptr;
+      long c = strtol(p, &endptr, 10);
+      if (endptr != p && c >= 0 && c < CPU_SETSIZE) {
+        CPU_SET(static_cast<int>(c), &cpuset);
         set_any = true;
       }
       const char* next = strchr(p, ',');
@@ -4443,9 +4446,12 @@ static void apply_linux_thread_affinity(pid_t tid, const char* aff_str) {
       p = next + 1;
     }
   } else {
-    int c = atoi(aff_str);
-    if (c >= 0 && c < CPU_SETSIZE) {
-      CPU_SET(c, &cpuset);
+    const char* p = aff_str;
+    while (*p == ' ' || *p == '\t') p++;
+    char* endptr = nullptr;
+    long c = strtol(p, &endptr, 10);
+    if (endptr != p && c >= 0 && c < CPU_SETSIZE) {
+      CPU_SET(static_cast<int>(c), &cpuset);
       set_any = true;
     }
   }

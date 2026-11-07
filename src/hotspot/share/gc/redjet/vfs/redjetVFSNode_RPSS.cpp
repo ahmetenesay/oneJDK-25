@@ -43,15 +43,15 @@ bool RedjetVFSNode_RPSS::enqueue_dead_ref(uintptr_t dead_oop, uint32_t thread_id
   }
 
   uint64_t head = _head.load(std::memory_order_relaxed);
-  uint64_t tail = _tail.load(std::memory_order_acquire);
+  do {
+    uint64_t tail = _tail.load(std::memory_order_acquire);
+    if (head - tail >= RING_CAPACITY) {
+      _total_drops_on_full.fetch_add(1, std::memory_order_relaxed);
+      return false;
+    }
+  } while (!_head.compare_exchange_weak(head, head + 1, std::memory_order_acq_rel, std::memory_order_relaxed));
 
-  if (head - tail >= RING_CAPACITY) {
-    _total_drops_on_full.fetch_add(1, std::memory_order_relaxed);
-    return false;
-  }
-
-  uint64_t slot_idx = _head.fetch_add(1, std::memory_order_acq_rel);
-  size_t idx = static_cast<size_t>(slot_idx & RING_MASK);
+  size_t idx = static_cast<size_t>(head & RING_MASK);
 
   RedjetRPSSHarbingerEntry& entry = _ring[idx];
   entry.dead_oop.store(dead_oop, std::memory_order_relaxed);

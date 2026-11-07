@@ -83,8 +83,11 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/senior/hotfield");
 
   // 3. Optimization Lobby (Pitstop Memory Controller)
-  _pitstop_controller = new RedjetVFSNode_Pitstop("pitstop", "/heap/on_heap/runway/pitstop", _root);
-  mkdir_p("/heap/on_heap/runway/pitstop");
+  RedjetVFSNode* runway = mkdir_p("/heap/on_heap/runway");
+  if (runway != nullptr) {
+    _pitstop_controller = new RedjetVFSNode_Pitstop("pitstop", "/heap/on_heap/runway/pitstop", runway);
+    runway->_children.append(_pitstop_controller);
+  }
   mkdir_p("/heap/on_heap/runway/ccd_runways");
   mkdir_p("/heap/on_heap/runway/striped");
 
@@ -104,15 +107,18 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/landfill/header_pane");
 
   // 8. Reference Harbingers(TailTraces Signals) Storage - Reference Predicting Signal Storage
-  _rpss_controller = new RedjetVFSNode_RPSS("rpss", "/heap/on_heap/rpss", _root);
-  mkdir_p("/heap/on_heap/rpss");
+  RedjetVFSNode* on_heap = mkdir_p("/heap/on_heap");
+  if (on_heap != nullptr) {
+    _rpss_controller = new RedjetVFSNode_RPSS("rpss", "/heap/on_heap/rpss", on_heap);
+    on_heap->_children.append(_rpss_controller);
+  }
 
   // 9. Off-Heap Pieces (CodeBoot W^X Controller)
-  _codeboot_controller = new RedjetVFSNode_CodeBoot("code_boot", "/heap/off_heap/code_boot", _root);
-  mkdir_p("/heap/off_heap/code_boot/rawcode_cell");
-  mkdir_p("/heap/off_heap/code_boot/vac_processed_code_chunk");
-  mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1");
-  mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl2");
+  RedjetVFSNode* off_heap = mkdir_p("/heap/off_heap");
+  if (off_heap != nullptr) {
+    _codeboot_controller = new RedjetVFSNode_CodeBoot("code_boot", "/heap/off_heap/code_boot", off_heap);
+    off_heap->_children.append(_codeboot_controller);
+  }
   mkdir_p("/heap/off_heap/log_boot/hotlog");
   mkdir_p("/heap/off_heap/log_boot/coldlog");
   mkdir_p("/heap/off_heap/reserved_boot");

@@ -65,7 +65,7 @@ void RedjetPerCoreQueue::init(uint32_t core_id, uint32_t ccd_id, uint32_t socket
   _tasks_stolen_in.store(0, std::memory_order_relaxed);
 
   for (size_t i = 0; i < QUEUE_CAPACITY; ++i) {
-    _tasks[i].func = nullptr;
+    _tasks[i].func.store(nullptr, std::memory_order_relaxed);
     _tasks[i].data = nullptr;
     _tasks[i].affinity_core = UINT32_MAX;
     _tasks[i].priority = 0;
@@ -77,21 +77,21 @@ bool RedjetPerCoreQueue::push_local(void (*func)(void*), void* data, uint32_t pr
   if (func == nullptr) return false;
 
   uint64_t tail = _tail.load(std::memory_order_relaxed);
-  uint64_t head = _head.load(std::memory_order_acquire);
-
-  if (tail - head >= QUEUE_CAPACITY) {
-    return false; // Queue full backpressure
-  }
+  do {
+    uint64_t head = _head.load(std::memory_order_acquire);
+    if (tail - head >= QUEUE_CAPACITY) {
+      return false; // Queue full backpressure
+    }
+  } while (!_tail.compare_exchange_weak(tail, tail + 1, std::memory_order_acq_rel, std::memory_order_relaxed));
 
   size_t idx = static_cast<size_t>(tail & QUEUE_MASK);
   _tasks[idx].data = data;
   _tasks[idx].affinity_core = _core_id;
   _tasks[idx].priority = priority;
   _tasks[idx].enqueue_tsc = sacculus_rdtsc();
-  // Store function pointer last with release semantics
-  reinterpret_cast<std::atomic<void*>*>(&_tasks[idx].func)->store(reinterpret_cast<void*>(func), std::memory_order_release);
+  // Store function pointer with release semantics
+  _tasks[idx].func.store(func, std::memory_order_release);
 
-  _tail.store(tail + 1, std::memory_order_release);
   return true;
 }
 
@@ -110,10 +110,10 @@ bool RedjetPerCoreQueue::pop_local(RedjetHardwareTask* out_task) {
   _tail.store(target_tail, std::memory_order_relaxed);
 
   size_t idx = static_cast<size_t>(target_tail & QUEUE_MASK);
-  void* fn_ptr = reinterpret_cast<std::atomic<void*>*>(&_tasks[idx].func)->exchange(nullptr, std::memory_order_acq_rel);
+  auto fn_ptr = _tasks[idx].func.exchange(nullptr, std::memory_order_acq_rel);
 
   if (fn_ptr != nullptr) {
-    out_task->func = reinterpret_cast<void (*)(void*)>(fn_ptr);
+    out_task->func.store(fn_ptr, std::memory_order_relaxed);
     out_task->data = _tasks[idx].data;
     out_task->affinity_core = _tasks[idx].affinity_core;
     out_task->priority = _tasks[idx].priority;
@@ -139,12 +139,11 @@ bool RedjetPerCoreQueue::steal_remote(RedjetHardwareTask* out_task) {
 
   // FIFO steal from head for fairness
   size_t idx = static_cast<size_t>(head & QUEUE_MASK);
-  void* fn_ptr = reinterpret_cast<std::atomic<void*>*>(&_tasks[idx].func)->load(std::memory_order_acquire);
+  auto fn_ptr = _tasks[idx].func.load(std::memory_order_acquire);
 
   if (fn_ptr != nullptr) {
-    if (reinterpret_cast<std::atomic<void*>*>(&_tasks[idx].func)->compare_exchange_strong(
-            fn_ptr, nullptr, std::memory_order_acq_rel)) {
-      out_task->func = reinterpret_cast<void (*)(void*)>(fn_ptr);
+    if (_tasks[idx].func.compare_exchange_strong(fn_ptr, nullptr, std::memory_order_acq_rel)) {
+      out_task->func.store(fn_ptr, std::memory_order_relaxed);
       out_task->data = _tasks[idx].data;
       out_task->affinity_core = _tasks[idx].affinity_core;
       out_task->priority = _tasks[idx].priority;
@@ -241,17 +240,18 @@ bool RedjetBareMetalScheduler::dispatch_next_task(uint32_t core_id) {
   RedjetHardwareTask task;
   // 1. Try local queue pop (fastest, zero cross-core communication)
   if (_core_queues[core_id].pop_local(&task)) {
-    if (task.func != nullptr) {
-      task.func(task.data);
+    auto fn = task.func.load(std::memory_order_relaxed);
+    if (fn != nullptr) {
+      fn(task.data);
       return true;
     }
   }
 
   // 2. Local queue empty: initiate Mesh-Aware Work Stealing
   if (steal_mesh_aware(core_id, &task)) {
-    _core_queues[core_id].init(core_id, _core_queues[core_id].ccd_id(), _core_queues[core_id].socket_id());
-    if (task.func != nullptr) {
-      task.func(task.data);
+    auto fn = task.func.load(std::memory_order_relaxed);
+    if (fn != nullptr) {
+      fn(task.data);
       return true;
     }
   }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -82,7 +82,7 @@ public:
     _full_path[sizeof(_full_path) - 1] = '\0';
   }
 
-  ~RedjetVFSNode() {
+  virtual ~RedjetVFSNode() {
     for (int i = 0; i < _children.length(); ++i) {
       delete _children.at(i);
     }

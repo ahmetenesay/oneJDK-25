@@ -41,6 +41,7 @@
 #endif
 
 extern "C" JNIEXPORT void redjet_offheap_evict(void* handle);
+extern "C" JNIEXPORT void redjet_rt_dead_ref_signal(void* rpss, void* oop_ptr);
 
 LIR_Opr RedjetBarrierSetVAC::resolve_address(LIRAccess& access, bool resolve_in_register) {
   return BarrierSetC1::resolve_address(access, resolve_in_register);
@@ -85,10 +86,22 @@ void RedjetBarrierSetVAC::inject_parkpoint_poll(Compilation* comp, LIRGenerator*
   }
   // Parkpoint 0.5-cycle L1 D-Cache thread sync check at loop bottom
   if (comp->method() != nullptr && should_suppress_loop_safepoint(comp->method())) {
-    // Suppress heavy safepoints in favor of lean parkpoint poll
-    volatile uint32_t* gate = RedjetPointCoordinator::pausepoint_gate_address();
-    if (gate != nullptr && *gate != 0) {
-      redjet_rt_parkpoint_poll_slow(JavaThread::current(), nullptr);
+    address gate_ptr = (address)RedjetPointCoordinator::pausepoint_gate_address();
+    if (gate_ptr != nullptr) {
+      LIR_Address* gate_addr = new LIR_Address(LIR_OprFact::intConst((intptr_t)gate_ptr), 0, T_INT);
+      LIR_Opr gate_val = gen->new_register(T_INT);
+      gen->lir()->load(gate_addr, gate_val);
+      LabelObj* cont_label = new LabelObj();
+      gen->lir()->cmp(lir_cond_equal, gate_val, LIR_OprFact::intConst(0));
+      gen->lir()->branch(lir_cond_equal, cont_label->label());
+      LIR_OprList* args = new LIR_OprList();
+      args->append(gen->getThreadTemp());
+      args->append(LIR_OprFact::null_opr);
+      gen->lir()->call_runtime_leaf(CAST_FROM_FN_PTR(address, redjet_rt_parkpoint_poll_slow),
+                                    gen->getThreadTemp(),
+                                    LIR_OprFact::illegalOpr,
+                                    args);
+      gen->lir()->branch_destination(cont_label->label());
     }
   }
 #else
@@ -113,20 +126,16 @@ bool RedjetBarrierSetVAC::should_suppress_loop_safepoint(ciMethod* method) {
 
 void RedjetBarrierSetVAC::emit_dead_ref_signal(LIRGenerator* gen, LIR_Opr rpss_addr, LIR_Opr dead_oop) {
 #ifndef REDJET_STANDALONE_BUILD
-  if (!UseRedjetGC || gen == nullptr) {
+  if (!UseRedjetGC || gen == nullptr || !dead_oop.is_valid()) {
     return;
   }
-  if (dead_oop.is_valid()) {
-    uint32_t tid = 0;
-    JavaThread* jt = JavaThread::current_or_null();
-    if (jt != nullptr) {
-      tid = static_cast<uint32_t>(jt->osthread() != nullptr ? jt->osthread()->thread_id() : 0);
-    }
-    void* oop_ptr = reinterpret_cast<void*>(static_cast<uintptr_t>(dead_oop._val));
-    if (oop_ptr != nullptr) {
-      g_redjet_tail_traces.emit_dead_reference_signal(tid, oop_ptr, 0);
-    }
-  }
+  LIR_OprList* args = new LIR_OprList();
+  args->append(rpss_addr.is_valid() ? rpss_addr : LIR_OprFact::null_opr);
+  args->append(dead_oop);
+  gen->lir()->call_runtime_leaf(CAST_FROM_FN_PTR(address, redjet_rt_dead_ref_signal),
+                                gen->getThreadTemp(),
+                                LIR_OprFact::illegalOpr,
+                                args);
 #else
   (void)gen;
   (void)rpss_addr;
@@ -136,20 +145,10 @@ void RedjetBarrierSetVAC::emit_dead_ref_signal(LIRGenerator* gen, LIR_Opr rpss_a
 
 void RedjetBarrierSetVAC::emit_dead_ref_signal_clasp(LIRAccess& access, LIR_Opr prev_value) {
 #ifndef REDJET_STANDALONE_BUILD
-  if (!UseRedjetGC) {
+  if (!UseRedjetGC || !prev_value.is_valid() || access.gen() == nullptr) {
     return;
   }
-  if (prev_value.is_valid()) {
-    uint32_t tid = 0;
-    JavaThread* jt = JavaThread::current_or_null();
-    if (jt != nullptr) {
-      tid = static_cast<uint32_t>(jt->osthread() != nullptr ? jt->osthread()->thread_id() : 0);
-    }
-    void* oop_ptr = reinterpret_cast<void*>(static_cast<uintptr_t>(prev_value._val));
-    if (oop_ptr != nullptr) {
-      g_redjet_tail_traces.emit_dead_reference_signal(tid, oop_ptr, 0);
-    }
-  }
+  emit_dead_ref_signal(access.gen(), access.resolved_addr(), prev_value);
 #else
   (void)access;
   (void)prev_value;
@@ -161,10 +160,12 @@ void RedjetBarrierSetVAC::emit_offheap_evict_trap(LIRGenerator* gen, LIR_Opr han
   if (!UseRedjetGC || gen == nullptr || !handle_ptr.is_valid()) {
     return;
   }
-  void* raw_handle = reinterpret_cast<void*>(static_cast<uintptr_t>(handle_ptr._val));
-  if (raw_handle != nullptr) {
-    redjet_offheap_evict(raw_handle);
-  }
+  LIR_OprList* args = new LIR_OprList();
+  args->append(handle_ptr);
+  gen->lir()->call_runtime_leaf(CAST_FROM_FN_PTR(address, redjet_offheap_evict),
+                                gen->getThreadTemp(),
+                                LIR_OprFact::illegalOpr,
+                                args);
 #else
   (void)gen;
   (void)handle_ptr;
@@ -176,12 +177,13 @@ void RedjetBarrierSetVAC::emit_emptybox_guard(LIRGenerator* gen, LIR_Opr slot_ad
   if (!UseRedjetGC || gen == nullptr || !slot_addr.is_valid()) {
     return;
   }
-  if (slot_addr.is_address() && slot_addr._val != 0) {
-    volatile uint32_t* slot_hdr = reinterpret_cast<volatile uint32_t*>(static_cast<uintptr_t>(slot_addr._val));
-    if (slot_hdr != nullptr && *slot_hdr == RedjetEmptyBox::HS_EMPTYBOX_MAGIC) {
-      RedjetEmptyBoxManager::get_telemetry();
-    }
-  }
+  LIR_Address* hdr_addr = new LIR_Address(slot_addr, 0, T_INT);
+  LIR_Opr hdr_val = gen->new_register(T_INT);
+  gen->lir()->load(hdr_addr, hdr_val);
+  LabelObj* valid_label = new LabelObj();
+  gen->lir()->cmp(lir_cond_notEqual, hdr_val, LIR_OprFact::intConst(static_cast<int>(RedjetEmptyBox::HS_EMPTYBOX_MAGIC)));
+  gen->lir()->branch(lir_cond_notEqual, valid_label->label());
+  gen->lir()->branch_destination(valid_label->label());
 #else
   (void)gen;
   (void)slot_addr;

@@ -50,11 +50,30 @@ enum class RedjetSchedulerMode : uint8_t {
 };
 
 struct alignas(64) RedjetHardwareTask {
-  void (*func)(void*){ nullptr };
+  std::atomic<void (*)(void*)> func{ nullptr };
   void*    data{ nullptr };
   uint32_t affinity_core{ UINT32_MAX };
   uint32_t priority{ 0 };
   uint64_t enqueue_tsc{ 0 };
+
+  RedjetHardwareTask() = default;
+  RedjetHardwareTask(const RedjetHardwareTask& other) {
+    func.store(other.func.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    data = other.data;
+    affinity_core = other.affinity_core;
+    priority = other.priority;
+    enqueue_tsc = other.enqueue_tsc;
+  }
+  RedjetHardwareTask& operator=(const RedjetHardwareTask& other) {
+    if (this != &other) {
+      func.store(other.func.load(std::memory_order_relaxed), std::memory_order_relaxed);
+      data = other.data;
+      affinity_core = other.affinity_core;
+      priority = other.priority;
+      enqueue_tsc = other.enqueue_tsc;
+    }
+    return *this;
+  }
 };
 
 class alignas(64) RedjetPerCoreQueue {

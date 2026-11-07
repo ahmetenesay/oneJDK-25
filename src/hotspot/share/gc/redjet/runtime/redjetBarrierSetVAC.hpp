@@ -34,8 +34,7 @@
 class LIRAccess;
 class LIR_Opr {
 public:
-  int _val{ 0 };
-  bool is_valid() const { return _val != 0; }
+  bool is_valid() const { return true; }
   bool is_oop() const { return false; }
 };
 

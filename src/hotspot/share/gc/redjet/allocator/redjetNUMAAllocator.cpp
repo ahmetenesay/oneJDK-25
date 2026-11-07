@@ -425,16 +425,31 @@ RedjetNUMAAllocator::~RedjetNUMAAllocator() {
 void RedjetNUMAAllocator::detect_mega_server_topology() {
     unsigned int hw_threads = std::thread::hardware_concurrency();
 
-    if (hw_threads >= 96) {
-        _server_class = RedjetMegaServerClass::AMD_THREADRIPPER_PRO;
+#if defined(__aarch64__) || defined(_M_ARM64)
+    if (hw_threads >= 64) {
+        _server_class = RedjetMegaServerClass::AMPERE_ALTRA_MAX_MESH;
         _striping.active_channels = 8;
-    } else if (hw_threads >= 64) {
-        _server_class = RedjetMegaServerClass::INTEL_XEON_6980P_SNC3;
-        _striping.active_channels = 12;
     } else {
         _server_class = RedjetMegaServerClass::GENERIC_NUMA;
         _striping.active_channels = 4;
     }
+#else
+    if (hw_threads >= 160) {
+        // 96 cores / 192 threads: Threadripper 9995WX (12 CCDs)
+        _server_class = RedjetMegaServerClass::AMD_THREADRIPPER_PRO;
+        _striping.active_channels = 8;
+    } else if (hw_threads >= 120) {
+        // 128 Redwood Cove P-cores: Xeon 6980P (SNC-3/12-ch MRDIMM)
+        _server_class = RedjetMegaServerClass::INTEL_XEON_6980P_SNC3;
+        _striping.active_channels = 12;
+    } else if (hw_threads >= 64) {
+        _server_class = RedjetMegaServerClass::AMD_THREADRIPPER_PRO;
+        _striping.active_channels = 8;
+    } else {
+        _server_class = RedjetMegaServerClass::GENERIC_NUMA;
+        _striping.active_channels = 4;
+    }
+#endif
 }
 
 bool RedjetNUMAAllocator::init(size_t socket_count, size_t per_socket_capacity) {
