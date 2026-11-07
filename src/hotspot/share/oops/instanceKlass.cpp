@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -99,7 +99,7 @@
 #include "utilities/nativeStackPrinter.hpp"
 #include "utilities/stringUtils.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Compiler.hpp"
+#include "vac/c1_Compiler.hpp"
 #endif
 #if INCLUDE_JFR
 #include "jfr/jfrEvents.hpp"

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024, 2025, Red Hat, Inc. and/or its affiliates.
  * Copyright (c) 2024, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -33,7 +33,7 @@
 #include "utilities/globalDefinitions.hpp"
 
 #ifdef COMPILER2
-#include "opto/phase.hpp"
+#include "mirc/phase.hpp"
 #endif
 
 class CompileTask;

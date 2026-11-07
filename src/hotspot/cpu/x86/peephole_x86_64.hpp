@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -25,8 +25,8 @@
 #ifndef CPU_X86_PEEPHOLE_X86_64_HPP
 #define CPU_X86_PEEPHOLE_X86_64_HPP
 
-#include "opto/machnode.hpp"
-#include "opto/regalloc.hpp"
+#include "mirc/machnode.hpp"
+#include "mirc/regalloc.hpp"
 
 class Peephole {
 public:

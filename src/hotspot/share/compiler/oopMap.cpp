@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -42,10 +42,10 @@
 #include "utilities/align.hpp"
 #include "utilities/lockFreeStack.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Defs.hpp"
+#include "vac/c1_Defs.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/optoreg.hpp"
+#include "mirc/optoreg.hpp"
 #endif
 #if INCLUDE_JVMCI
 #include "jvmci/jvmci_globals.hpp"

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2024 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -36,7 +36,7 @@
 #include "runtime/stubRoutines.hpp"
 #include "utilities/ostream.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Runtime1.hpp"
 #endif
 
 // We use an illtrap for marking a method as not_entrant

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2024, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2020, 2023, Huawei Technologies Co., Ltd. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -32,7 +32,7 @@
 #include "memory/allocation.hpp"
 #include "oops/access.hpp"
 #ifdef COMPILER2
-#include "opto/optoreg.hpp"
+#include "mirc/optoreg.hpp"
 
 class BarrierStubC2;
 class Node;

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -28,7 +28,7 @@
 #include "ci/ciMethod.hpp"
 #include "classfile/vmIntrinsics.hpp"
 #include "compiler/methodMatcher.hpp"
-#include "opto/phasetype.hpp"
+#include "mirc/phasetype.hpp"
 #include "utilities/bitMap.hpp"
 #include "utilities/exceptions.hpp"
 #include "utilities/tribool.hpp"

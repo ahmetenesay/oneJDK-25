@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -27,11 +27,11 @@
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetAssembler.hpp"
 #include "oops/methodData.hpp"
-#include "opto/c2_MacroAssembler.hpp"
-#include "opto/intrinsicnode.hpp"
-#include "opto/output.hpp"
-#include "opto/opcodes.hpp"
-#include "opto/subnode.hpp"
+#include "mirc/c2_MacroAssembler.hpp"
+#include "mirc/intrinsicnode.hpp"
+#include "mirc/output.hpp"
+#include "mirc/opcodes.hpp"
+#include "mirc/subnode.hpp"
 #include "runtime/globals.hpp"
 #include "runtime/objectMonitor.hpp"
 #include "runtime/stubRoutines.hpp"

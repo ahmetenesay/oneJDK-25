@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -33,9 +33,9 @@
 #include "oops/klass.hpp"
 #include "oops/method.inline.hpp"
 #include "oops/symbol.hpp"
-#include "opto/phasetype.hpp"
-#include "opto/traceAutoVectorizationTag.hpp"
-#include "opto/traceMergeStoresTag.hpp"
+#include "mirc/phasetype.hpp"
+#include "mirc/traceAutoVectorizationTag.hpp"
+#include "mirc/traceMergeStoresTag.hpp"
 #include "runtime/globals_extension.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/jniHandles.hpp"

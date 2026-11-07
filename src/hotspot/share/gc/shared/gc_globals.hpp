@@ -47,7 +47,7 @@
 #include "gc/z/z_globals.hpp"
 #endif
 #if INCLUDE_REDJETGC
-#include "gc/redjet/rjnrml/redjet_globals.hpp"
+#include "gc/redjet/runtime/redjet_globals.hpp"
 #endif
 
 #define GC_FLAGS(develop,                                                   \

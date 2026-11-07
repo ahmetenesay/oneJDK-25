@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2000, 2023, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -28,7 +28,7 @@
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Runtime1.hpp"
 #endif
 
 // This table encapsulates the debugging information required by the

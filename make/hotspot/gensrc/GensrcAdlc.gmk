@@ -75,7 +75,7 @@ ifeq ($(call check-jvm-feature, compiler2), true)
       TARGET_TYPE := BUILD, \
       LINK_TYPE := C++, \
       SRC := $(TOPDIR)/src/hotspot/share/adlc, \
-      EXTRA_FILES := $(TOPDIR)/src/hotspot/share/opto/opcodes.cpp, \
+      EXTRA_FILES := $(TOPDIR)/src/hotspot/share/mirc/opcodes.cpp, \
       DEFAULT_CFLAGS := false, \
       CFLAGS := $(ADLC_CFLAGS) $(ADLC_CFLAGS_WARNINGS), \
       DEFAULT_LDFLAGS := false, \

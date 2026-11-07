@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2015, 2021, Red Hat, Inc. All rights reserved.
  * Copyright (C) 2022, Tencent. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -33,15 +33,15 @@
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "gc/shenandoah/shenandoahRuntime.hpp"
 #include "gc/shenandoah/shenandoahThreadLocalData.hpp"
-#include "opto/arraycopynode.hpp"
-#include "opto/block.hpp"
-#include "opto/callnode.hpp"
-#include "opto/castnode.hpp"
-#include "opto/movenode.hpp"
-#include "opto/phaseX.hpp"
-#include "opto/rootnode.hpp"
-#include "opto/runtime.hpp"
-#include "opto/subnode.hpp"
+#include "mirc/arraycopynode.hpp"
+#include "mirc/block.hpp"
+#include "mirc/callnode.hpp"
+#include "mirc/castnode.hpp"
+#include "mirc/movenode.hpp"
+#include "mirc/phaseX.hpp"
+#include "mirc/rootnode.hpp"
+#include "mirc/runtime.hpp"
+#include "mirc/subnode.hpp"
 
 bool ShenandoahBarrierC2Support::expand(Compile* C, PhaseIterGVN& igvn) {
   ShenandoahBarrierSetC2State* state = ShenandoahBarrierSetC2::bsc2()->state();

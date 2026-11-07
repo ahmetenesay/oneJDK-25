@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2008, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -43,7 +43,7 @@
 #include "utilities/align.hpp"
 #include "utilities/powerOfTwo.hpp"
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 
 // Declaration and definition of StubGenerator (no .hpp file).

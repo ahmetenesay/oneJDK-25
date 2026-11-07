@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1998, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -75,7 +75,7 @@ typedef unsigned __int64 uintptr_t;
 #define uint   unsigned int
 
 // VM components
-#include "opto/opcodes.hpp"
+#include "mirc/opcodes.hpp"
 
 // Macros
 // Debugging note:  Put a breakpoint on "abort".
@@ -86,7 +86,7 @@ typedef unsigned __int64 uintptr_t;
 
 // ADLC components
 #include "adlArena.hpp"
-#include "opto/adlcVMDeps.hpp"
+#include "mirc/adlcVMDeps.hpp"
 #include "filebuff.hpp"
 #include "dict2.hpp"
 #include "forms.hpp"

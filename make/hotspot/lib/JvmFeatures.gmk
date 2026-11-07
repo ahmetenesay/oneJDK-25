@@ -36,7 +36,7 @@ ifeq ($(INCLUDE), true)
 ifeq ($(call check-jvm-feature, compiler1), true)
   JVM_CFLAGS_FEATURES += -DCOMPILER1
 else
-  JVM_EXCLUDE_PATTERNS += c1_ c1/
+  JVM_EXCLUDE_PATTERNS += c1_ c1/ vac_ vac/
 endif
 
 ifeq ($(call check-jvm-feature, compiler2), true)
@@ -49,14 +49,14 @@ ifeq ($(call check-jvm-feature, compiler2), true)
     JVM_CFLAGS_FEATURES += -I$(JVM_VARIANT_OUTPUTDIR)/gensrc/adfiles -I$(JVM_VARIANT_OUTPUTDIR)/gensrc
   endif
 else
-  JVM_EXCLUDES += opto libadt
+  JVM_EXCLUDES += opto mirc libadt
   JVM_EXCLUDE_FILES += bcEscapeAnalyzer.cpp ciTypeFlow.cpp
-  JVM_EXCLUDE_PATTERNS += c2_ runtime_ /c2/
+  JVM_EXCLUDE_PATTERNS += c2_ mirc_ runtime_ /c2/ /mirc/
 endif
 
 ifeq ($(call check-jvm-feature, zero), true)
-  JVM_EXCLUDES += opto libadt
-  JVM_EXCLUDE_PATTERNS += c1_ c1/ c2_ runtime_ /c2/
+  JVM_EXCLUDES += opto mirc libadt
+  JVM_EXCLUDE_PATTERNS += c1_ c1/ vac_ vac/ c2_ mirc_ runtime_ /c2/ /mirc/
   JVM_EXCLUDE_FILES += templateInterpreter.cpp \
       templateInterpreterGenerator.cpp bcEscapeAnalyzer.cpp ciTypeFlow.cpp
   JVM_CFLAGS_FEATURES += -DZERO \

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2025, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -58,7 +58,7 @@
 #include "utilities/intpow.hpp"
 #include "utilities/powerOfTwo.hpp"
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 #if INCLUDE_ZGC
 #include "gc/z/zThreadLocalData.hpp"

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -28,7 +28,7 @@
 #include "jvm_constants.h"
 #include "jvm_io.h"
 #ifdef COMPILER2
-#include "opto/c2_globals.hpp"
+#include "mirc/c2_globals.hpp"
 #endif
 #include "runtime/vm_version.hpp"
 #include "utilities/checkedCast.hpp"

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -31,21 +31,21 @@
 #include "gc/g1/g1CardTable.hpp"
 #include "gc/g1/g1HeapRegion.hpp"
 #include "gc/g1/g1ThreadLocalData.hpp"
-#include "opto/arraycopynode.hpp"
-#include "opto/block.hpp"
-#include "opto/compile.hpp"
-#include "opto/escape.hpp"
-#include "opto/graphKit.hpp"
-#include "opto/idealKit.hpp"
-#include "opto/machnode.hpp"
-#include "opto/macro.hpp"
-#include "opto/memnode.hpp"
-#include "opto/node.hpp"
-#include "opto/output.hpp"
-#include "opto/regalloc.hpp"
-#include "opto/rootnode.hpp"
-#include "opto/runtime.hpp"
-#include "opto/type.hpp"
+#include "mirc/arraycopynode.hpp"
+#include "mirc/block.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/escape.hpp"
+#include "mirc/graphKit.hpp"
+#include "mirc/idealKit.hpp"
+#include "mirc/machnode.hpp"
+#include "mirc/macro.hpp"
+#include "mirc/memnode.hpp"
+#include "mirc/node.hpp"
+#include "mirc/output.hpp"
+#include "mirc/regalloc.hpp"
+#include "mirc/rootnode.hpp"
+#include "mirc/runtime.hpp"
+#include "mirc/type.hpp"
 #include "utilities/growableArray.hpp"
 #include "utilities/macros.hpp"
 

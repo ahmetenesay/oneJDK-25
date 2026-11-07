@@ -1,4 +1,4 @@
-﻿//
+//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // https://github.com/ahmetenesay/oneJDK-25
 //
@@ -62,10 +62,15 @@ def redjet_xchg_p        : SDNode<"HotSpotISD::REDJET_XCHG_P", SDTHotspotGCOut1>
 def redjet_xchg_n        : SDNode<"HotSpotISD::REDJET_XCHG_N", SDTHotspotGCOut1>;
 
 // Redjet SFVM 4-Point Coordination & SIMD Dispatch SDNodes
-def redjet_parkpoint_poll   : SDNode<"HotSpotISD::REDJET_SAFEPOINT_POLL", SDTHotspotGC>;
-def redjet_parkpoint_poll  : SDNode<"HotSpotISD::REDJET_PAUSEPOINT_POLL", SDTHotspotGC>;
-def redjet_dockpoint_pin    : SDNode<"HotSpotISD::REDJET_HOOKPOINT_PIN", SDTHotspotGCOut1>;
-def redjet_dockpoint_chk : SDNode<"HotSpotISD::REDJET_CONTROLPOINT_CHK", SDTHotspotGCOut1>;
+def redjet_safepoint_poll   : SDNode<"HotSpotISD::REDJET_SAFEPOINT_POLL", SDTHotspotGC>;
+def redjet_pausepoint_poll  : SDNode<"HotSpotISD::REDJET_PAUSEPOINT_POLL", SDTHotspotGC>;
+def redjet_hookpoint_pin    : SDNode<"HotSpotISD::REDJET_HOOKPOINT_PIN", SDTHotspotGCOut1>;
+def redjet_controlpoint_chk : SDNode<"HotSpotISD::REDJET_CONTROLPOINT_CHK", SDTHotspotGCOut1>;
 def redjet_simd_dispatch    : SDNode<"HotSpotISD::REDJET_SIMD_DISPATCH", SDTHotspotGCOut1>;
+
+// Redjet 2-Point Zero-STW Hardware Sync & Universal MachPollPoint
+def redjet_dockpoint        : SDNode<"HotSpotISD::REDJET_DOCKPOINT", SDTHotspotGC>;
+def redjet_parkpoint        : SDNode<"HotSpotISD::REDJET_PARKPOINT", SDTHotspotGC>;
+def mach_poll_point         : SDNode<"HotSpotISD::MACH_POLL_POINT", SDTHotspotGC>;
 
 #endif // HOTSPOT_SDNODES_TD

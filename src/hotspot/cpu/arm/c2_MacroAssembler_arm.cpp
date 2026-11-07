@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,7 +24,7 @@
 
 #include "asm/assembler.hpp"
 #include "asm/assembler.inline.hpp"
-#include "opto/c2_MacroAssembler.hpp"
+#include "mirc/c2_MacroAssembler.hpp"
 #include "runtime/basicLock.hpp"
 
 // TODO: 8 bytes at a time? pre-fetch?

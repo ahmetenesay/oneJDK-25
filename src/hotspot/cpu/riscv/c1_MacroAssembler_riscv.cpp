@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
  * Copyright (c) 2020, 2022, Huawei Technologies Co., Ltd. All rights reserved.
@@ -24,9 +24,9 @@
  *
  */
 
-#include "c1/c1_LIR.hpp"
-#include "c1/c1_MacroAssembler.hpp"
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_LIR.hpp"
+#include "vac/c1_MacroAssembler.hpp"
+#include "vac/c1_Runtime1.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "gc/shared/barrierSetAssembler.hpp"
 #include "gc/shared/collectedHeap.hpp"

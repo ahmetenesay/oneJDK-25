@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2021, Red Hat, Inc. All rights reserved.
  * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -26,7 +26,7 @@
 #ifndef SHARE_GC_SHENANDOAH_C1_SHENANDOAHBARRIERSETC1_HPP
 #define SHARE_GC_SHENANDOAH_C1_SHENANDOAHBARRIERSETC1_HPP
 
-#include "c1/c1_CodeStubs.hpp"
+#include "vac/c1_CodeStubs.hpp"
 #include "gc/shared/c1/barrierSetC1.hpp"
 
 class ShenandoahPreBarrierStub: public CodeStub {

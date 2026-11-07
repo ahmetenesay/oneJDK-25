@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1998, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -33,7 +33,7 @@
 #include "utilities/macros.hpp"
 #include "utilities/ostream.hpp"
 #ifdef COMPILER2
-#include "opto/adlcVMDeps.hpp"
+#include "mirc/adlcVMDeps.hpp"
 #endif
 
 //------------------------------VMReg------------------------------------------

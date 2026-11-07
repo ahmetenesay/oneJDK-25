@@ -1,4 +1,4 @@
-﻿//
+//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // https://github.com/ahmetenesay/oneJDK-25
 //
@@ -169,6 +169,34 @@ class RISCV_RedjetSimdDispatch : GCBarrier<"vfmacc.vv\t$dst, $src1, $src2\t# red
 }
 
 def RISCV_RedjetSimdDispatch_node : RISCV_RedjetSimdDispatch;
+
+// ============================================================================
+// Redjet 2-Point Zero-STW Hardware Sync & Universal MachPollPoint
+// ============================================================================
+
+// Redjet Dockpoint — Method entry 16-byte trampoline to Slot 16 target
+class RISCV_RedjetDockpoint : GCBarrier<"j\t$slot_target\t# redjet dockpoint slot16 trampoline", "Redjet GC Dockpoint Method Entry Trampoline (RISC-V)", 10, "branch"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_dockpoint simm21_lsb0_jal:$slot_target)];
+}
+
+def RISCV_RedjetDockpoint_node : RISCV_RedjetDockpoint;
+
+// Redjet Parkpoint — Loop bottom 0.5-cycle L1 D-Cache thread sync check
+class RISCV_RedjetParkpoint : GCBarrier<"andi\t$tmp, $park_word, 1\n\tbnez\t$tmp, $cold_park_and_swap\t# redjet parkpoint", "Redjet GC Parkpoint Loop Poll (RISC-V)", 20, "branch"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_parkpoint GPR:$tmp, GPR:$park_word, bare_simm13_lsb0:$cold_park_and_swap)];
+}
+
+def RISCV_RedjetParkpoint_node : RISCV_RedjetParkpoint;
+
+// Redjet MachPollPoint — Universal hardware poll point for Redjet, G1, Shenandoah, and ZGC
+class RISCV_MachPollPoint : GCBarrier<"lwu\tzero, 0($safepoint_poll_addr)\t# MachPollPoint", "HotSpot Universal MachPollPoint (RISC-V)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(mach_poll_point GPR:$safepoint_poll_addr, i32imm:$poll_type)];
+}
+
+def RISCV_MachPollPoint_node : RISCV_MachPollPoint;
 
 // ============================================================================
 // End of RISCV_Redjet.td

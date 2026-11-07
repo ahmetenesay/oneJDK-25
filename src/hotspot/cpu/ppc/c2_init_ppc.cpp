@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2000, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2024 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -23,8 +23,8 @@
  *
  */
 
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
 #include "runtime/globals.hpp"
 #include "runtime/globals_extension.hpp"
 #include "runtime/vm_version.hpp"

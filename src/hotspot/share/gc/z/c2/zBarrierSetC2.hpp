@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -26,7 +26,7 @@
 
 #include "gc/shared/c2/barrierSetC2.hpp"
 #include "memory/allocation.hpp"
-#include "opto/node.hpp"
+#include "mirc/node.hpp"
 #include "utilities/growableArray.hpp"
 
 const uint8_t ZBarrierStrong      =  1;

@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (c) 2011, 2025, Oracle and/or its affiliates. All rights reserved.
 // Copyright (c) 2012, 2025 SAP SE. All rights reserved.
 // DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -1045,7 +1045,7 @@ source_hpp %{
   // To keep related declarations/definitions/uses close together,
   // we switch between source %{ }% and source_hpp %{ }% freely as needed.
 
-#include "opto/convertnode.hpp"
+#include "mirc/convertnode.hpp"
 
   // Returns true if Node n is followed by a MemBar node that
   // will do an acquire. If so, this node must not do the acquire
@@ -1055,7 +1055,7 @@ source_hpp %{
 
 source %{
 
-#include "opto/c2_CodeStubs.hpp"
+#include "mirc/c2_CodeStubs.hpp"
 #include "oops/klass.inline.hpp"
 
 void PhaseOutput::pd_perform_mach_node_analysis() {

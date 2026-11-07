@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2023, Red Hat, Inc. All rights reserved.
  * Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -34,15 +34,15 @@
 #include "gc/shenandoah/shenandoahHeap.hpp"
 #include "gc/shenandoah/shenandoahRuntime.hpp"
 #include "gc/shenandoah/shenandoahThreadLocalData.hpp"
-#include "opto/arraycopynode.hpp"
-#include "opto/escape.hpp"
-#include "opto/graphKit.hpp"
-#include "opto/idealKit.hpp"
-#include "opto/macro.hpp"
-#include "opto/movenode.hpp"
-#include "opto/narrowptrnode.hpp"
-#include "opto/rootnode.hpp"
-#include "opto/runtime.hpp"
+#include "mirc/arraycopynode.hpp"
+#include "mirc/escape.hpp"
+#include "mirc/graphKit.hpp"
+#include "mirc/idealKit.hpp"
+#include "mirc/macro.hpp"
+#include "mirc/movenode.hpp"
+#include "mirc/narrowptrnode.hpp"
+#include "mirc/rootnode.hpp"
+#include "mirc/runtime.hpp"
 
 ShenandoahBarrierSetC2* ShenandoahBarrierSetC2::bsc2() {
   return reinterpret_cast<ShenandoahBarrierSetC2*>(BarrierSet::barrier_set()->barrier_set_c2());

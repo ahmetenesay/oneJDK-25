@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2024, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -28,7 +28,7 @@
 #include "asm/macroAssembler.inline.hpp"
 #include "code/vmreg.hpp"
 #include "interpreter/interpreter.hpp"
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/stubRoutines.hpp"

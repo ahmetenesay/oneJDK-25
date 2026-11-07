@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2011, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -22,7 +22,7 @@
  */
 
 #ifdef COMPILER1
-#include "c1/c1_Compiler.hpp"
+#include "vac/c1_Compiler.hpp"
 #endif
 #include "ci/ciUtilities.hpp"
 #include "compiler/compiler_globals.hpp"
@@ -46,7 +46,7 @@
 #include "oops/klass.inline.hpp"
 #include "prims/jvmtiExport.hpp"
 #ifdef COMPILER2
-#include "opto/c2compiler.hpp"
+#include "mirc/c2compiler.hpp"
 #endif
 #include "runtime/flags/jvmFlag.hpp"
 #include "runtime/sharedRuntime.hpp"

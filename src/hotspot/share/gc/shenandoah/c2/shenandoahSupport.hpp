@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2015, 2021, Red Hat, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -27,12 +27,12 @@
 
 #include "gc/shenandoah/shenandoahBarrierSet.hpp"
 #include "memory/allocation.hpp"
-#include "opto/addnode.hpp"
-#include "opto/graphKit.hpp"
-#include "opto/machnode.hpp"
-#include "opto/memnode.hpp"
-#include "opto/multnode.hpp"
-#include "opto/node.hpp"
+#include "mirc/addnode.hpp"
+#include "mirc/graphKit.hpp"
+#include "mirc/machnode.hpp"
+#include "mirc/memnode.hpp"
+#include "mirc/multnode.hpp"
+#include "mirc/node.hpp"
 
 class PhaseGVN;
 class MemoryGraphFixer;

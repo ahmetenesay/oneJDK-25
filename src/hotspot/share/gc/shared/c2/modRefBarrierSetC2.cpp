@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,9 +23,9 @@
  */
 
 #include "gc/shared/c2/modRefBarrierSetC2.hpp"
-#include "opto/arraycopynode.hpp"
-#include "opto/graphKit.hpp"
-#include "opto/idealKit.hpp"
+#include "mirc/arraycopynode.hpp"
+#include "mirc/graphKit.hpp"
+#include "mirc/idealKit.hpp"
 
 Node* ModRefBarrierSetC2::store_at_resolved(C2Access& access, C2AccessValue& val) const {
   DecoratorSet decorators = access.decorators();

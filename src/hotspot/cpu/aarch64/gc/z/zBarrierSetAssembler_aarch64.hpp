@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2019, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -28,7 +28,7 @@
 #include "oops/accessDecorators.hpp"
 #ifdef COMPILER2
 #include "gc/z/c2/zBarrierSetC2.hpp"
-#include "opto/optoreg.hpp"
+#include "mirc/optoreg.hpp"
 #endif // COMPILER2
 
 #ifdef COMPILER1

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -30,9 +30,9 @@
 #include "compiler/compilerOracle.hpp"
 #include "memory/allocation.inline.hpp"
 #include "memory/resourceArea.hpp"
-#include "opto/phasetype.hpp"
-#include "opto/traceAutoVectorizationTag.hpp"
-#include "opto/traceMergeStoresTag.hpp"
+#include "mirc/phasetype.hpp"
+#include "mirc/traceAutoVectorizationTag.hpp"
+#include "mirc/traceMergeStoresTag.hpp"
 #include "runtime/globals_extension.hpp"
 
 CompilerDirectives::CompilerDirectives() : _next(nullptr), _match(nullptr), _ref_count(0) {

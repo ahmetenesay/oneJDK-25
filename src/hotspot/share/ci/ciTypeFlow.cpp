@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2000, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -36,7 +36,7 @@
 #include "memory/allocation.inline.hpp"
 #include "memory/resourceArea.hpp"
 #include "oops/oop.inline.hpp"
-#include "opto/compile.hpp"
+#include "mirc/compile.hpp"
 #include "runtime/deoptimization.hpp"
 #include "utilities/growableArray.hpp"
 

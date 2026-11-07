@@ -25,10 +25,10 @@
 source_hpp %{
 
 #include "gc/shared/gc_globals.hpp"
-#include "gc/redjet/rjnrml/c2/redjetBarrierSetC2.hpp"
-#include "gc/redjet/rjnrml/c2/redjetSupport.hpp"
-#include "gc/redjet/rjnrml/redjetBarrierSetAssembler.hpp"
-#include "gc/redjet/rjnrml/redjetPointCoordinator.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetC2.hpp"
+#include "gc/redjet/runtime/redjetSupport.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
+#include "gc/redjet/engine/redjetPointCoordinator.hpp"
 
 void redjet_s390_emit_pausepoint_poll(MacroAssembler* masm, Register gate_addr, Register scratch);
 void redjet_s390_emit_safepoint_poll(MacroAssembler* masm, Register flag_addr, Register scratch);
@@ -38,8 +38,8 @@ void redjet_s390_emit_hookpoint_xchg(MacroAssembler* masm, Register dst_prev, Re
 
 source %{
 
-#include "gc/redjet/rjnrml/redjetBarrierSet.hpp"
-#include "gc/redjet/rjnrml/redjetBarrierSetAssembler.hpp"
+#include "gc/redjet/runtime/redjetBarrierSet.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
 
 void redjet_s390_emit_pausepoint_poll(MacroAssembler* masm, Register gate_addr, Register scratch) {
   masm->z_l(scratch, Address(gate_addr));

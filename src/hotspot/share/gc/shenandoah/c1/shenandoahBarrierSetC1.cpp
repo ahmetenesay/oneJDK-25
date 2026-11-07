@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2024, Red Hat, Inc. All rights reserved.
  * Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
  * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
@@ -24,7 +24,7 @@
  *
  */
 
-#include "c1/c1_IR.hpp"
+#include "vac/c1_IR.hpp"
 #include "gc/shared/satbMarkQueue.hpp"
 #include "gc/shenandoah/c1/shenandoahBarrierSetC1.hpp"
 #include "gc/shenandoah/mode/shenandoahMode.hpp"

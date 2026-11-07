@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2023, Red Hat, Inc. All rights reserved.
  * Copyright (c) 2012, 2023 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -24,8 +24,8 @@
  */
 
 #include "asm/macroAssembler.inline.hpp"
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
 #include "gc/shenandoah/c1/shenandoahBarrierSetC1.hpp"
 #include "gc/shenandoah/shenandoahBarrierSet.hpp"
 #include "gc/shenandoah/shenandoahBarrierSetAssembler.hpp"

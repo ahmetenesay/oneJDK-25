@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2024 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -53,10 +53,10 @@
 #include "utilities/events.hpp"
 #include "utilities/vmError.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Runtime1.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 
 // put OS-includes here

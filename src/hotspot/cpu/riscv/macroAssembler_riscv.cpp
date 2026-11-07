@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2020, Red Hat Inc. All rights reserved.
  * Copyright (c) 2020, 2024, Huawei Technologies Co., Ltd. All rights reserved.
@@ -51,9 +51,9 @@
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/powerOfTwo.hpp"
 #ifdef COMPILER2
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
-#include "opto/output.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
+#include "mirc/output.hpp"
 #endif
 
 #ifdef PRODUCT

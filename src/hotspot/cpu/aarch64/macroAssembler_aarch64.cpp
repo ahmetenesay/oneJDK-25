@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2024, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -57,13 +57,13 @@
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/powerOfTwo.hpp"
 #ifdef COMPILER1
-#include "c1/c1_LIRAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
 #endif
 #ifdef COMPILER2
 #include "oops/oop.hpp"
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
-#include "opto/output.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
+#include "mirc/output.hpp"
 #endif
 
 #include <sys/types.h>

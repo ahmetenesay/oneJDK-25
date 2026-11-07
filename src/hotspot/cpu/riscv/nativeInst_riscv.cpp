@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2020, Red Hat Inc. All rights reserved.
  * Copyright (c) 2020, 2023, Huawei Technologies Co., Ltd. All rights reserved.
@@ -36,7 +36,7 @@
 #include "utilities/align.hpp"
 #include "utilities/ostream.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Runtime1.hpp"
 #endif
 
 //-----------------------------------------------------------------------------

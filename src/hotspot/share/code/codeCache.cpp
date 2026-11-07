@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -68,13 +68,13 @@
 #include "utilities/vmError.hpp"
 #include "utilities/xmlstream.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Compilation.hpp"
-#include "c1/c1_Compiler.hpp"
+#include "vac/c1_Compilation.hpp"
+#include "vac/c1_Compiler.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/c2compiler.hpp"
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
+#include "mirc/c2compiler.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
 #endif
 
 // Helper class for printing in CodeCache

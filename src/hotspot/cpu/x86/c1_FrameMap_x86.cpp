@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -22,8 +22,8 @@
  *
  */
 
-#include "c1/c1_FrameMap.hpp"
-#include "c1/c1_LIR.hpp"
+#include "vac/c1_FrameMap.hpp"
+#include "vac/c1_LIR.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "vmreg_x86.inline.hpp"
 

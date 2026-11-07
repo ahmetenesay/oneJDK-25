@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -32,7 +32,7 @@
 #include "runtime/sharedRuntime.hpp"
 #include "vmreg_x86.inline.hpp"
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 
 // machine-dependent part of VtableStubs: create VtableStub of correct size and

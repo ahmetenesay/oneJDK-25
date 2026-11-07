@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,8 +24,8 @@
 
 #include "asm/assembler.hpp"
 #include "asm/assembler.inline.hpp"
-#include "opto/c2_MacroAssembler.hpp"
-#include "opto/intrinsicnode.hpp"
+#include "mirc/c2_MacroAssembler.hpp"
+#include "mirc/intrinsicnode.hpp"
 #include "runtime/vm_version.hpp"
 
 #ifdef PRODUCT

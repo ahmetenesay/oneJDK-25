@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2000, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -22,9 +22,9 @@
  *
  */
 
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
-#include "opto/optoreg.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
+#include "mirc/optoreg.hpp"
 #include "runtime/vm_version.hpp"
 
 // processor dependent initialization for i486

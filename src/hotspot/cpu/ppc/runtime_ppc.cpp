@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2025 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -31,7 +31,7 @@
 #include "interpreter/interp_masm.hpp"
 #include "memory/resourceArea.hpp"
 #include "nativeInst_ppc.hpp"
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/stubRoutines.hpp"

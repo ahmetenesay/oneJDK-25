@@ -1,4 +1,4 @@
-
+﻿
 /*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2021, Azul Systems, Inc. All rights reserved.
@@ -111,7 +111,7 @@
 #include "jvmci/jvmciEnv.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/idealGraphPrinter.hpp"
+#include "mirc/idealGraphPrinter.hpp"
 #endif
 #if INCLUDE_JFR
 #include "jfr/jfr.hpp"

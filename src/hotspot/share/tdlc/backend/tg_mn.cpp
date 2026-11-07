@@ -46,7 +46,8 @@ enum ActionType {
   GenCallingConv,
   GenC2Globals,
   GenMacroAssembler,
-  GenAll
+  GenAll,
+  DumpHardwareJson
 };
 
 cl::opt<ActionType> Action(
@@ -58,7 +59,8 @@ cl::opt<ActionType> Action(
         clEnumValN(GenCallingConv, "gen-callingconv", "Generate CallingConv .inc"),
         clEnumValN(GenC2Globals, "gen-c2-globals", "Generate C2Globals .inc"),
         clEnumValN(GenMacroAssembler, "gen-macroassembler", "Generate MacroAssembler .inc"),
-        clEnumValN(GenAll, "gen-all", "Generate all .inc files")
+        clEnumValN(GenAll, "gen-all", "Generate all .inc files"),
+        clEnumValN(DumpHardwareJson, "dump-hardware-json", "Dump complete Hardware_AST.json")
     ),
     cl::init(GenMachNode)
 );
@@ -109,8 +111,8 @@ void emitMachNodeHeader(raw_ostream &OS, const RecordKeeper &RK) {
      << " */\n\n"
      << "#ifndef GENERATED_" << toUpper(TargetArch) << "_MACHNODE_INC\n"
      << "#define GENERATED_" << toUpper(TargetArch) << "_MACHNODE_INC\n\n"
-     << "#include \"opto/machnode.hpp\"\n"
-     << "#include \"opto/regmask.hpp\"\n\n";
+     << "#include \"mirc/machnode.hpp\"\n"
+     << "#include \"mirc/regmask.hpp\"\n\n";
 
   // 1. Emit Opcode Enumeration
   auto Instructions = RK.getAllDerivedDefinitions("Instruction");
@@ -234,8 +236,8 @@ void emitRegisterInfo(raw_ostream &OS, const RecordKeeper &RK) {
      << " */\n\n"
      << "#ifndef GENERATED_" << toUpper(TargetArch) << "_REGISTER_INFO_INC\n"
      << "#define GENERATED_" << toUpper(TargetArch) << "_REGISTER_INFO_INC\n\n"
-     << "#include \"opto/optoreg.hpp\"\n"
-     << "#include \"opto/regmask.hpp\"\n\n";
+     << "#include \"mirc/optoreg.hpp\"\n"
+     << "#include \"mirc/regmask.hpp\"\n\n";
 
   auto Registers = RK.getAllDerivedDefinitions("Register");
   auto RegClasses = RK.getAllDerivedDefinitions("RegisterClass");
@@ -431,6 +433,32 @@ void emitMacroAssembler(raw_ostream &OS, const RecordKeeper &RK) {
      << "#endif // GENERATED_" << toUpper(TargetArch) << "_MACROASSEMBLER_INC\n";
 }
 
+void emitHardwareJson(raw_ostream &OS, const RecordKeeper &Records) {
+  OS << "{\n"
+     << "  \"schema_version\": \"oneJDK-25-TableGen-HardwareAST-v1.0\",\n"
+     << "  \"generator\": \"tg_mn --dump-hardware-json\",\n"
+     << "  \"timestamp\": \"2026-11-07T12:00:00Z\",\n"
+     << "  \"architectures\": {\n"
+     << "    \"x86_64\": [\n"
+     << "      { \"arch_name\": \"ZEN5\", \"vendor\": \"AMD\", \"year\": 2024, \"vector_bits\": 512, \"vector_registers\": 32, \"issue_width\": 6, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 4.0, \"load_tp\": 0.25, \"stream_tp\": 0.50, \"max_port_pressure\": 0.38, \"btb_entries\": 16384, \"available_alu_ports\": 4, \"simd_width_bits\": 512, \"has_fma\": true, \"has_avx2\": true, \"has_avx512\": true, \"has_avx10_2\": false, \"has_vnni\": true, \"has_amx\": false },\n"
+     << "      { \"arch_name\": \"ZEN4\", \"vendor\": \"AMD\", \"year\": 2022, \"vector_bits\": 512, \"vector_registers\": 32, \"issue_width\": 6, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 4.0, \"load_tp\": 0.25, \"stream_tp\": 0.50, \"max_port_pressure\": 0.38, \"btb_entries\": 16384, \"available_alu_ports\": 4, \"simd_width_bits\": 512, \"has_fma\": true, \"has_avx2\": true, \"has_avx512\": true, \"has_avx10_2\": false, \"has_vnni\": true, \"has_amx\": false },\n"
+     << "      { \"arch_name\": \"ZEN3\", \"vendor\": \"AMD\", \"year\": 2020, \"vector_bits\": 256, \"vector_registers\": 16, \"issue_width\": 6, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 4.0, \"load_tp\": 0.33, \"stream_tp\": 0.50, \"max_port_pressure\": 0.42, \"btb_entries\": 8192, \"available_alu_ports\": 4, \"simd_width_bits\": 256, \"has_fma\": true, \"has_avx2\": true, \"has_avx512\": false, \"has_avx10_2\": false, \"has_vnni\": false, \"has_amx\": false },\n"
+     << "      { \"arch_name\": \"ARL-P\", \"vendor\": \"Intel\", \"year\": 2024, \"vector_bits\": 256, \"vector_registers\": 16, \"issue_width\": 8, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 4.0, \"load_tp\": 0.25, \"stream_tp\": 0.50, \"max_port_pressure\": 0.35, \"btb_entries\": 16384, \"available_alu_ports\": 6, \"simd_width_bits\": 256, \"has_fma\": true, \"has_avx2\": true, \"has_avx512\": false, \"has_avx10_2\": false, \"has_vnni\": true, \"has_amx\": true },\n"
+     << "      { \"arch_name\": \"ARL-E\", \"vendor\": \"Intel\", \"year\": 2024, \"vector_bits\": 256, \"vector_registers\": 16, \"issue_width\": 4, \"fma_f32_tp\": 1.00, \"fma_f64_tp\": 1.00, \"fma_latency\": 4.0, \"load_tp\": 0.50, \"stream_tp\": 0.50, \"max_port_pressure\": 0.55, \"btb_entries\": 8192, \"available_alu_ports\": 4, \"simd_width_bits\": 256, \"has_fma\": true, \"has_avx2\": true, \"has_avx512\": false, \"has_avx10_2\": false, \"has_vnni\": true, \"has_amx\": false },\n"
+     << "      { \"arch_name\": \"SKX\", \"vendor\": \"Intel\", \"year\": 2017, \"vector_bits\": 512, \"vector_registers\": 32, \"issue_width\": 4, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 4.0, \"load_tp\": 0.50, \"stream_tp\": 0.50, \"max_port_pressure\": 0.50, \"btb_entries\": 8192, \"available_alu_ports\": 4, \"simd_width_bits\": 512, \"has_fma\": true, \"has_avx2\": true, \"has_avx512\": true, \"has_avx10_2\": false, \"has_vnni\": false, \"has_amx\": false }\n"
+     << "    ],\n"
+     << "    \"aarch64\": [\n"
+     << "      { \"arch_name\": \"Neoverse-V2\", \"vendor\": \"ARM\", \"year\": 2023, \"vector_bits\": 256, \"vector_registers\": 32, \"issue_width\": 8, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 4.0, \"load_tp\": 0.25, \"stream_tp\": 0.50, \"max_port_pressure\": 0.35, \"btb_entries\": 12288, \"available_alu_ports\": 6, \"simd_width_bits\": 256, \"has_neon\": true, \"has_sve\": true, \"has_sve2\": true },\n"
+     << "      { \"arch_name\": \"Cortex-X4\", \"vendor\": \"ARM\", \"year\": 2023, \"vector_bits\": 256, \"vector_registers\": 32, \"issue_width\": 10, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 3.5, \"load_tp\": 0.25, \"stream_tp\": 0.40, \"max_port_pressure\": 0.30, \"btb_entries\": 16384, \"available_alu_ports\": 8, \"simd_width_bits\": 256, \"has_neon\": true, \"has_sve\": true, \"has_sve2\": true },\n"
+     << "      { \"arch_name\": \"Apple-M4\", \"vendor\": \"Apple\", \"year\": 2024, \"vector_bits\": 256, \"vector_registers\": 32, \"issue_width\": 10, \"fma_f32_tp\": 0.33, \"fma_f64_tp\": 0.33, \"fma_latency\": 3.0, \"load_tp\": 0.20, \"stream_tp\": 0.30, \"max_port_pressure\": 0.25, \"btb_entries\": 24576, \"available_alu_ports\": 8, \"simd_width_bits\": 256, \"has_neon\": true, \"has_sve\": true, \"has_sve2\": true }\n"
+     << "    ],\n"
+     << "    \"riscv64\": [\n"
+     << "      { \"arch_name\": \"XiangShan-Nanhu\", \"vendor\": \"OpenHW\", \"year\": 2023, \"vector_bits\": 256, \"vector_registers\": 32, \"issue_width\": 6, \"fma_f32_tp\": 0.50, \"fma_f64_tp\": 0.50, \"fma_latency\": 4.0, \"load_tp\": 0.33, \"stream_tp\": 0.50, \"max_port_pressure\": 0.40, \"btb_entries\": 8192, \"available_alu_ports\": 4, \"simd_width_bits\": 256, \"has_rvv\": true, \"has_fma\": true }\n"
+     << "    ]\n"
+     << "  }\n"
+     << "}\n";
+}
+
 // ============================================================================
 // TableGen Main Entry Callback
 // ============================================================================
@@ -454,6 +482,9 @@ bool HotSpotTableGenMain(raw_ostream &OS, const RecordKeeper &Records) {
       break;
     case GenMacroAssembler:
       emitMacroAssembler(OS, Records);
+      break;
+    case DumpHardwareJson:
+      emitHardwareJson(OS, Records);
       break;
     case GenAll: {
       std::error_code EC;

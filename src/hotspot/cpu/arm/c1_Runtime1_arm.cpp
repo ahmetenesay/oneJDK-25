@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2008, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,10 +23,10 @@
  */
 
 #include "asm/macroAssembler.inline.hpp"
-#include "c1/c1_Defs.hpp"
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Defs.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
+#include "vac/c1_Runtime1.hpp"
 #include "ci/ciUtilities.hpp"
 #include "compiler/oopMap.hpp"
 #include "gc/shared/cardTable.hpp"

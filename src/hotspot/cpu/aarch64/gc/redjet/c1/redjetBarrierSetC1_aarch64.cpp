@@ -22,12 +22,12 @@
  * if you need additional information or have any questions.
  */
 
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
 #include "gc/shared/gc_globals.hpp"
-#include "gc/redjet/rjnrml/c1/redjetBarrierSetC1.hpp"
-#include "gc/redjet/rjnrml/redjetBarrierSet.hpp"
-#include "gc/redjet/rjnrml/redjetBarrierSetAssembler.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetC1.hpp"
+#include "gc/redjet/runtime/redjetBarrierSet.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
 
 #ifdef COMPILER1
 // Architecture-specific C1 LIR code generation for AArch64

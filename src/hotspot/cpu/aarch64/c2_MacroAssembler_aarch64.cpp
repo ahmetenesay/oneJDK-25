@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,12 +24,12 @@
 
 #include "asm/assembler.hpp"
 #include "asm/assembler.inline.hpp"
-#include "opto/c2_MacroAssembler.hpp"
-#include "opto/compile.hpp"
-#include "opto/intrinsicnode.hpp"
-#include "opto/matcher.hpp"
-#include "opto/output.hpp"
-#include "opto/subnode.hpp"
+#include "mirc/c2_MacroAssembler.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/intrinsicnode.hpp"
+#include "mirc/matcher.hpp"
+#include "mirc/output.hpp"
+#include "mirc/subnode.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/powerOfTwo.hpp"

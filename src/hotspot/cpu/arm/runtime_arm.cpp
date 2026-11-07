@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2008, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -29,7 +29,7 @@
 #include "interpreter/interpreter.hpp"
 #include "memory/resourceArea.hpp"
 #include "nativeInst_arm.hpp"
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/stubRoutines.hpp"

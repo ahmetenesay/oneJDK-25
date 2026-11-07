@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -36,10 +36,10 @@
 #include "runtime/javaThread.inline.hpp"
 #include "runtime/vframe.inline.hpp"
 #ifdef COMPILER1
-#include "c1/c1_GraphBuilder.hpp"
+#include "vac/c1_GraphBuilder.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/parse.hpp"
+#include "mirc/parse.hpp"
 #endif
 
  // for strstr

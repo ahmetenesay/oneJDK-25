@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2000, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2019, Red Hat Inc. All rights reserved.
  * Copyright (c) 2020, 2022, Huawei Technologies Co., Ltd. All rights reserved.
@@ -24,8 +24,8 @@
  *
  */
 
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
 
 // processor dependent initialization for riscv
 

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2021, Red Hat, Inc. All rights reserved.
  * Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -23,8 +23,8 @@
  *
  */
 
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
 #include "gc/shared/gc_globals.hpp"
 #include "gc/shenandoah/c1/shenandoahBarrierSetC1.hpp"
 #include "gc/shenandoah/shenandoahBarrierSet.hpp"

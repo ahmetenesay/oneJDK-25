@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022, 2024, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -31,8 +31,8 @@
 #include "oops/access.hpp"
 #ifdef COMPILER2
 #include "code/vmreg.hpp"
-#include "opto/optoreg.hpp"
-#include "opto/regmask.hpp"
+#include "mirc/optoreg.hpp"
+#include "mirc/regmask.hpp"
 
 class BarrierStubC2;
 class Node;

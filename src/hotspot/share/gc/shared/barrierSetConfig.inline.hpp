@@ -44,7 +44,7 @@
 #include "gc/z/zBarrierSet.inline.hpp"
 #endif
 #if INCLUDE_REDJETGC
-#include "gc/redjet/rjnrml/redjetBarrierSet.hpp"
+#include "gc/redjet/runtime/redjetBarrierSet.hpp"
 #endif
 
 #endif // SHARE_GC_SHARED_BARRIERSETCONFIG_INLINE_HPP

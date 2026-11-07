@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,11 +24,11 @@
 
 #include "asm/macroAssembler.hpp"
 #include "c2_intelJccErratum_x86.hpp"
-#include "opto/compile.hpp"
-#include "opto/machnode.hpp"
-#include "opto/node.hpp"
-#include "opto/output.hpp"
-#include "opto/regalloc.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/machnode.hpp"
+#include "mirc/node.hpp"
+#include "mirc/output.hpp"
+#include "mirc/regalloc.hpp"
 #include "utilities/align.hpp"
 #include "utilities/debug.hpp"
 

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -22,8 +22,8 @@
  *
  */
 
-#include "c1/c1_Defs.hpp"
-#include "c1/c1_LIRGenerator.hpp"
+#include "vac/c1_Defs.hpp"
+#include "vac/c1_LIRGenerator.hpp"
 #include "classfile/javaClasses.hpp"
 #include "gc/shared/c1/barrierSetC1.hpp"
 #include "utilities/macros.hpp"

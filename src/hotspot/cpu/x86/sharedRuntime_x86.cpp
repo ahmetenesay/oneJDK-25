@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -28,7 +28,7 @@
 #include "utilities/globalDefinitions.hpp"
 #include "vmreg_x86.inline.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Runtime1.hpp"
 #endif //COMPILER1
 
 #define __ masm->

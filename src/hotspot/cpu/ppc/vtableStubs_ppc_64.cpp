@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2025 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -34,7 +34,7 @@
 #include "runtime/sharedRuntime.hpp"
 #include "vmreg_ppc.inline.hpp"
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 
 #define __ masm->

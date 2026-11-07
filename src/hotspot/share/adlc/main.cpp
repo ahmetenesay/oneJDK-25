@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -222,14 +222,14 @@ int main(int argc, char *argv[])
   AD.addInclude(AD._CPP_file, "oops/markWord.hpp");
   AD.addInclude(AD._CPP_file, "oops/method.hpp");
   AD.addInclude(AD._CPP_file, "oops/oop.inline.hpp");
-  AD.addInclude(AD._CPP_file, "opto/c2_MacroAssembler.hpp");
-  AD.addInclude(AD._CPP_file, "opto/cfgnode.hpp");
-  AD.addInclude(AD._CPP_file, "opto/intrinsicnode.hpp");
-  AD.addInclude(AD._CPP_file, "opto/locknode.hpp");
-  AD.addInclude(AD._CPP_file, "opto/opcodes.hpp");
-  AD.addInclude(AD._CPP_file, "opto/regalloc.hpp");
-  AD.addInclude(AD._CPP_file, "opto/regmask.hpp");
-  AD.addInclude(AD._CPP_file, "opto/runtime.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/c2_MacroAssembler.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/cfgnode.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/intrinsicnode.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/locknode.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/opcodes.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/regalloc.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/regmask.hpp");
+  AD.addInclude(AD._CPP_file, "mirc/runtime.hpp");
   AD.addInclude(AD._CPP_file, "runtime/safepointMechanism.hpp");
   AD.addInclude(AD._CPP_file, "runtime/sharedRuntime.hpp");
   AD.addInclude(AD._CPP_file, "runtime/stubRoutines.hpp");
@@ -238,33 +238,33 @@ int main(int argc, char *argv[])
   AD.addInclude(AD._HPP_file, "memory/allocation.hpp");
   AD.addInclude(AD._HPP_file, "oops/compressedOops.hpp");
   AD.addInclude(AD._HPP_file, "code/nativeInst.hpp");
-  AD.addInclude(AD._HPP_file, "opto/output.hpp");
-  AD.addInclude(AD._HPP_file, "opto/machnode.hpp");
-  AD.addInclude(AD._HPP_file, "opto/node.hpp");
-  AD.addInclude(AD._HPP_file, "opto/regalloc.hpp");
-  AD.addInclude(AD._HPP_file, "opto/subnode.hpp");
-  AD.addInclude(AD._HPP_file, "opto/vectornode.hpp");
+  AD.addInclude(AD._HPP_file, "mirc/output.hpp");
+  AD.addInclude(AD._HPP_file, "mirc/machnode.hpp");
+  AD.addInclude(AD._HPP_file, "mirc/node.hpp");
+  AD.addInclude(AD._HPP_file, "mirc/regalloc.hpp");
+  AD.addInclude(AD._HPP_file, "mirc/subnode.hpp");
+  AD.addInclude(AD._HPP_file, "mirc/vectornode.hpp");
   AD.addInclude(AD._CPP_CLONE_file, "adfiles", get_basename(AD._HPP_file._name));
   AD.addInclude(AD._CPP_EXPAND_file, "adfiles", get_basename(AD._HPP_file._name));
   AD.addInclude(AD._CPP_EXPAND_file, "oops/compressedOops.hpp");
   AD.addInclude(AD._CPP_FORMAT_file, "adfiles", get_basename(AD._HPP_file._name));
   AD.addInclude(AD._CPP_FORMAT_file, "compiler/oopMap.hpp");
   AD.addInclude(AD._CPP_GEN_file, "adfiles", get_basename(AD._HPP_file._name));
-  AD.addInclude(AD._CPP_GEN_file, "opto/cfgnode.hpp");
-  AD.addInclude(AD._CPP_GEN_file, "opto/locknode.hpp");
-  AD.addInclude(AD._CPP_GEN_file, "opto/rootnode.hpp");
+  AD.addInclude(AD._CPP_GEN_file, "mirc/cfgnode.hpp");
+  AD.addInclude(AD._CPP_GEN_file, "mirc/locknode.hpp");
+  AD.addInclude(AD._CPP_GEN_file, "mirc/rootnode.hpp");
   AD.addInclude(AD._CPP_MISC_file, "adfiles", get_basename(AD._HPP_file._name));
   AD.addInclude(AD._CPP_PEEPHOLE_file, "adfiles", get_basename(AD._HPP_file._name));
   AD.addInclude(AD._CPP_PIPELINE_file, "adfiles", get_basename(AD._HPP_file._name));
   AD.addInclude(AD._DFA_file, "adfiles", get_basename(AD._HPP_file._name));
   AD.addInclude(AD._DFA_file, "oops/compressedOops.hpp");
-  AD.addInclude(AD._DFA_file, "opto/cfgnode.hpp");  // Use PROB_MAX in predicate.
-  AD.addInclude(AD._DFA_file, "opto/intrinsicnode.hpp");
-  AD.addInclude(AD._DFA_file, "opto/matcher.hpp");
-  AD.addInclude(AD._DFA_file, "opto/narrowptrnode.hpp");
-  AD.addInclude(AD._DFA_file, "opto/opcodes.hpp");
-  AD.addInclude(AD._DFA_file, "opto/convertnode.hpp");
-  AD.addInclude(AD._DFA_file, "opto/superword.hpp");
+  AD.addInclude(AD._DFA_file, "mirc/cfgnode.hpp");  // Use PROB_MAX in predicate.
+  AD.addInclude(AD._DFA_file, "mirc/intrinsicnode.hpp");
+  AD.addInclude(AD._DFA_file, "mirc/matcher.hpp");
+  AD.addInclude(AD._DFA_file, "mirc/narrowptrnode.hpp");
+  AD.addInclude(AD._DFA_file, "mirc/opcodes.hpp");
+  AD.addInclude(AD._DFA_file, "mirc/convertnode.hpp");
+  AD.addInclude(AD._DFA_file, "mirc/superword.hpp");
   AD.addInclude(AD._DFA_file, "utilities/powerOfTwo.hpp");
 
   // Make sure each .cpp file starts with include lines:

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,9 +24,9 @@
 #ifndef SHARE_GC_Z_C1_ZBARRIERSETC1_HPP
 #define SHARE_GC_Z_C1_ZBARRIERSETC1_HPP
 
-#include "c1/c1_CodeStubs.hpp"
-#include "c1/c1_IR.hpp"
-#include "c1/c1_LIR.hpp"
+#include "vac/c1_CodeStubs.hpp"
+#include "vac/c1_IR.hpp"
+#include "vac/c1_LIR.hpp"
 #include "gc/shared/c1/barrierSetC1.hpp"
 #include "oops/accessDecorators.hpp"
 

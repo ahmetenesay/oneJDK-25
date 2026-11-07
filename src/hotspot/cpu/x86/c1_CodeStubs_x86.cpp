@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -22,11 +22,11 @@
  *
  */
 
-#include "c1/c1_CodeStubs.hpp"
-#include "c1/c1_FrameMap.hpp"
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_CodeStubs.hpp"
+#include "vac/c1_FrameMap.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
+#include "vac/c1_Runtime1.hpp"
 #include "classfile/javaClasses.hpp"
 #include "nativeInst_x86.hpp"
 #include "runtime/sharedRuntime.hpp"

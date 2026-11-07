@@ -1,4 +1,4 @@
-﻿//
+//
 // Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
 // https://github.com/ahmetenesay/oneJDK-25
 //
@@ -169,6 +169,34 @@ class AArch64_RedjetSimdDispatch : GCBarrier<"fmla\t$dst.d, p0/m, $src1.d, $src2
 }
 
 def AArch64_RedjetSimdDispatch_node : AArch64_RedjetSimdDispatch;
+
+// ============================================================================
+// Redjet 2-Point Zero-STW Hardware Sync & Universal MachPollPoint
+// ============================================================================
+
+// Redjet Dockpoint — Method entry 16-byte trampoline to Slot 16 target
+class AArch64_RedjetDockpoint : GCBarrier<"b\t$slot_target\t# redjet dockpoint slot16 trampoline", "Redjet GC Dockpoint Method Entry Trampoline (AArch64)", 10, "branch"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_dockpoint bb:$slot_target)];
+}
+
+def AArch64_RedjetDockpoint_node : AArch64_RedjetDockpoint;
+
+// Redjet Parkpoint — Loop bottom 0.5-cycle L1 D-Cache thread sync check
+class AArch64_RedjetParkpoint : GCBarrier<"tbnz\t$thread_reg, #$park_bit, $cold_park_and_swap\t# redjet parkpoint", "Redjet GC Parkpoint Loop Poll (AArch64)", 20, "branch"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_parkpoint GPR64:$thread_reg, i32imm:$park_bit, bb:$cold_park_and_swap)];
+}
+
+def AArch64_RedjetParkpoint_node : AArch64_RedjetParkpoint;
+
+// Redjet MachPollPoint — Universal hardware poll point for Redjet, G1, Shenandoah, and ZGC
+class AArch64_MachPollPoint : GCBarrier<"ldr\twzr, [$safepoint_poll_addr]\t# MachPollPoint", "HotSpot Universal MachPollPoint (AArch64)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(mach_poll_point GPR64sp:$safepoint_poll_addr, i32imm:$poll_type)];
+}
+
+def AArch64_MachPollPoint_node : AArch64_MachPollPoint;
 
 // ============================================================================
 // End of AArch64_Redjet.td

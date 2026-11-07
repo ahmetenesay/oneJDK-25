@@ -28,10 +28,10 @@
 #include "compiler/compiler_globals_pd.hpp"
 #include "runtime/globals_shared.hpp"
 #ifdef COMPILER1
-#include "c1/c1_globals.hpp"
+#include "vac/c1_globals.hpp"
 #endif // COMPILER1
 #ifdef COMPILER2
-#include "opto/c2_globals.hpp"
+#include "mirc/c2_globals.hpp"
 #endif // COMPILER2
 #if INCLUDE_JVMCI
 #include "jvmci/jvmci_globals.hpp"
@@ -392,6 +392,12 @@
   product(bool, CaptureBailoutInformation, trueInDebug, DIAGNOSTIC,         \
           "If compilation is stopped with an error, capture diagnostic "    \
           "information at the bailout point")                               \
+                                                                            \
+  product(bool, PreflightAOW, true,                                         \
+          "Enable Preflight Ahead-Of-Warmup method simulation & layout")    \
+                                                                            \
+  product(bool, CIEnablePfAOWDiscreteTBT, true,                             \
+          "Enable discrete time-series TBT branch tables during Preflight") \
                                                                             \
 // end of COMPILER_FLAGS
 

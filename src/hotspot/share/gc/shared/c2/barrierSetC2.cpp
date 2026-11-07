@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -26,16 +26,16 @@
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/c2/barrierSetC2.hpp"
 #include "gc/shared/tlab_globals.hpp"
-#include "opto/arraycopynode.hpp"
-#include "opto/block.hpp"
-#include "opto/convertnode.hpp"
-#include "opto/graphKit.hpp"
-#include "opto/idealKit.hpp"
-#include "opto/macro.hpp"
-#include "opto/narrowptrnode.hpp"
-#include "opto/output.hpp"
-#include "opto/regalloc.hpp"
-#include "opto/runtime.hpp"
+#include "mirc/arraycopynode.hpp"
+#include "mirc/block.hpp"
+#include "mirc/convertnode.hpp"
+#include "mirc/graphKit.hpp"
+#include "mirc/idealKit.hpp"
+#include "mirc/macro.hpp"
+#include "mirc/narrowptrnode.hpp"
+#include "mirc/output.hpp"
+#include "mirc/regalloc.hpp"
+#include "mirc/runtime.hpp"
 #include "utilities/macros.hpp"
 #include CPU_HEADER(gc/shared/barrierSetAssembler)
 

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2016, 2024 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -48,11 +48,11 @@
 #include "utilities/macros.hpp"
 #include "vmreg_s390.inline.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Runtime1.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/ad.hpp"
-#include "opto/runtime.hpp"
+#include "mirc/ad.hpp"
+#include "mirc/runtime.hpp"
 #endif
 
 #ifdef PRODUCT

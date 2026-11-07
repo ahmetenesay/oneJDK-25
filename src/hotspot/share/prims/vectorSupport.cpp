@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -38,8 +38,8 @@
 #include "runtime/jniHandles.inline.hpp"
 #include "runtime/stackValue.hpp"
 #ifdef COMPILER2
-#include "opto/matcher.hpp"
-#include "opto/vectornode.hpp"
+#include "mirc/matcher.hpp"
+#include "mirc/vectornode.hpp"
 #endif // COMPILER2
 
 bool VectorSupport::is_vector(Klass* klass) {

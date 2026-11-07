@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2023, 2024, Red Hat, Inc. and/or its affiliates.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -26,15 +26,15 @@
 #if defined(COMPILER1) || defined(COMPILER2)
 
 #ifdef COMPILER1
-#include "c1/c1_Compilation.hpp"
+#include "vac/c1_Compilation.hpp"
 #endif
 #include "ci/ciEnv.hpp"
 #include "compiler/abstractCompiler.hpp"
 #include "compiler/compilationFailureInfo.hpp"
 #include "compiler/compileTask.hpp"
 #ifdef COMPILER2
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
 #endif
 #include "runtime/os.hpp"
 #include "utilities/nativeCallStack.hpp"

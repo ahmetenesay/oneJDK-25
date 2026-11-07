@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -27,18 +27,18 @@
 #include "gc/z/zBarrierSet.hpp"
 #include "gc/z/zBarrierSetAssembler.hpp"
 #include "gc/z/zBarrierSetRuntime.hpp"
-#include "opto/arraycopynode.hpp"
-#include "opto/block.hpp"
-#include "opto/compile.hpp"
-#include "opto/graphKit.hpp"
-#include "opto/machnode.hpp"
-#include "opto/macro.hpp"
-#include "opto/memnode.hpp"
-#include "opto/node.hpp"
-#include "opto/output.hpp"
-#include "opto/regalloc.hpp"
-#include "opto/runtime.hpp"
-#include "opto/type.hpp"
+#include "mirc/arraycopynode.hpp"
+#include "mirc/block.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/graphKit.hpp"
+#include "mirc/machnode.hpp"
+#include "mirc/macro.hpp"
+#include "mirc/memnode.hpp"
+#include "mirc/node.hpp"
+#include "mirc/output.hpp"
+#include "mirc/regalloc.hpp"
+#include "mirc/runtime.hpp"
+#include "mirc/type.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/growableArray.hpp"
 #include "utilities/macros.hpp"

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -26,9 +26,9 @@
 #include "compiler/directivesParser.hpp"
 #include "memory/allocation.inline.hpp"
 #include "memory/resourceArea.hpp"
-#include "opto/phasetype.hpp"
-#include "opto/traceAutoVectorizationTag.hpp"
-#include "opto/traceMergeStoresTag.hpp"
+#include "mirc/phasetype.hpp"
+#include "mirc/traceAutoVectorizationTag.hpp"
+#include "mirc/traceMergeStoresTag.hpp"
 #include "runtime/os.hpp"
 
 #include <string.h>

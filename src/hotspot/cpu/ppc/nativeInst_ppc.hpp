@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2002, 2024, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2024 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -31,7 +31,7 @@
 #include "runtime/os.hpp"
 #include "runtime/safepointMechanism.hpp"
 #ifdef COMPILER2
-#include "opto/c2_globals.hpp"
+#include "mirc/c2_globals.hpp"
 #endif
 
 // We have interfaces for the following instructions:

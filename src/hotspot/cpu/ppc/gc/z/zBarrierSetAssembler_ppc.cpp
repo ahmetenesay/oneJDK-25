@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2021, 2025 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -39,13 +39,13 @@
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/macros.hpp"
 #ifdef COMPILER1
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
 #include "gc/z/c1/zBarrierSetC1.hpp"
 #endif // COMPILER1
 #ifdef COMPILER2
 #include "gc/z/c2/zBarrierSetC2.hpp"
-#include "opto/output.hpp"
+#include "mirc/output.hpp"
 #endif // COMPILER2
 
 #undef __

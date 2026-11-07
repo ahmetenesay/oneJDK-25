@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -54,8 +54,8 @@
 #include "runtime/synchronizer.hpp"
 #include "runtime/vmOperations.hpp"
 #ifdef COMPILER2
-#include "opto/compile.hpp"
-#include "opto/node.hpp"
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp"
 #endif
 
 // Requires a ResourceMark for get_thread_name/as_utf8

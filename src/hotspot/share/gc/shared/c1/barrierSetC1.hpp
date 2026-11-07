@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -25,10 +25,10 @@
 #ifndef SHARE_GC_SHARED_C1_BARRIERSETC1_HPP
 #define SHARE_GC_SHARED_C1_BARRIERSETC1_HPP
 
-#include "c1/c1_Decorators.hpp"
-#include "c1/c1_Instruction.hpp"
-#include "c1/c1_LIR.hpp"
-#include "c1/c1_LIRGenerator.hpp"
+#include "vac/c1_Decorators.hpp"
+#include "vac/c1_Instruction.hpp"
+#include "vac/c1_LIR.hpp"
+#include "vac/c1_LIRGenerator.hpp"
 #include "memory/allocation.hpp"
 
 class LIRGenerator;

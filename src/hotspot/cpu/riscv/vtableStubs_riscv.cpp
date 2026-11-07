@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
  * Copyright (c) 2020, 2023, Huawei Technologies Co., Ltd. All rights reserved.
@@ -35,7 +35,7 @@
 #include "runtime/sharedRuntime.hpp"
 #include "vmreg_riscv.inline.hpp"
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 
 // machine-dependent part of VtableStubs: create VtableStub of correct size and

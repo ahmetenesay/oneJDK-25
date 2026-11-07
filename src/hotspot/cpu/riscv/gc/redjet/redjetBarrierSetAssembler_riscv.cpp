@@ -24,14 +24,14 @@
 
 #include "asm/macroAssembler.inline.hpp"
 #include "gc/redjet/redjetBarrierSetAssembler_riscv.hpp"
-#include "gc/redjet/rjnrml/redjetPointCoordinator.hpp"
-#include "gc/redjet/rjnrml/redjetThreadLocalData.hpp"
+#include "gc/redjet/engine/redjetPointCoordinator.hpp"
+#include "gc/redjet/runtime/redjetThreadLocalData.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/gc_globals.hpp"
 
 #ifdef COMPILER1
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
 #endif
 
 #define __ masm->

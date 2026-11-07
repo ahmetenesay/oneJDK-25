@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024, 2026, Intel Corporation. All rights reserved.
  *
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -26,8 +26,8 @@
 #include "macroAssembler_x86.hpp"
 #include "stubGenerator_x86_64.hpp"
 #include "oops/arrayOop.hpp"
-#include "opto/c2_MacroAssembler.hpp"
-#include "opto/intrinsicnode.hpp"
+#include "mirc/c2_MacroAssembler.hpp"
+#include "mirc/intrinsicnode.hpp"
 
 /******************************************************************************/
 //                     String handling intrinsics

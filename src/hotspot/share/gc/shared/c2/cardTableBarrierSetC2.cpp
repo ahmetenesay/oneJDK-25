@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -27,10 +27,10 @@
 #include "gc/shared/cardTable.hpp"
 #include "gc/shared/cardTableBarrierSet.hpp"
 #include "gc/shared/gc_globals.hpp"
-#include "opto/arraycopynode.hpp"
-#include "opto/graphKit.hpp"
-#include "opto/idealKit.hpp"
-#include "opto/macro.hpp"
+#include "mirc/arraycopynode.hpp"
+#include "mirc/graphKit.hpp"
+#include "mirc/idealKit.hpp"
+#include "mirc/macro.hpp"
 #include "utilities/macros.hpp"
 
 #define __ ideal.

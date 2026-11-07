@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Red Hat, Inc. All rights reserved.
  * Copyright (c) 2012, 2025 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -43,8 +43,8 @@
 #include "utilities/globalDefinitions.hpp"
 #include "vm_version_ppc.hpp"
 #ifdef COMPILER1
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
 #include "gc/shenandoah/c1/shenandoahBarrierSetC1.hpp"
 #endif
 

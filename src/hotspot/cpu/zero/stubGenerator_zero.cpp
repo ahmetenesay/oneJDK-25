@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2007, 2008, 2010, 2015 Red Hat, Inc.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -39,7 +39,7 @@
 #include "runtime/stubRoutines.hpp"
 #include "stack_zero.inline.hpp"
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 
 // Declaration and definition of StubGenerator (no .hpp file).

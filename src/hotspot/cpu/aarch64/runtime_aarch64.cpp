@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -29,7 +29,7 @@
 #include "code/aotCodeCache.hpp"
 #include "code/vmreg.hpp"
 #include "interpreter/interpreter.hpp"
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/stubRoutines.hpp"

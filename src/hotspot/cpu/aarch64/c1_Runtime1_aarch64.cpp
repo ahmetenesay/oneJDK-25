@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2021, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -24,10 +24,10 @@
  */
 
 #include "asm/assembler.hpp"
-#include "c1/c1_CodeStubs.hpp"
-#include "c1/c1_Defs.hpp"
-#include "c1/c1_MacroAssembler.hpp"
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_CodeStubs.hpp"
+#include "vac/c1_Defs.hpp"
+#include "vac/c1_MacroAssembler.hpp"
+#include "vac/c1_Runtime1.hpp"
 #include "compiler/disassembler.hpp"
 #include "compiler/oopMap.hpp"
 #include "gc/shared/cardTable.hpp"

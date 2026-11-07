@@ -47,7 +47,7 @@
 #include "gc/z/zArguments.hpp"
 #endif
 #if INCLUDE_REDJETGC
-#include "gc/redjet/rjnrml/redjetArguments.hpp"
+#include "gc/redjet/runtime/redjetArguments.hpp"
 #endif
 
 struct IncludedGC {

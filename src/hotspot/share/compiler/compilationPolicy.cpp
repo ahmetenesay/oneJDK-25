@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -43,10 +43,10 @@
 #include "runtime/safepoint.hpp"
 #include "runtime/safepointVerifiers.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Compiler.hpp"
+#include "vac/c1_Compiler.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/c2compiler.hpp"
+#include "mirc/c2compiler.hpp"
 #endif
 #if INCLUDE_JVMCI
 #include "jvmci/jvmci.hpp"

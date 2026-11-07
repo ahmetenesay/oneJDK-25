@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -27,10 +27,10 @@
 
 #include "memory/allocation.hpp"
 #include "oops/accessDecorators.hpp"
-#include "opto/loopnode.hpp"
-#include "opto/machnode.hpp"
-#include "opto/matcher.hpp"
-#include "opto/memnode.hpp"
+#include "mirc/loopnode.hpp"
+#include "mirc/machnode.hpp"
+#include "mirc/matcher.hpp"
+#include "mirc/memnode.hpp"
 #include "utilities/globalDefinitions.hpp"
 
 // This means the access is mismatched. This means the value of an access

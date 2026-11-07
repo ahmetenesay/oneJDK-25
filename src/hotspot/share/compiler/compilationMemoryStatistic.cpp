@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2023, 2025, Red Hat, Inc. and/or its affiliates.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -46,12 +46,12 @@
 #include "utilities/ostream.hpp"
 
 #ifdef COMPILER1
-#include "c1/c1_Compilation.hpp"
+#include "vac/c1_Compilation.hpp"
 #endif
 
 #ifdef COMPILER2
-#include "opto/compile.hpp"
-#include "opto/node.hpp" // compile.hpp is not self-contained
+#include "mirc/compile.hpp"
+#include "mirc/node.hpp" // compile.hpp is not self-contained
 #endif
 
 static const char* phase_trc_id_to_string(int phase_trc_id) {

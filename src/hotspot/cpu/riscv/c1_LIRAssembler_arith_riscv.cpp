@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2000, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2020, 2022, Huawei Technologies Co., Ltd. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -24,8 +24,8 @@
  */
 
 #include "asm/assembler.hpp"
-#include "c1/c1_LIRAssembler.hpp"
-#include "c1/c1_MacroAssembler.hpp"
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
 
 #ifndef PRODUCT
 #define COMMENT(x)   do { __ block_comment(x); } while (0)

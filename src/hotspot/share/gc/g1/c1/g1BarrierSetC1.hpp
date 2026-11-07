@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -25,8 +25,8 @@
 #ifndef SHARE_GC_G1_C1_G1BARRIERSETC1_HPP
 #define SHARE_GC_G1_C1_G1BARRIERSETC1_HPP
 
-#include "c1/c1_CodeStubs.hpp"
-#include "c1/c1_Compilation.hpp"
+#include "vac/c1_CodeStubs.hpp"
+#include "vac/c1_Compilation.hpp"
 #include "gc/shared/c1/modRefBarrierSetC1.hpp"
 
 class G1PreBarrierStub: public CodeStub {

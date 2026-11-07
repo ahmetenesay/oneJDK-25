@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -22,7 +22,7 @@
  *
  */
 
-#include "c1/c1_LIR.hpp"
+#include "vac/c1_LIR.hpp"
 
 FloatRegister LIR_Opr::as_float_reg() const {
   return as_FloatRegister(fpu_regnr());

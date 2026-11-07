@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -45,10 +45,10 @@
 #include "runtime/stubRoutines.hpp"
 #include "utilities/copy.hpp"
 #ifdef COMPILER1
-#include "c1/c1_Runtime1.hpp"
+#include "vac/c1_Runtime1.hpp"
 #endif
 #ifdef COMPILER2
-#include "opto/runtime.hpp"
+#include "mirc/runtime.hpp"
 #endif
 #if INCLUDE_G1GC
 #include "gc/g1/g1BarrierSetRuntime.hpp"

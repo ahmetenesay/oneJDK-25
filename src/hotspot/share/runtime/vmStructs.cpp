@@ -1,4 +1,4 @@
-
+﻿
 /*
  * Copyright (c) 2000, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -107,7 +107,7 @@
 #include "utilities/macros.hpp"
 #include "utilities/vmError.hpp"
 #ifdef COMPILER2
-#include "opto/optoreg.hpp"
+#include "mirc/optoreg.hpp"
 #endif // COMPILER2
 
 #include CPU_HEADER(vmStructs)
