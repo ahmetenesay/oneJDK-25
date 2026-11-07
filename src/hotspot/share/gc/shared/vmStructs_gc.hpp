@@ -48,6 +48,9 @@
 #if INCLUDE_ZGC
 #include "gc/z/vmStructs_z.hpp"
 #endif
+#if INCLUDE_REDJETGC
+#include "gc/redjet/runtime/vmStructs_redjet.hpp"
+#endif
 
 #define VM_STRUCTS_GC(nonstatic_field,                                                                                               \
                       volatile_static_field,                                                                                         \
@@ -72,6 +75,9 @@
   ZGC_ONLY(VM_STRUCTS_Z(nonstatic_field,                                                                                             \
                                volatile_nonstatic_field,                                                                             \
                                static_field))                                                                                        \
+  REDJETGC_ONLY(VM_STRUCTS_REDJETGC(nonstatic_field,                                                                                 \
+                                    volatile_nonstatic_field,                                                                        \
+                                    static_field))                                                                                   \
                                                                                                                                      \
   /**********************************************************************************/                                               \
   /* Generation and Space hierarchies                                               */                                               \
@@ -124,6 +130,9 @@
   ZGC_ONLY(VM_TYPES_Z(declare_type,                                       \
                              declare_toplevel_type,                       \
                              declare_integer_type))                       \
+  REDJETGC_ONLY(VM_TYPES_REDJETGC(declare_type,                           \
+                                  declare_toplevel_type,                   \
+                                  declare_integer_type))                   \
                                                                           \
   /******************************************/                            \
   /* Generation and space hierarchies       */                            \
@@ -177,6 +186,8 @@
                                      declare_constant_with_value))          \
   ZGC_ONLY(VM_INT_CONSTANTS_Z(declare_constant,                             \
                                      declare_constant_with_value))          \
+  REDJETGC_ONLY(VM_INT_CONSTANTS_REDJETGC(declare_constant,                 \
+                                          declare_constant_with_value))     \
                                                                             \
   /********************************************/                            \
   /* Generation and Space Hierarchy Constants */                            \

@@ -1,16 +1,16 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
+ * published by the Free Software Foundation. Oracle designates this
  * particular file as subject to the "Classpath" exception as provided
  * by Oracle in the LICENSE file that accompanied this code.
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
@@ -22,14 +22,12 @@
  * if you need additional information or have any questions.
  */
 
-#include "vac/c1_LIRAssembler.hpp"
-#include "vac/c1_MacroAssembler.hpp"
-#include "gc/shared/gc_globals.hpp"
-#include "gc/redjet/runtime/redjetBarrierSetC1.hpp"
-#include "gc/redjet/runtime/redjetBarrierSet.hpp"
-#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
+#ifndef SHARE_GC_REDJET_VAC_REDJETBARRIERSETVAC_HPP
+#define SHARE_GC_REDJET_VAC_REDJETBARRIERSETVAC_HPP
 
-#ifdef COMPILER1
-// Architecture-specific C1 LIR code generation for RISC-V
-// Redjet GC load and store barrier integration for C1
-#endif
+#include "gc/redjet/runtime/redjetBarrierSetC1.hpp"
+
+// Redjet Barrier Set VAC (Canonical oneJDK VAC Name)
+using RedjetBarrierSetVAC = RedjetBarrierSetC1;
+
+#endif // SHARE_GC_REDJET_VAC_REDJETBARRIERSETVAC_HPP

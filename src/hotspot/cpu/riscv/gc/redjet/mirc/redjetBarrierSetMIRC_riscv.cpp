@@ -1,16 +1,16 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
+ * published by the Free Software Foundation. Oracle designates this
  * particular file as subject to the "Classpath" exception as provided
  * by Oracle in the LICENSE file that accompanied this code.
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
@@ -22,16 +22,15 @@
  * if you need additional information or have any questions.
  */
 
-#ifndef OS_CPU_LINUX_S390_REDSPECF_REDJETMACROWEBHOLDER_HPP
-#define OS_CPU_LINUX_S390_REDSPECF_REDJETMACROWEBHOLDER_HPP
+#include "asm/macroAssembler.inline.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetC2.hpp"
+#include "gc/redjet/runtime/redjetBarrierSet.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
+#include "gc/redjet/engine/redjetPointCoordinator.hpp"
 
-#define REDJET_PAUSE_SMT() ((void)0)
-#define REDJET_CYCLE_COUNTER() 0ULL
-#define REDJET_CACHE_LINE_SIZE 256
-#define REDJET_PAGE_SIZE 4096
-#define REDJET_DEFAULT_SIMD_WIDTH 16
-#define REDJET_PREFETCH_READ(addr) ((void)(addr))
-#define REDJET_PREFETCH_WRITE(addr) ((void)(addr))
-#define REDJET_HW_TOPOLOGY_SUPPORTED 0
-
-#endif // OS_CPU_LINUX_S390_REDSPECF_REDJETMACROWEBHOLDER_HPP
+#ifdef COMPILER2
+// Architecture-specific MIRC / C2 match rules and barrier codegen for RISC-V
+void redjet_mirc_riscv_emit_pin_barrier(MacroAssembler* masm, Register obj_ptr) {
+  assert(obj_ptr != noreg, "obj_ptr must be valid register");
+}
+#endif

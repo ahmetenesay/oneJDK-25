@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -41,10 +41,10 @@
 #endif
 
 /* ========================================================================= */
-/* 1. MSIMD CONTEXT, TIER, PRECISION & LATTICE DATA STRUCTURES               */
+/* 1. RJ SIMD CONTEXT, TIER, PRECISION & LATTICE DATA STRUCTURES             */
 /* ========================================================================= */
 
-typedef enum msimd_status_t {
+typedef enum rj_status_t {
     RJ_SUCCESS                    = 0,
     RJ_ERROR_INVALID_ARGUMENT     = -1,
     RJ_ERROR_OUT_OF_MEMORY        = -2,
@@ -53,9 +53,10 @@ typedef enum msimd_status_t {
     RJ_ERROR_NOT_IMPLEMENTED      = -5,
     RJ_ERROR_HARDWARE_FAULT       = -6,
     RJ_ERROR_FLAG_CONFLICT        = -7
-} msimd_status_t;
+} rj_status_t;
+using msimd_status_t = rj_status_t;
 
-typedef enum msimd_isa_t {
+typedef enum rj_isa_t {
     RJ_ISA_AUTO    = 0,
     RJ_ISA_SCALAR  = 1,
     RJ_ISA_SSE42   = 2,
@@ -68,37 +69,42 @@ typedef enum msimd_isa_t {
     RJ_ISA_SME2    = 9,
     RJ_ISA_RVV     = 10,
     RJ_ISA_LASX    = 11
-} msimd_isa_t;
+} rj_isa_t;
+using msimd_isa_t = rj_isa_t;
 
-typedef enum msimd_backend_t {
+typedef enum rj_backend_t {
     RJ_BACKEND_AUTO     = 0,
     RJ_BACKEND_FALLBACK = 1,
     RJ_BACKEND_TBB      = 2
-} msimd_backend_t;
+} rj_backend_t;
+using msimd_backend_t = rj_backend_t;
 
-typedef enum msimd_hw_tier_t {
+typedef enum rj_hw_tier_t {
     RJ_TIER_0_MATRIX_TILES  = 0,
     RJ_TIER_1_WIDE_VECTOR   = 1,
     RJ_TIER_2_BASIC_SIMD    = 2,
     RJ_TIER_3_COPROCESSORS  = 3,
     RJ_TIER_4_SCALAR_FPU    = 4,
     RJ_TIER_5_SOFTFLOAT_ALU = 5
-} msimd_hw_tier_t;
+} rj_hw_tier_t;
+using msimd_hw_tier_t = rj_hw_tier_t;
 
-typedef enum msimd_precision_t {
+typedef enum rj_precision_t {
     RJ_PRECISION_FP32 = 0,
     RJ_PRECISION_FP64 = 1
-} msimd_precision_t;
+} rj_precision_t;
+using msimd_precision_t = rj_precision_t;
 
-typedef struct msimd_config_t {
-    msimd_profile_mode_t profile;
+typedef struct rj_config_t {
+    rj_profile_mode_t    profile;
     size_t               static_arena_size_bytes;
     uint32_t             max_loop_iterations;
     bool                 forbid_runtime_heap;
     void*                user_static_arena_buf;
-} msimd_config_t;
+} rj_config_t;
+using msimd_config_t = rj_config_t;
 
-typedef struct msimd_cpu_info_t {
+typedef struct rj_cpu_info_t {
     char            vendor[16];
     int             num_physical_cores;
     int             num_logical_cores;
@@ -123,41 +129,47 @@ typedef struct msimd_cpu_info_t {
     int             has_fmac;
     int             has_tmu;
     int             has_dsp;
-    msimd_hw_tier_t tier;
-} msimd_cpu_info_t;
+    rj_hw_tier_t    tier;
+} rj_cpu_info_t;
+using msimd_cpu_info_t = rj_cpu_info_t;
 
-typedef struct msimd_context_t {
-    msimd_cpu_info_t cpu_info;
-    msimd_isa_t      isa;
-    msimd_backend_t  backend;
+typedef struct rj_context_t {
+    rj_cpu_info_t    cpu_info;
+    rj_isa_t         isa;
+    rj_backend_t     backend;
     void*            backend_handle;
     int              optimal_ladder_level;
-    msimd_config_t   config;
+    rj_config_t      config;
     uint8_t*         static_arena_base;
     size_t           static_arena_capacity;
     size_t           static_arena_offset;
     bool             arena_is_user_provided;
-} msimd_context_t;
+} rj_context_t;
+using msimd_context_t = rj_context_t;
+typedef rj_context_t* rj_context;
+typedef rj_context_t* msimd_context;
 
-typedef msimd_context_t* msimd_context;
-
-typedef struct msimd_lattice_t {
-    msimd_context     ctx;
-    int               dim;
-    size_t            nx;
-    size_t            ny;
-    size_t            nz;
-    size_t            total_elements;
-    size_t            elem_size;
-    msimd_precision_t precision;
-    void*             data_prev;
-    void*             data_curr;
-    void*             data_next;
-    bool              allocated_from_arena;
-} msimd_lattice_t;
-
-typedef msimd_lattice_t* msimd_lattice;
-typedef HS_hotspot_tensor_t msimd_tensor_t;
+typedef struct rj_lattice_t {
+    rj_context       ctx;
+    int              dim;
+    size_t           nx;
+    size_t           ny;
+    size_t           nz;
+    size_t           total_elements;
+    size_t           elem_size;
+    rj_precision_t   precision;
+    void*            data_prev;
+    void*            data_curr;
+    void*            data_next;
+    bool             allocated_from_arena;
+} rj_lattice_t;
+using msimd_lattice_t = rj_lattice_t;
+typedef rj_lattice_t* rj_lattice;
+typedef rj_lattice_t* msimd_lattice;
+typedef HS_hotspot_tensor_t rj_tensor_t;
+typedef HS_hotspot_tensor_t rj_tensor_t;
+using msimd_tensor_t = rj_tensor_t;
+typedef void (*rj_parallel_for_fn)(void* user_data, size_t start, size_t end);
 typedef void (*msimd_parallel_for_fn)(void* user_data, size_t start, size_t end);
 
 /* ========================================================================= */
@@ -169,6 +181,11 @@ extern "C" {
 #endif
 
 // 2.1 Cacheline/HugePage Aligned Allocators
+RJ_API void* rj_aligned_alloc_cl(size_t size, size_t alignment);
+RJ_API void  rj_aligned_free_cl(void* ptr);
+RJ_API void* rj_alloc_aligned(size_t size, size_t alignment);
+RJ_API void  rj_free_aligned(void* ptr);
+
 RJ_API void* hs_aligned_alloc_cl(size_t size, size_t alignment);
 RJ_API void  hs_aligned_free_cl(void* ptr);
 RJ_API void* hs_alloc_aligned(size_t size, size_t alignment);
@@ -218,7 +235,16 @@ RJ_API void HS_hotspot_fence_load(void);
 RJ_API void HS_hotspot_memcpy_nt(void* dst, const void* src, size_t size);
 RJ_API void HS_hotspot_memzero_nt(void* dst, size_t size);
 
-// 2.3 MSIMD Engine Context, RDTSC GFLOPS Calibration & Asymmetric Hybrid parallel_for
+// 2.3 RJ Engine Context, RDTSC GFLOPS Calibration & Asymmetric Hybrid parallel_for
+RJ_API rj_status_t       rj_init_with_config(rj_context* out_ctx, rj_isa_t isa, rj_backend_t backend, const rj_config_t* config);
+RJ_API rj_status_t       rj_init(rj_context* out_ctx, rj_isa_t isa, rj_backend_t backend);
+RJ_API rj_profile_mode_t rj_get_active_profile(rj_context ctx);
+RJ_API const rj_config_t* rj_get_config(rj_context ctx);
+RJ_API void              rj_destroy(rj_context ctx);
+RJ_API rj_status_t       rj_get_cpu_info(rj_context ctx, rj_cpu_info_t* out_info);
+RJ_API rj_status_t       rj_calibrate_pipeline(rj_context ctx, int* out_best_level, double* out_gflops);
+RJ_API void              rj_parallel_for(rj_context ctx, size_t total, rj_parallel_for_fn fn, void* user_data);
+
 RJ_API msimd_status_t       hs_backend_fallback_init(msimd_context ctx);
 RJ_API void                 hs_backend_fallback_destroy(msimd_context ctx);
 RJ_API void                 hs_backend_fallback_parallel_for(msimd_context ctx, size_t total, msimd_parallel_for_fn fn, void* user_data);

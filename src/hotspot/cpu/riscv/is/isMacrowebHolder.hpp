@@ -79,10 +79,55 @@ public:
     ISA_RVV    = 2
   };
 
+  static inline bool can_satisfy(ISALevel level) {
+    switch (level) {
+      case ISA_RVV:    return IS_RVV();
+      case ISA_FD_FMA: return IS_FMA();
+      case ISA_SCALAR: return true;
+      default:         return false;
+    }
+  }
+
+  static inline ISALevel resolve_fallback_down(ISALevel requested) {
+    for (int lvl = static_cast<int>(requested); lvl >= static_cast<int>(ISA_SCALAR); --lvl) {
+      if (can_satisfy(static_cast<ISALevel>(lvl))) {
+        return static_cast<ISALevel>(lvl);
+      }
+    }
+    return ISA_SCALAR;
+  }
+
+  static inline ISALevel resolve_closest_isa(ISALevel requested) {
+    if (can_satisfy(requested)) return requested;
+    for (int lvl = static_cast<int>(requested) + 1; lvl <= static_cast<int>(ISA_RVV); ++lvl) {
+      if (can_satisfy(static_cast<ISALevel>(lvl))) {
+        return static_cast<ISALevel>(lvl);
+      }
+    }
+    return resolve_fallback_down(requested);
+  }
+
   static inline ISALevel resolve_best_vector_isa() {
     if (IS_RVV()) return ISA_RVV;
     if (IS_FMA()) return ISA_FD_FMA;
     return ISA_SCALAR;
+  }
+
+  // Universal Command & Fallback Accessors
+  static inline ISALevel REQUEST_ISA(ISALevel requested) { return resolve_closest_isa(requested); }
+  static inline ISALevel REQUEST_BEST_ISA()              { return resolve_best_vector_isa(); }
+  static inline bool     CAN_EXECUTE(ISALevel level)     { return can_satisfy(level); }
+
+  static inline ISALevel GET_RVV_OR_FALLBACK() { return resolve_closest_isa(ISA_RVV); }
+  static inline ISALevel GET_FMA_OR_FALLBACK() { return resolve_closest_isa(ISA_FD_FMA); }
+
+  static inline const char* get_isa_name(ISALevel lvl) {
+    switch (lvl) {
+      case ISA_RVV:    return "RVV";
+      case ISA_FD_FMA: return "FD_FMA";
+      case ISA_SCALAR: return "SCALAR";
+      default:         return "UNKNOWN";
+    }
   }
 };
 

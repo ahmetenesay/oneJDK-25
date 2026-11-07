@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -85,18 +85,7 @@ typedef struct HS_hotspot_gpio_desc_t {
     char                       board_name[96];
 } HS_hotspot_gpio_desc_t;
 
-typedef struct HS_hotspot_ring0_status_t {
-    uint8_t  is_driver_loaded;
-    uint8_t  _pad[3];
-    uint32_t driver_version;
-} HS_hotspot_ring0_status_t;
-
-typedef struct HS_hotspot_ring0_hwp_policy_t {
-    uint8_t min_perf_pct;
-    uint8_t max_perf_pct;
-    uint8_t energy_perf_pref;
-    uint8_t anti_downclock_boost;
-} HS_hotspot_ring0_hwp_policy_t;
+// Ring 0 kernel driver handles purged: Redjet GC operates strictly within user-space (Ring 3) QoS.
 
 /* ========================================================================= */
 /* 2. QUOTA-ENFORCED HIERARCHICAL VFS FOLDER TREE (sacculus_folder_tree_t)   */
@@ -226,9 +215,6 @@ RJ_API int                     HS_hotspot_gpio_set_mode(uint32_t pin, HS_hotspot
 RJ_API void                    HS_hotspot_gpio_fast_write(uint32_t pin, uint8_t level);
 RJ_API uint8_t                 HS_hotspot_gpio_fast_read(uint32_t pin);
 
-RJ_API int                     HS_hotspot_ring0_connect(HS_hotspot_ring0_status_t* out_status);
-RJ_API int                     HS_hotspot_ring0_apply_hwp_policy(const HS_hotspot_ring0_hwp_policy_t* policy);
-RJ_API void                    HS_hotspot_ring0_disconnect(void);
 
 #ifdef __cplusplus
 }

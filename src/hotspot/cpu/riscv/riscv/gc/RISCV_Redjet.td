@@ -199,5 +199,25 @@ class RISCV_MachPollPoint : GCBarrier<"lwu\tzero, 0($safepoint_poll_addr)\t# Mac
 def RISCV_MachPollPoint_node : RISCV_MachPollPoint;
 
 // ============================================================================
+// Redjet TailTraces Clasp Dead Reference Signal & Off-Heap Eviction
+// ============================================================================
+
+// Redjet DeadReferenceSignal — Clasp emission to RPSS ring buffer
+class RISCV_RedjetDeadRefSignal : GCBarrier<"sd\t$dead_oop, 0($rpss_addr)\t# redjet tailtraces signal", "Redjet TailTraces Clasp Dead Reference Signal (RISC-V)", 15, "ialu_mem_reg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_dead_ref_signal GPR:$rpss_addr, GPR:$dead_oop)];
+}
+
+def RISCV_RedjetDeadRefSignal_node : RISCV_RedjetDeadRefSignal;
+
+// Redjet OffHeapEvict — Deterministic RAII eviction for @RJGC(Mark = "ImmediateEviction")
+class RISCV_RedjetOffHeapEvict : GCBarrier<"call\tredjet_offheap_evict\t# redjet offheap evict", "Redjet Off-Heap Immediate Eviction Barrier (RISC-V)", 40, "call"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_offheap_evict GPR:$handle_ptr)];
+}
+
+def RISCV_RedjetOffHeapEvict_node : RISCV_RedjetOffHeapEvict;
+
+// ============================================================================
 // End of RISCV_Redjet.td
 // ============================================================================

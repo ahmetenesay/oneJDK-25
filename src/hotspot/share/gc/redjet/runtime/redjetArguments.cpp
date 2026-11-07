@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -123,6 +123,33 @@ void RedjetArguments::initialize() {
   } else {
     SacFor_Gearkit_NORMAX();
     log_info(gc)("RedjetGC NORMAX Profile engaged: Dynamic SIMD throughput with oneTBB heterogeneous work-stealing.");
+  }
+
+  // Hardware Memory OC (XMP / EXPO / DOCP) & Pagefile Environment Adaptation
+  auto* nexus = hs_get_hardware_nexus();
+  if (nexus != nullptr) {
+    if (nexus->topology.is_xmp_expo_active) {
+      log_info(gc, init)("RedjetGC Hardware Adaptive Memory: Overclocked DRAM (XMP/EXPO/DOCP %u MHz) detected. Expanding burst allocation and prefetch strides.",
+                         nexus->topology.dram_mhz);
+      if (FLAG_IS_DEFAULT(RedjetMaxTLABSize)) {
+        RedjetMaxTLABSize = MAX2(RedjetMaxTLABSize, (size_t)8 * 1024 * 1024);
+      }
+      RedjetFlags::config().integers.slab_chunk_size_bytes = 4 * 1024 * 1024;
+      RedjetFlags::config().integers.prefetch_distance_bytes = 256;
+    }
+  }
+
+  // Pagefile On/Off Adaptation
+  size_t pf_used = HS_hotspot_pagefile_used_bytes();
+  bool pagefile_active = (pf_used > 0) || (os::total_swap_space() > 0);
+  if (!pagefile_active) {
+    log_info(gc, init)("RedjetGC Pagefile Topology: Swap is DISABLED. Operating in Zero-Paging memory constrained regime. Enforcing strict resident bounds.");
+    if (FLAG_IS_DEFAULT(RedjetRMRP)) {
+      FLAG_SET_ERGO(RedjetRMRP, true);
+    }
+  } else {
+    log_info(gc, init)("RedjetGC Pagefile Topology: Swap engine active (used: %zu bytes). Compactor operating in %s mode.",
+                       pf_used, (RedjetRMRP ? "RMRP-adaptive" : "Standard"));
   }
 
 #ifdef COMPILER2

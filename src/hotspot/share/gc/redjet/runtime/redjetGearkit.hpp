@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -163,10 +163,11 @@ extern "C" {
 /* 1. GEARKIT PROFILES & SCGC EXECUTION MODES                                */
 /* ========================================================================= */
 
-typedef enum msimd_profile_mode_t {
+typedef enum rj_profile_mode_t {
     RJ_PROFILE_STANDARD        = 0, // NORMAX: Dynamic SIMD throughput with oneTBB heterogeneous stealing
     RJ_PROFILE_SAFETY_CRITICAL = 1  // SSIOLSC: Hard real-time bounded latency deterministic mode
-} msimd_profile_mode_t;
+} rj_profile_mode_t;
+using msimd_profile_mode_t = rj_profile_mode_t;
 
 typedef enum HS_hotspot_scgc_type_t {
     HS_SCGC_TYPE_DEFAULT      = 0, // Bureaucratic STW Phase GC, header chain alive

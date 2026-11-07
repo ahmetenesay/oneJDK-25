@@ -1,16 +1,16 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
+ * published by the Free Software Foundation. Oracle designates this
  * particular file as subject to the "Classpath" exception as provided
  * by Oracle in the LICENSE file that accompanied this code.
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
@@ -22,18 +22,22 @@
  * if you need additional information or have any questions.
  */
 
-#ifndef OS_CPU_LINUX_X86_REDSPECF_REDJETMACROWEBHOLDER_HPP
-#define OS_CPU_LINUX_X86_REDSPECF_REDJETMACROWEBHOLDER_HPP
+#include "vac/c1_LIRAssembler.hpp"
+#include "vac/c1_MacroAssembler.hpp"
+#include "gc/shared/gc_globals.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetC1.hpp"
+#include "gc/redjet/runtime/redjetBarrierSet.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
+#include "gc/redjet/engine/redjetPointCoordinator.hpp"
 
-#include <x86intrin.h>
+#ifdef COMPILER1
+// Architecture-specific VAC (C1) LIR code generation for AArch64
+// Redjet GC load, store, 2Points and TailTraces barrier integration for VAC
+void redjet_vac_aarch64_emit_load_barrier(LIR_Assembler* ce, LIR_Opr obj_opr) {
+  // VAC load barrier fast-path check
+}
 
-#define REDJET_PAUSE_SMT() __builtin_ia32_pause()
-#define REDJET_CYCLE_COUNTER() __rdtsc()
-#define REDJET_CACHE_LINE_SIZE 64
-#define REDJET_PAGE_SIZE 4096
-#define REDJET_DEFAULT_SIMD_WIDTH 64
-#define REDJET_PREFETCH_READ(addr) __builtin_prefetch((const void*)(addr), 0, 3)
-#define REDJET_PREFETCH_WRITE(addr) __builtin_prefetch((const void*)(addr), 1, 3)
-#define REDJET_HW_TOPOLOGY_SUPPORTED 1
-
-#endif // OS_CPU_LINUX_X86_REDSPECF_REDJETMACROWEBHOLDER_HPP
+void redjet_vac_aarch64_emit_store_barrier(LIR_Assembler* ce, LIR_Opr addr_opr, LIR_Opr new_val) {
+  // VAC store barrier with optional TailTraces dead reference signaling
+}
+#endif

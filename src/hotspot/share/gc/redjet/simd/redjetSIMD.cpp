@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,6 +24,7 @@
 
 #include "gc/redjet/simd/redjetSIMD.hpp"
 #include "gc/redjet/runtime/redjetGearkit.hpp"
+#include "is/isMacrowebHolder.hpp"
 
 #if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
 #include <immintrin.h>
@@ -469,23 +470,43 @@ size_t RedjetSIMD::filter_live_states(const uint8_t* states, size_t count, uint8
 }
 
 bool RedjetSIMD::has_avx2() {
-    hs_detect_cpu_features();
-    return g_hs_has_avx2.load(std::memory_order_relaxed);
+    return isMacrowebHolder::IS_AVX2();
 }
 
 bool RedjetSIMD::has_avx512() {
-    hs_detect_cpu_features();
-    return g_hs_has_avx512.load(std::memory_order_relaxed);
+    return isMacrowebHolder::IS_AVX512();
 }
 
 bool RedjetSIMD::has_neon() {
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
-    return true;
-#else
-    return false;
-#endif
+    return isMacrowebHolder::IS_NEON();
 }
 
 bool RedjetSIMD::has_3d_vcache() {
     return hs_has_massive_sram_vcache();
+}
+
+bool RedjetSIMD::is_simd_congested() {
+    // Check ALU nexus queue depths on primary vector lanes
+    extern hs_alu_dispatch_nexus_t g_hs_alu_nexus;
+    uint32_t depth0 = g_hs_alu_nexus.pipelines[0].queue_depth.load(std::memory_order_relaxed);
+    uint32_t depth1 = g_hs_alu_nexus.pipelines[1].queue_depth.load(std::memory_order_relaxed);
+    return (depth0 >= hs_alu_dispatch_nexus_t::SATURATION_THRESHOLD) ||
+           (depth1 >= hs_alu_dispatch_nexus_t::SATURATION_THRESHOLD);
+}
+
+bool RedjetSIMD::should_use_simd(bool is_latency_critical) {
+    // 1. If explicit Critical SIMD Only is enforced, non-critical sweeps fallback to scalar
+    extern bool RedjetCriticalSIMDOnly;
+    if (RedjetCriticalSIMDOnly && !is_latency_critical) {
+        return false;
+    }
+
+    // 2. If Dynamic SIMD Fallback is active and mutators saturate vector ALUs, fallback to scalar
+    extern bool RedjetDynamicSIMDFallback;
+    if (RedjetDynamicSIMDFallback && is_simd_congested()) {
+        return false;
+    }
+
+    // 3. Fallback to vector execution if hardware supports SIMD
+    return has_avx2() || has_avx512() || has_neon();
 }

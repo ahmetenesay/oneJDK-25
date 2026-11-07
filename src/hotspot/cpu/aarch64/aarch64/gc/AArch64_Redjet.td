@@ -199,5 +199,25 @@ class AArch64_MachPollPoint : GCBarrier<"ldr\twzr, [$safepoint_poll_addr]\t# Mac
 def AArch64_MachPollPoint_node : AArch64_MachPollPoint;
 
 // ============================================================================
+// Redjet TailTraces Clasp Dead Reference Signal & Off-Heap Eviction
+// ============================================================================
+
+// Redjet DeadReferenceSignal — Clasp emission to RPSS ring buffer
+class AArch64_RedjetDeadRefSignal : GCBarrier<"str\t$dead_oop, [$rpss_addr]\t# redjet tailtraces signal", "Redjet TailTraces Clasp Dead Reference Signal (AArch64)", 15, "ialu_mem_reg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_dead_ref_signal GPR64sp:$rpss_addr, GPR64:$dead_oop)];
+}
+
+def AArch64_RedjetDeadRefSignal_node : AArch64_RedjetDeadRefSignal;
+
+// Redjet OffHeapEvict — Deterministic RAII eviction for @RJGC(Mark = "ImmediateEviction")
+class AArch64_RedjetOffHeapEvict : GCBarrier<"bl\tredjet_offheap_evict\t# redjet offheap evict", "Redjet Off-Heap Immediate Eviction Barrier (AArch64)", 40, "call"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_offheap_evict GPR64:$handle_ptr)];
+}
+
+def AArch64_RedjetOffHeapEvict_node : AArch64_RedjetOffHeapEvict;
+
+// ============================================================================
 // End of AArch64_Redjet.td
 // ============================================================================

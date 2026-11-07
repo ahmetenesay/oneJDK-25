@@ -208,13 +208,38 @@ RedjetVFSNode* RedjetVFSTree::mkdir_p(const char* path, size_t quota_bytes) {
   return node;
 }
 
+RedjetVFSNode* RedjetVFSTree::resolve_or_heal_branch(const char* path) {
+  if (path == nullptr) return nullptr;
+  // Stage 1: Try in-memory repair if path matches one of the standard golden branches
+  for (size_t i = 0; i < 39; ++i) {
+    if (strcmp(GOLDEN_VFS_BRANCHES[i], path) == 0) {
+      log_warning(gc)("Redjet VFS: Stage 1 repair restoring missing branch: %s", path);
+      return mkdir_p(path);
+    }
+  }
+
+  // Stage 2: Full Tetrasexagesimal matrix verification & restoration
+  log_warning(gc)("Redjet VFS: Stage 2 recovery engaging GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX verification");
+  if (verify_and_restore_golden_vfs()) {
+    lock();
+    RedjetVFSNode* node = _find_node_unlocked(path);
+    unlock();
+    if (node != nullptr) return node;
+  }
+
+  if (RedjetVFSStrict) {
+    log_error(gc)("Redjet VFS Fatal: Branch '%s' could not be restored by 2-stage panic recovery!", path);
+  }
+  return nullptr;
+}
+
 RedjetVFSNode* RedjetVFSTree::find_node(const char* path) {
   if (path == nullptr) return nullptr;
   lock();
   RedjetVFSNode* node = _find_node_unlocked(path);
   unlock();
-  if (node == nullptr && RedjetVFSStrict) {
-    log_error(gc)("Strict VFS validation failure: branch '%s' not found!", path);
+  if (node == nullptr) {
+    node = resolve_or_heal_branch(path);
   }
   return node;
 }
@@ -264,12 +289,33 @@ uint64_t RedjetVFSTree::derive_crypto_key(const uint64_t K[7]) {
   return term1 ^ term2 ^ term3 ^ K[6];
 }
 
+static const uint64_t VAC_READ_SECRETS[7] = {
+  0x1A2B3C4D5E6F7081ULL, 0x82736451A0B1C2D3ULL,
+  0x0F1E2D3C4B5A6978ULL, 0x9876543210ABCDEFULL,
+  0xFEEDC0FFEE010203ULL, 0x0405060708090A0BULL,
+  0xCAFEBABEDEADBEEFULL
+};
+
+static const uint64_t MIRC_READ_SECRETS[7] = {
+  0xA1B2C3D4E5F60718ULL, 0x283746150ACBDCEDULL,
+  0xF0E1D2C3B4A59687ULL, 0x8967452301BAEDFCULL,
+  0xC0FFEEFEED030201ULL, 0x0B0A090807060504ULL,
+  0xDEADBEEFCAFEBABEULL
+};
+
+const uint64_t RedjetVFSTree::KEY_VAC_READ  = RedjetVFSTree::derive_crypto_key(VAC_READ_SECRETS);
+const uint64_t RedjetVFSTree::KEY_MIRC_READ = RedjetVFSTree::derive_crypto_key(MIRC_READ_SECRETS);
+
 bool RedjetVFSTree::check_wx_access(const char* path, uint64_t access_key) {
   if (path == nullptr) return false;
-  // rawcode_cell requires valid key (vac_read key)
-  // vac_processed_code_chunk requires valid key (mirc_read key)
-  if (strstr(path, "rawcode_cell") != nullptr || strstr(path, "vac_processed_code_chunk") != nullptr) {
-    return access_key != 0;
+  if (strstr(path, "rawcode_cell") != nullptr) {
+    return access_key == KEY_VAC_READ;
+  }
+  if (strstr(path, "vac_processed_code_chunk") != nullptr) {
+    return access_key == KEY_MIRC_READ;
+  }
+  if (strstr(path, "mirc_execution_ready_page") != nullptr) {
+    return (access_key == KEY_MIRC_READ || access_key == KEY_VAC_READ);
   }
   return true;
 }

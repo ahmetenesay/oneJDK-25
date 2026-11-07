@@ -119,11 +119,10 @@ static void hs_compute_default_strides(const HS_hotspot_tensor_t* t, int64_t out
     }
 }
 
-/* ── SBC/GPIO & Ring-0 State ── */
+/* ── SBC/GPIO State ── */
 static HS_hotspot_gpio_desc_t    g_hs_gpio_desc{};
 static std::atomic<bool>             g_hs_gpio_ready{ false };
 static std::atomic<uint64_t>         g_hs_gpio_simulated_pins{ 0 };
-static HS_hotspot_ring0_status_t g_hs_ring0_status{};
 
 } // namespace
 
@@ -1216,28 +1215,4 @@ RJ_API uint8_t HS_hotspot_gpio_fast_read(uint32_t pin) {
     uint64_t sim_bit = 1ULL << pin;
     return (g_hs_gpio_simulated_pins.load(std::memory_order_relaxed) & sim_bit) ? 1 : 0;
 }
-
-RJ_API int HS_hotspot_ring0_connect(HS_hotspot_ring0_status_t* out_status) {
-    std::memset(&g_hs_ring0_status, 0, sizeof(g_hs_ring0_status));
-    // Purged Ring 0 kernel driver dependency: enforce safe Ring 3 OS power QoS
-    g_hs_ring0_status.is_driver_loaded = 0;
-    g_hs_ring0_status.driver_version   = 0x0300; // Ring 3 mode marker
-    if (out_status) *out_status = g_hs_ring0_status;
-    return 0;
-}
-
-RJ_API int HS_hotspot_ring0_apply_hwp_policy(const HS_hotspot_ring0_hwp_policy_t* policy) {
-    if (!policy) return -1;
-    // Route hardware performance boost through Ring 3 OS Power QoS / Upclocker
-    if (policy->anti_downclock_boost) {
-        hs_upclocker_set_boost(1);
-        hs_upclocker_t::pin_max_frequency_warmup(25);
-    }
-    return 0;
-}
-
-RJ_API void HS_hotspot_ring0_disconnect(void) {
-    g_hs_ring0_status.is_driver_loaded = 0;
-}
-
 } // extern "C"

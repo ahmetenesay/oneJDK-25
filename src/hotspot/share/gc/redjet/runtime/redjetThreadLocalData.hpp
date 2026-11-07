@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -27,6 +27,8 @@
 
 #include "gc/shared/gcThreadLocalData.hpp"
 #include "gc/shared/gc_globals.hpp"
+#include "gc/redjet/runtime/redjet_globals.hpp"
+#include "gc/redjet/api/redjetTailTraces.hpp"
 #include "runtime/javaThread.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
@@ -124,6 +126,9 @@ private:
 public:
   static void initialize(Thread* thread) {
     new (thread->gc_data()) RedjetThreadLocalData();
+    if (RedjetGCUseDeadReferenceSignals) {
+      g_redjet_tail_traces.register_thread_clasp(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(thread)));
+    }
   }
 
   static void destroy(Thread* thread) {

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -156,6 +156,10 @@ RJ_API void* msimd_aligned_alloc_cl(size_t size, size_t align)  { return hs_alig
 RJ_API void  msimd_aligned_free_cl(void* ptr)                   { hs_aligned_free_cl(ptr); }
 RJ_API void* msimd_alloc_aligned(size_t size, size_t align)     { return hs_aligned_alloc_cl(size, align); }
 RJ_API void  msimd_free_aligned(void* ptr)                      { hs_aligned_free_cl(ptr); }
+RJ_API void* rj_aligned_alloc_cl(size_t size, size_t alignment) { return hs_aligned_alloc_cl(size, alignment); }
+RJ_API void  rj_aligned_free_cl(void* ptr)                      { hs_aligned_free_cl(ptr); }
+RJ_API void* rj_alloc_aligned(size_t size, size_t alignment)    { return hs_aligned_alloc_cl(size, alignment); }
+RJ_API void  rj_free_aligned(void* ptr)                         { hs_aligned_free_cl(ptr); }
 
 /* ========================================================================= */
 /* 2. PREFETCHERS, NON-TEMPORAL FLOAT/DOUBLE STREAM STORES & MEMORY FENCES   */
@@ -767,6 +771,15 @@ RJ_API void hs_parallel_for(msimd_context ctx, size_t total, msimd_parallel_for_
     }
     s_default_pool.wait_all();
 }
+
+RJ_API rj_status_t          rj_init_with_config(rj_context* out_ctx, rj_isa_t isa, rj_backend_t b, const rj_config_t* cfg) { return hs_init_with_config(out_ctx, isa, b, cfg); }
+RJ_API rj_status_t          rj_init(rj_context* out_ctx, rj_isa_t isa, rj_backend_t b)                                        { return hs_init(out_ctx, isa, b); }
+RJ_API rj_profile_mode_t    rj_get_active_profile(rj_context ctx)                                                                   { return hs_get_active_profile(ctx); }
+RJ_API const rj_config_t*   rj_get_config(rj_context ctx)                                                                          { return hs_get_config(ctx); }
+RJ_API void                 rj_destroy(rj_context ctx)                                                                              { hs_destroy(ctx); }
+RJ_API rj_status_t          rj_get_cpu_info(rj_context ctx, rj_cpu_info_t* out_info)                                             { return hs_get_cpu_info(ctx, out_info); }
+RJ_API rj_status_t          rj_calibrate_pipeline(rj_context ctx, int* out_lvl, double* out_gflops)                                 { return hs_calibrate_pipeline(ctx, out_lvl, out_gflops); }
+RJ_API void                 rj_parallel_for(rj_context ctx, size_t total, rj_parallel_for_fn fn, void* user_data)                { hs_parallel_for(ctx, total, fn, user_data); }
 
 RJ_API msimd_status_t       msimd_init_with_config(msimd_context* out_ctx, msimd_isa_t isa, msimd_backend_t b, const msimd_config_t* cfg) { return hs_init_with_config(out_ctx, isa, b, cfg); }
 RJ_API msimd_status_t       msimd_init(msimd_context* out_ctx, msimd_isa_t isa, msimd_backend_t b)                                        { return hs_init(out_ctx, isa, b); }

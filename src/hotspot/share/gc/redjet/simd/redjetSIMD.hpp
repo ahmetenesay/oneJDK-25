@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -114,6 +114,10 @@ public:
     static bool has_avx512();
     static bool has_neon();
     static bool has_3d_vcache();
+
+    // Dynamic SIMD Throttling & Congestion Fallback
+    static bool is_simd_congested();
+    static bool should_use_simd(bool is_latency_critical = true);
 };
 
 #endif // SHARE_GC_REDJET_REDJETSIMD_HPP

@@ -62,6 +62,15 @@
   product(ccstr, RedjetSIMD, "auto", EXPERIMENTAL,                           \
           "Vectorization engine: auto, avx10_2, avx512, sve2, rvv, scalar.") \
                                                                              \
+  product(bool, RedjetCriticalSIMDOnly, false, EXPERIMENTAL,                 \
+          "Restrict SIMD vector acceleration strictly to latency-critical "  \
+          "GC operations and use scalar mode elsewhere.")                    \
+                                                                             \
+  product(bool, RedjetDynamicSIMDFallback, true, EXPERIMENTAL,               \
+          "Automatically throttle vector SIMD execution to scalar loops "    \
+          "when ALU pipelines are congested by mutator workloads.")          \
+
+                                                                             \
   product(bool, RedjetHeteroArenas, true, EXPERIMENTAL,                      \
           "Enable P-Core and E-Core heterogeneous task arenas via oneTBB.")  \
                                                                              \

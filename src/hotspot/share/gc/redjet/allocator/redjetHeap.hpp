@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -181,6 +181,7 @@ public:
   RedjetMarkBitMap*      mark_bitmap()  { return &_mark_bitmap; }
   RedjetRootScanner*     root_scanner() { return _root_scanner; }
   msimd_context          msimd_ctx()    { return _msimd_ctx; }
+  rj_context             rj_ctx()       { return _msimd_ctx; }
 
   // Root scanning and sweep operations
   size_t scan_roots_and_trace();

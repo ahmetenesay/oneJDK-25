@@ -79,11 +79,59 @@ public:
     ISA_SVE2   = 3
   };
 
+  static inline bool can_satisfy(ISALevel level) {
+    switch (level) {
+      case ISA_SVE2:   return IS_SVE2();
+      case ISA_SVE:    return IS_SVE();
+      case ISA_NEON:   return IS_NEON();
+      case ISA_SCALAR: return true;
+      default:         return false;
+    }
+  }
+
+  static inline ISALevel resolve_fallback_down(ISALevel requested) {
+    for (int lvl = static_cast<int>(requested); lvl >= static_cast<int>(ISA_SCALAR); --lvl) {
+      if (can_satisfy(static_cast<ISALevel>(lvl))) {
+        return static_cast<ISALevel>(lvl);
+      }
+    }
+    return ISA_SCALAR;
+  }
+
+  static inline ISALevel resolve_closest_isa(ISALevel requested) {
+    if (can_satisfy(requested)) return requested;
+    for (int lvl = static_cast<int>(requested) + 1; lvl <= static_cast<int>(ISA_SVE2); ++lvl) {
+      if (can_satisfy(static_cast<ISALevel>(lvl))) {
+        return static_cast<ISALevel>(lvl);
+      }
+    }
+    return resolve_fallback_down(requested);
+  }
+
   static inline ISALevel resolve_best_vector_isa() {
     if (IS_SVE2()) return ISA_SVE2;
     if (IS_SVE())  return ISA_SVE;
     if (IS_NEON()) return ISA_NEON;
     return ISA_SCALAR;
+  }
+
+  // Universal Command & Fallback Accessors
+  static inline ISALevel REQUEST_ISA(ISALevel requested) { return resolve_closest_isa(requested); }
+  static inline ISALevel REQUEST_BEST_ISA()              { return resolve_best_vector_isa(); }
+  static inline bool     CAN_EXECUTE(ISALevel level)     { return can_satisfy(level); }
+
+  static inline ISALevel GET_SVE2_OR_FALLBACK() { return resolve_closest_isa(ISA_SVE2); }
+  static inline ISALevel GET_SVE_OR_FALLBACK()  { return resolve_closest_isa(ISA_SVE); }
+  static inline ISALevel GET_NEON_OR_FALLBACK() { return resolve_closest_isa(ISA_NEON); }
+
+  static inline const char* get_isa_name(ISALevel lvl) {
+    switch (lvl) {
+      case ISA_SVE2:   return "SVE2";
+      case ISA_SVE:    return "SVE";
+      case ISA_NEON:   return "NEON";
+      case ISA_SCALAR: return "SCALAR";
+      default:         return "UNKNOWN";
+    }
   }
 };
 

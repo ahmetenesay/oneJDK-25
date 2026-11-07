@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -109,9 +109,8 @@ jint RedjetHeap::initialize() {
   _mark_bitmap.initialize((HeapWord*)_virtual_space.low(), (HeapWord*)_virtual_space.high());
   _root_scanner = new RedjetRootScanner(this, &_mark_bitmap);
 
-  // Initialize VFS memory trees & strict branch validation policies
+  // Initialize VFS memory tree & strict branch validation policies
   _vfs_tree.init();
-  g_hs_vfs_tree.init();
   HS_hotspot_set_strict_vfs_branch_validation(RedjetVFSStrict ? 1 : 0);
   HS_hotspot_vfs_set_panic_dialog_enabled(RedjetVFSPanicDialog ? 1 : 0);
 
@@ -135,16 +134,16 @@ jint RedjetHeap::initialize() {
   // Initialize unified RedjetGC Big GC engine
   _gc.init(&_runway, &_motherline, &_falline, &_landfill);
 
-  // Initialize default Pure-Mathematical MSIMD execution context (active out-of-the-box for Java math/SIMD)
-  msimd_config_t mcfg{};
+  // Initialize default Pure-Mathematical RJ SIMD execution context (active out-of-the-box for Java math/SIMD)
+  rj_config_t mcfg{};
   mcfg.profile                 = RedjetSCMode ? RJ_PROFILE_SAFETY_CRITICAL : RJ_PROFILE_STANDARD;
   mcfg.static_arena_size_bytes = RedjetSCMode ? MIN2(max_byte_size / 8, (size_t)(64ULL * 1024 * 1024)) : 0;
   mcfg.max_loop_iterations     = RedjetSCMode ? 1000000u : 0u;
   mcfg.forbid_runtime_heap     = RedjetSCMode || RedjetForbidDynamicGrowth;
   mcfg.user_static_arena_buf   = nullptr;
-  msimd_backend_t backend      = RedjetHeteroArenas ? RJ_BACKEND_TBB : RJ_BACKEND_AUTO;
+  rj_backend_t backend         = RedjetHeteroArenas ? RJ_BACKEND_TBB : RJ_BACKEND_AUTO;
   if (hs_init_with_config(&_msimd_ctx, RJ_ISA_AUTO, backend, &mcfg) != RJ_SUCCESS) {
-    log_warning(gc)("RedjetGC MSIMD context initialization fell back to scalar/fallback tier");
+    log_warning(gc)("RedjetGC RJ SIMD context initialization fell back to scalar/fallback tier");
   }
 
   // Install barrier set

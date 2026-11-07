@@ -1,0 +1,151 @@
+//
+// Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
+// DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+//
+// This code is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License version 2 only, as
+// published by the Free Software Foundation. Oracle designates this
+// particular file as subject to the "Classpath" exception as provided
+// by Oracle in the LICENSE file that accompanied this code.
+//
+// This code is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+// version 2 for more details (a copy is included in the LICENSE file that
+// accompanied this code).
+//
+// You should have received a copy of the GNU General Public License version
+// 2 along with this work; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+//
+// Please contact WLFT or visit https://github.com/ahmetenesay/oneJDK-25
+// if you need additional information or have any questions.
+//
+
+source_hpp %{
+
+#include "gc/shared/gc_globals.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetC2.hpp"
+#include "gc/redjet/runtime/redjetSupport.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
+#include "gc/redjet/engine/redjetPointCoordinator.hpp"
+
+void redjet_x86_emit_pausepoint_poll(MacroAssembler* masm, Register scratch);
+void redjet_x86_emit_safepoint_poll(MacroAssembler* masm, Register scratch);
+void redjet_x86_clear_cacheline_64(MacroAssembler* masm, Register base_addr);
+
+%}
+
+source %{
+
+#include "gc/redjet/runtime/redjetBarrierSet.hpp"
+#include "gc/redjet/runtime/redjetBarrierSetAssembler.hpp"
+#include "asm/macroAssembler.inline.hpp"
+
+void redjet_x86_emit_pausepoint_poll(MacroAssembler* masm, Register scratch) {
+  Label done;
+  ExternalAddress gate_addr((address)RedjetPointCoordinator::pausepoint_gate_address());
+  masm->lea(scratch, gate_addr);
+  masm->movl(scratch, Address(scratch, 0));
+  masm->testl(scratch, scratch);
+  masm->jcc(Assembler::zero, done);
+  masm->push_call_clobbered_registers(true);
+  masm->xorptr(c_rarg1, c_rarg1);
+  masm->super_call_VM_leaf(CAST_FROM_FN_PTR(address, redjet_rt_pausepoint_poll_slow), r15_thread, c_rarg1);
+  masm->pop_call_clobbered_registers(true);
+  masm->bind(done);
+}
+
+void redjet_x86_emit_safepoint_poll(MacroAssembler* masm, Register scratch) {
+  Label done;
+  ExternalAddress flag_addr((address)RedjetPointCoordinator::safepoint_flag_address());
+  masm->lea(scratch, flag_addr);
+  masm->movl(scratch, Address(scratch, 0));
+  masm->testl(scratch, scratch);
+  masm->jcc(Assembler::zero, done);
+  masm->push_call_clobbered_registers(true);
+  masm->super_call_VM_leaf(CAST_FROM_FN_PTR(address, redjet_rt_safepoint_poll_slow), r15_thread);
+  masm->pop_call_clobbered_registers(true);
+  masm->bind(done);
+}
+
+void redjet_x86_clear_cacheline_64(MacroAssembler* masm, Register base_addr) {
+  if (VM_Version::supports_evex() && UseAVX >= 3) {
+    masm->evpxorq(xmm0, xmm0, xmm0, Assembler::AVX_512bit);
+    masm->evmovdquq(Address(base_addr, 0), xmm0, Assembler::AVX_512bit);
+  } else if (UseAVX >= 2) {
+    masm->vpxor(xmm0, xmm0, xmm0, Assembler::AVX_256bit);
+    masm->vmovdqu(Address(base_addr, 0), xmm0, Assembler::AVX_256bit);
+    masm->vmovdqu(Address(base_addr, 32), xmm0, Assembler::AVX_256bit);
+  } else {
+    for (int off = 0; off < 64; off += 8) {
+      masm->movq(Address(base_addr, off), (int32_t)0);
+    }
+  }
+}
+
+%}
+
+// ============================================================================
+// Redjet Store Instructions on x86_64
+// ============================================================================
+
+instruct redjetStoreP(memory mem, any_RegP src)
+%{
+  predicate(UseRedjetGC);
+  match(Set mem (StoreP mem src));
+  ins_cost(MEMORY_REF_COST);
+  size(8);
+  format %{ "movq    $mem, $src\t# redjet ptr" %}
+  ins_encode %{
+    __ movptr($mem$$Address, $src$$Register);
+  %}
+  ins_pipe(ialu_mem_reg);
+%}
+
+// ============================================================================
+// Redjet Load Instructions on x86_64
+// ============================================================================
+
+instruct redjetLoadP(rRegP dst, memory mem)
+%{
+  predicate(UseRedjetGC);
+  match(Set dst (LoadP mem));
+  ins_cost(MEMORY_REF_COST);
+  size(8);
+  format %{ "movq    $dst, $mem\t# redjet ptr" %}
+  ins_encode %{
+    __ movptr($dst$$Register, $mem$$Address);
+  %}
+  ins_pipe(ialu_reg_mem);
+%}
+
+// ============================================================================
+// Redjet 2-Point Poll Instructions on x86_64
+// ============================================================================
+
+instruct redjetPausepointPoll(rRegP scratch)
+%{
+  predicate(UseRedjetGC);
+  match(RedjetPausepointPoll scratch);
+  effect(KILL scratch);
+  ins_cost(4 * DEFAULT_COST);
+  format %{ "redjet_pausepoint_poll $scratch" %}
+  ins_encode %{
+    redjet_x86_emit_pausepoint_poll(_masm, $scratch$$Register);
+  %}
+  ins_pipe(pipe_slow);
+%}
+
+instruct redjetSafepointPoll(rRegP scratch)
+%{
+  predicate(UseRedjetGC);
+  match(RedjetSafepointPoll scratch);
+  effect(KILL scratch);
+  ins_cost(4 * DEFAULT_COST);
+  format %{ "redjet_safepoint_poll $scratch" %}
+  ins_encode %{
+    redjet_x86_emit_safepoint_poll(_masm, $scratch$$Register);
+  %}
+  ins_pipe(pipe_slow);
+%}

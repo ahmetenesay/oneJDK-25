@@ -31,6 +31,7 @@ import sun.jvm.hotspot.gc.g1.*;
 import sun.jvm.hotspot.gc.parallel.*;
 import sun.jvm.hotspot.gc.serial.*;
 import sun.jvm.hotspot.gc.shenandoah.*;
+import sun.jvm.hotspot.gc.redjet.*;
 import sun.jvm.hotspot.gc.shared.*;
 import sun.jvm.hotspot.gc.z.*;
 import sun.jvm.hotspot.debugger.JVMDebugger;
@@ -141,6 +142,11 @@ public class HeapSummary extends Tool {
          printValMB("capacity  = ", num_regions * ShenandoahHeapRegion.regionSizeBytes());
          printValMB("used      = ", sh.used());
          printValMB("committed = ", sh.committed());
+      } else if (heap instanceof RedjetHeap) {
+         RedjetHeap rh = (RedjetHeap) heap;
+         System.out.println("RedjetGC Big GC Engine Heap (VFS on-heap & off-heap):");
+         printValMB("capacity  = ", rh.capacity());
+         printValMB("used      = ", rh.used());
       } else if (heap instanceof EpsilonHeap) {
          EpsilonHeap eh = (EpsilonHeap) heap;
          printSpace(eh.space());

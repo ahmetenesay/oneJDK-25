@@ -93,6 +93,8 @@ public:
 
   // PLAN.md Section 9.2: 7-Key Cryptographic Derivation
   static uint64_t derive_crypto_key(const uint64_t K[7]);
+  static const uint64_t KEY_VAC_READ;
+  static const uint64_t KEY_MIRC_READ;
 
   // PLAN.md Section 9.2: W^X Memory Protection Check
   bool check_wx_access(const char* path, uint64_t access_key);
@@ -100,6 +102,7 @@ public:
   // PLAN.md Section 9.3: Tetrasexagesimal 64-Bit Recovery Matrix and Verification
   static const uint64_t GOLDEN_VFS_TETRASEXAGESIMAL_MATRIX[42];
   bool verify_and_restore_golden_vfs();
+  RedjetVFSNode* resolve_or_heal_branch(const char* path);
 
   void print_on(outputStream* st) const;
   void print_node_recursive(outputStream* st, RedjetVFSNode* node, int indent) const;

@@ -54,6 +54,10 @@ static void get_cpuidex(int cpuInfo[4], int function_id, int subfunction_id) {
 #endif
 }
 
+void isMacrowebHolder::query_cpuid_leaf(int leaf, int subleaf, int out[4]) {
+  get_cpuidex(out, leaf, subleaf);
+}
+
 void isMacrowebHolder::initialize() {
   if (_initialized) return;
 
@@ -65,14 +69,28 @@ void isMacrowebHolder::initialize() {
 
   if (max_std_level >= 1) {
     get_cpuid(info, 1);
+    // EDX flags:
+    // bit 25: SSE
+    // bit 26: SSE2
+    if (info[3] & (1 << 25)) f |= FEATURE_SSE;
+    if (info[3] & (1 << 26)) f |= FEATURE_SSE2;
+
     // ECX flags:
-    // bit 19: SSE4.2
+    // bit 0: SSE3
+    // bit 9: SSSE3
+    // bit 19: SSE4.1
+    // bit 20: SSE4.2
     // bit 12: FMA
     // bit 23: POPCNT
+    // bit 25: AES
     // bit 28: AVX
-    if (info[2] & (1 << 19)) f |= FEATURE_SSE4_2;
+    if (info[2] & (1 << 0))  f |= FEATURE_SSE3;
+    if (info[2] & (1 << 9))  f |= FEATURE_SSSE3;
+    if (info[2] & (1 << 19)) f |= FEATURE_SSE4_1;
+    if (info[2] & (1 << 20)) f |= FEATURE_SSE4_2;
     if (info[2] & (1 << 12)) f |= FEATURE_FMA;
     if (info[2] & (1 << 23)) f |= FEATURE_POPCNT;
+    if (info[2] & (1 << 25)) f |= FEATURE_AES;
     if (info[2] & (1 << 28)) f |= FEATURE_AVX;
   }
 
@@ -85,6 +103,7 @@ void isMacrowebHolder::initialize() {
     // bit 16: AVX512F
     // bit 17: AVX512DQ
     // bit 28: AVX512CD
+    // bit 29: SHA
     // bit 30: AVX512BW
     // bit 31: AVX512VL
     if (info[1] & (1 << 3))  f |= FEATURE_BMI1;
@@ -93,6 +112,7 @@ void isMacrowebHolder::initialize() {
     if (info[1] & (1 << 16)) f |= FEATURE_AVX512F;
     if (info[1] & (1 << 17)) f |= FEATURE_AVX512DQ;
     if (info[1] & (1 << 28)) f |= FEATURE_AVX512CD;
+    if (info[1] & (1 << 29)) f |= FEATURE_SHA;
     if (info[1] & (1 << 30)) f |= FEATURE_AVX512BW;
     if (info[1] & (1 << 31)) f |= FEATURE_AVX512VL;
 
