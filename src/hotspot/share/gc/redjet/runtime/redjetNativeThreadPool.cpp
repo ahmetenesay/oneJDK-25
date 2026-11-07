@@ -26,6 +26,27 @@
 #include <cstdlib>
 #include <cstring>
 
+#if defined(_MSC_VER)
+#if defined(_M_AMD64) || defined(_M_IX86)
+#include <intrin.h>
+#define FCS_SPIN_PAUSE() _mm_pause()
+#elif defined(_M_ARM64)
+#include <intrin.h>
+#define FCS_SPIN_PAUSE() __yield()
+#else
+#define FCS_SPIN_PAUSE() ((void)0)
+#endif
+#elif defined(__x86_64__) || defined(__i386__)
+#include <immintrin.h>
+#define FCS_SPIN_PAUSE() __builtin_ia32_pause()
+#elif defined(__aarch64__)
+#define FCS_SPIN_PAUSE() asm volatile("yield" ::: "memory")
+#elif defined(__riscv)
+#define FCS_SPIN_PAUSE() asm volatile(".insn i 0x0F, 0, x0, x0, 0x010" ::: "memory")
+#else
+#define FCS_SPIN_PAUSE() ((void)0)
+#endif
+
 NativeFCS_ThreadPool::NativeFCS_ThreadPool() {
   head_idx.store(0, std::memory_order_relaxed);
   tail_idx.store(0, std::memory_order_relaxed);
@@ -39,13 +60,7 @@ void NativeFCS_ThreadPool::push_task(void (*func)(void*), void* data, uint32_t a
 
   // Wait if slot is currently occupied (ring buffer full backpressure)
   while (slot.task_func.load(std::memory_order_acquire) != nullptr) {
-#if defined(_WIN32) && (defined(_M_AMD64) || defined(_M_IX86))
-    _mm_pause();
-#elif defined(__x86_64__) || defined(__i386__)
-    __builtin_ia32_pause();
-#elif defined(__aarch64__)
-    asm volatile("yield" ::: "memory");
-#endif
+    FCS_SPIN_PAUSE();
   }
 
   slot.task_data.store(data, std::memory_order_relaxed);
@@ -64,13 +79,20 @@ bool NativeFCS_ThreadPool::steal_task_for_core(uint32_t core_id, void** out_func
     void* func = slot.task_func.load(std::memory_order_acquire);
     if (func != nullptr) {
       if (slot.core_affinity_mask == 0 || (slot.core_affinity_mask & (1U << (core_id % 32)))) {
+        // Critical: load task_data BEFORE CAS to avoid race where push_task overwrites slot immediately upon CAS success
+        void* data = slot.task_data.load(std::memory_order_relaxed);
         // Attempt lock-free claim
         if (slot.task_func.compare_exchange_strong(func, nullptr, std::memory_order_acq_rel)) {
           *out_func = func;
-          *out_data = slot.task_data.load(std::memory_order_relaxed);
-          // Advance head index if this was the leading task
-          if (idx == current_head) {
-            head_idx.compare_exchange_strong(current_head, current_head + 1, std::memory_order_release);
+          *out_data = data;
+          // Advance head index past all consecutive empty slots
+          uint64_t h = head_idx.load(std::memory_order_relaxed);
+          while (h < current_tail && ring_buffer[h % RING_SIZE].task_func.load(std::memory_order_relaxed) == nullptr) {
+            if (head_idx.compare_exchange_weak(h, h + 1, std::memory_order_release, std::memory_order_relaxed)) {
+              h++;
+            } else {
+              break;
+            }
           }
           return true;
         }

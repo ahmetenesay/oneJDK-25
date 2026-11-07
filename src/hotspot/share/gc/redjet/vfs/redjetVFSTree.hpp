@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -90,6 +90,15 @@ public:
   RedjetVFSNode* mkdir_p(const char* path, size_t quota_bytes = 0);
   RedjetVFSNode* find_node(const char* path);
   size_t get_used_bytes(const char* path);
+
+  // PLAN.md Section 9.2: 7-Key Cryptographic Derivation
+  static uint64_t derive_crypto_key(const uint64_t K[7]);
+
+  // PLAN.md Section 9.2: W^X Memory Protection Check
+  bool check_wx_access(const char* path, uint64_t access_key);
+
+  // PLAN.md Section 9.3: Two-stage VFS verification and Golden Image Recovery
+  bool verify_and_restore_golden_vfs();
 
   void print_on(outputStream* st) const;
   void print_node_recursive(outputStream* st, RedjetVFSNode* node, int indent) const;

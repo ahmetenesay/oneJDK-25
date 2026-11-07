@@ -44,7 +44,7 @@
 // Plump & Sequential Modes for Dynamic Resident Set Compression
 // ============================================================================
 
-class RedjetRMRPSubsystem {
+class RedjetRMRP {
 private:
   static std::atomic<uint64_t> _total_plump_reclaimed_bytes;
   static std::atomic<uint64_t> _total_sequential_reclaimed_bytes;
@@ -65,5 +65,7 @@ public:
   RJ_API static uint64_t total_sequential_reclaimed() { return _total_sequential_reclaimed_bytes.load(std::memory_order_relaxed); }
   RJ_API static uint32_t total_cycles() { return _total_reclamation_cycles.load(std::memory_order_relaxed); }
 };
+
+using RedjetRMRPSubsystem = RedjetRMRP;
 
 #endif // SHARE_GC_REDJET_ALLOCATOR_REDJET_RMRP_HPP

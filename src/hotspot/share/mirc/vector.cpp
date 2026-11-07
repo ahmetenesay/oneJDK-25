@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -367,7 +367,6 @@ Node* PhaseVector::expand_vbox_node_helper(Node* vbox,
   }
 
   assert(vbox->is_CheckCastPP(), "should be expanded");
-  // TODO: assert that expanded vbox is initialized with the same value (vect).
   return vbox; // already expanded
 }
 

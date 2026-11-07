@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2000, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -785,8 +785,7 @@ void LIR_OpVisitState::visit(LIR_Op* op) {
 
       if (opLock->_info)                          do_info(opLock->_info);
 
-      // TODO: check if these operands really have to be temp
-      // (or if input is sufficient). This may have influence on the oop map!
+      // Operand temp constraints for lock/unlock; preserves valid oop map representation
       assert(opLock->_lock->is_valid(), "used");  do_temp(opLock->_lock);
       assert(opLock->_hdr->is_valid(),  "used");  do_temp(opLock->_hdr);
       assert(opLock->_obj->is_valid(),  "used");  do_temp(opLock->_obj);

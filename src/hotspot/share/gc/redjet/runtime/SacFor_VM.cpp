@@ -1,4 +1,4 @@
-﻿#if 0 // oneJDK-25: Reference implementation for RedjetGC extraction
+#if 0 // oneJDK-25: Reference implementation for RedjetGC extraction
 #include "MathventageSIMD.h"
 #include "SacculusForge.h"
 
@@ -14587,7 +14587,7 @@ public:
     }
 };
 #endif
- 
+
 #if defined(_WIN32) && defined(SACFOR_HAS_LLVM)
 extern "C" {
 double __stdcall __std_smf_sph_neumann(unsigned int, double) noexcept;
@@ -14601,7 +14601,7 @@ double __stdcall __std_smf_cyl_bessel_j(double, double) noexcept;
 double __stdcall __std_smf_cyl_bessel_i(double, double) noexcept;
 }
 #endif
- 
+
 struct sacculus_forge_jit_t {
     sacculus_code_heap_t* code_heap = nullptr;
     sacculus_dispatch_table_t* dispatch = nullptr;
@@ -18505,32 +18505,11 @@ extern "C" {
 
     RJ_API int HS_hotspot_ring0_connect(HS_hotspot_ring0_status_t* out_status) {
         memset(&g_hs_ring0_status, 0, sizeof(g_hs_ring0_status));
-
-#ifdef _WIN32
-        HANDLE hDevice = CreateFileA("\\\\.\\HSVM_K",
-            GENERIC_READ | GENERIC_WRITE,
-            0, NULL, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hDevice != INVALID_HANDLE_VALUE) {
-            g_hs_ring0_status.is_driver_loaded = 1;
-            g_hs_ring0_status.driver_version = 0x0100;
-            CloseHandle(hDevice);
-        }
-#elif defined(__linux__)
-        int fd = open("/dev/hsvm_k", O_RDWR);
-        if (fd >= 0) {
-            g_hs_ring0_status.is_driver_loaded = 1;
-            g_hs_ring0_status.driver_version = 0x0100;
-            close(fd);
-        }
-#endif
-
-        if (!g_hs_ring0_status.is_driver_loaded) {
-            g_hs_ring0_status.driver_version = 0x0001;
-        }
-
+        // Pure Ring 3: Kernel driver handles (\\.\HSVM_K / /dev/hsvm_k) purged per PLAN.md Faz 0
+        g_hs_ring0_status.is_driver_loaded = 0;
+        g_hs_ring0_status.driver_version = 0x0003; // Ring 3 OS Power QoS emulation
         if (out_status) *out_status = g_hs_ring0_status;
-        return g_hs_ring0_status.is_driver_loaded ? 0 : 1;
+        return 0;
     }
 
     RJ_API int HS_hotspot_ring0_apply_hwp_policy(const HS_hotspot_ring0_hwp_policy_t* policy) {

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -68,15 +68,4 @@ void hs_mltc_engine_t::reset() {
     emergency_compactions.store(0, std::memory_order_relaxed);
     throttled_allocations.store(0, std::memory_order_relaxed);
     realignments_forced.store(0, std::memory_order_relaxed);
-}
-
-size_t RedjetRMRP::execute_reclamation(hs_rmrp_method_e method, size_t target_bytes) {
-    if (method == hs_rmrp_method_e::PLUMP) {
-        hs_unified_log_emit(HS_Ebin0_RMRP_COALESCE_DECOMMIT, HS_Ebin1_INFO, 0, "rmrp_plump",
-                            "RMRP Plump: Executing bulk coalesce and physical memory resident set decommit");
-    } else {
-        hs_unified_log_emit(HS_Ebin0_RMRP_SPAN_TRIM, HS_Ebin1_INFO, 0, "rmrp_sequential",
-                            "RMRP Sequential: Executing span trimming on cold pages");
-    }
-    return target_bytes;
 }

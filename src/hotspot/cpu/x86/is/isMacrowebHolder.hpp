@@ -55,6 +55,11 @@ public:
 
   static void initialize();
 
+  static inline uint64_t get_isa_features() {
+    if (!_initialized) initialize();
+    return _isa_features;
+  }
+
   static inline bool has_feature(ISAFeatureBits bit) {
     if (!_initialized) initialize();
     return (_isa_features & static_cast<uint64_t>(bit)) != 0;

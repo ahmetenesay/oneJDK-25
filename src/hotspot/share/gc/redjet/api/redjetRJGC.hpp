@@ -55,6 +55,11 @@ struct alignas(64) RJGCTrackedHandle {
   void (*custom_destructor)(void* ptr, size_t sz);
   RJGCTrackedHandle*   next;
   std::atomic<bool>    is_evicted;
+  bool                 in_pool;
+
+  RJGCTrackedHandle() : off_heap_ptr(nullptr), size_bytes(0), mode(RJGCMode::IMMEDIATE_EVICTION),
+                        ref_count(0), custom_destructor(nullptr), next(nullptr),
+                        is_evicted(false), in_pool(false) {}
 };
 
 class RedjetRJGC {
@@ -62,9 +67,16 @@ public:
   static const size_t MAX_TRACKED_HANDLES = 8192;
 
 private:
+  static RJGCTrackedHandle               _handle_pool[MAX_TRACKED_HANDLES];
+  static std::atomic<RJGCTrackedHandle*> _free_head;
+  static std::atomic<bool>               _pool_initialized;
   static std::atomic<RJGCTrackedHandle*> _head_handle;
   static std::atomic<size_t>             _total_registered;
   static std::atomic<size_t>             _total_evicted_bytes;
+
+  static void ensure_pool_initialized();
+  static RJGCTrackedHandle* acquire_handle();
+  static void recycle_handle(RJGCTrackedHandle* handle);
 
 public:
   // Registers an off-heap native memory allocation under @RJGC lifecycle management

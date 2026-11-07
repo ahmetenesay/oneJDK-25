@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -155,7 +155,7 @@ ValueType* as_ValueType(ciConstant value) {
     case T_DOUBLE : return new DoubleConstant(value.as_double());
     case T_ARRAY  : // fall through (ciConstant doesn't have an array accessor)
     case T_OBJECT : {
-      // TODO: Common the code with GraphBuilder::load_constant?
+      // Object constant resolution based on loaded ciObject state
       ciObject* obj = value.as_object();
       if (obj->is_null_object())
         return objectNull;

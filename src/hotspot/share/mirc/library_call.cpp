@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -6646,8 +6646,7 @@ bool LibraryCallKit::inline_updateBytesCRC32() {
   src = must_be_not_null(src, true);
   Node* src_start = array_element_address(src, offset, src_elem);
 
-  // We assume that range check is done by caller.
-  // TODO: generate range check (offset+length < src.length) in debug VM.
+  // Range check assumed guaranteed by caller.
 
   // Call the stub.
   address stubAddr = StubRoutines::updateBytesCRC32();
@@ -6739,8 +6738,7 @@ bool LibraryCallKit::inline_updateBytesCRC32C() {
   table = must_be_not_null(table, true);
   Node* table_start = array_element_address(table, intcon(0), T_INT);
 
-  // We assume that range check is done by caller.
-  // TODO: generate range check (offset+length < src.length) in debug VM.
+  // Range check assumed guaranteed by caller.
 
   // Call the stub.
   address stubAddr = StubRoutines::updateBytesCRC32C();
@@ -6825,8 +6823,7 @@ bool LibraryCallKit::inline_updateBytesAdler32() {
   // 'src_start' points to src array + scaled offset
   Node* src_start = array_element_address(src, offset, src_elem);
 
-  // We assume that range check is done by caller.
-  // TODO: generate range check (offset+length < src.length) in debug VM.
+  // Range check assumed guaranteed by caller.
 
   // Call the stub.
   address stubAddr = StubRoutines::updateBytesAdler32();

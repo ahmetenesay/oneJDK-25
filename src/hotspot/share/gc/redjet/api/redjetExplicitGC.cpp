@@ -26,6 +26,8 @@
 #include "gc/redjet/api/redjetTailTraces.hpp"
 #include "gc/redjet/api/redjetRJGC.hpp"
 #include "gc/redjet/allocator/redjet_mltc.hpp"
+#include "gc/redjet/allocator/redjet_rmrp.hpp"
+#include "gc/redjet/allocator/redjetMotherline.hpp"
 #include "gc/redjet/runtime/redjetGearkit.hpp"
 #include "gc/redjet/runtime/redjet_globals.hpp"
 
@@ -39,8 +41,24 @@ void RedjetExplicitGC::preflight_gc_hint(uint32_t method_id, uint32_t bci) {
 }
 
 static void explicit_reclaim_sink(void* obj, uint32_t region_id) {
-  (void)obj;
-  (void)region_id;
+  if (obj == nullptr) return;
+
+  HS_hotspot_live_header_t* hdr = reinterpret_cast<HS_hotspot_live_header_t*>(obj);
+  bool transitioned = false;
+  if (hdr->isValid()) {
+    transitioned = hdr->try_transition_to_falline();
+  } else {
+    size_t hdr_sz = (sizeof(HS_hotspot_live_header_t) + SACFOR_CACHE_LINE - 1) & ~(SACFOR_CACHE_LINE - 1);
+    HS_hotspot_live_header_t* prev_hdr = reinterpret_cast<HS_hotspot_live_header_t*>(
+        reinterpret_cast<uint8_t*>(obj) - hdr_sz);
+    if (prev_hdr->isValid()) {
+      transitioned = prev_hdr->try_transition_to_falline();
+    }
+  }
+
+  hs_hotlog_emit(HS_Ebin0_HOTSWAP, HS_Ebin1_INFO, region_id,
+                 static_cast<uint32_t>(reinterpret_cast<uintptr_t>(obj) & 0xFFFFFFFF),
+                 transitioned ? 1 : 0, 0, 0, 0, 0, "ExplicitGC:DeadObjectReclaimed");
 }
 
 void RedjetExplicitGC::invoke_explicit_clean_hint() {

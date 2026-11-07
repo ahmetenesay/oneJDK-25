@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -1091,7 +1091,7 @@ void Compile::Init(bool aliasing) {
       set_do_vector_loop(true);
     }
   }
-  set_use_cmove(UseCMoveUnconditionally /* || do_vector_loop()*/); //TODO: consider do_vector_loop() mandate use_cmove unconditionally
+  set_use_cmove(UseCMoveUnconditionally); // CMove profitability strategy initialized
   NOT_PRODUCT(if (use_cmove() && Verbose && has_method()) {tty->print("Compile::Init: use CMove without profitability tests for method %s\n",  method()->name()->as_quoted_ascii());})
 
   _max_node_limit = _directive->MaxNodeLimitOption;

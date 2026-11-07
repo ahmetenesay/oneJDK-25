@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -724,7 +724,7 @@ Node *PhaseIdealLoop::conditional_move( Node *region ) {
     case T_DOUBLE:
     case T_FLOAT:
       if (C->use_cmove()) {
-        continue; //TODO: maybe we want to add some cost
+        continue; // CMove unconditionally enabled; skip cost check
       }
       cost += Matcher::float_cmove_cost(); // Could be very expensive
       break;

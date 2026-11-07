@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2005, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -145,8 +145,7 @@ class LinearScan : public CompilationResourceObj {
   ResourceBitMap            _has_call;          // bit set for each LIR_Op id that destroys all caller save registers
   BitMap2D                  _interval_in_loop;  // bit set for each virtual register that is contained in each loop
 
-  // cached debug info to prevent multiple creation of same object
-  // TODO: cached scope values for registers could be static
+  // Note: cached scope values for registers maintained per compilation instance
   ScopeValueArray           _scope_value_cache;
 
   static ConstantOopWriteValue* _oop_null_scope_value;

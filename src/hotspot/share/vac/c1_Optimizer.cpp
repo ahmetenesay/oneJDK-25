@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -428,14 +428,12 @@ class BlockMerger: public BlockClosure {
 #endif // DO_DELAYED_VERIFICATION
     block->set_end(sux->end());
 
-    // TODO Should this be done in set_end universally?
-    // add exception handlers of deleted block, if any
+    // Add exception handlers of deleted block, if any
     for (int k = 0; k < sux->number_of_exception_handlers(); k++) {
       BlockBegin* xhandler = sux->exception_handler_at(k);
       block->add_exception_handler(xhandler);
 
-      // TODO This should be in disconnect from graph...
-      // also substitute predecessor of exception handler
+      // Substitute predecessor of exception handler
       assert(xhandler->is_predecessor(sux), "missing predecessor");
       xhandler->remove_predecessor(sux);
       if (!xhandler->is_predecessor(block)) {

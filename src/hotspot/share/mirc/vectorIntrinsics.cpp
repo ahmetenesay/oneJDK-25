@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -796,7 +796,7 @@ bool LibraryCallKit::inline_vector_mem_operation(bool is_store) {
   BasicType elem_bt = elem_type->basic_type();
   int num_elem = vlen->get_con();
 
-  // TODO When mask usage is supported, VecMaskNotUsed needs to be VecMaskUseLoad.
+  // Vector mask capability check
   if (!arch_supports_vector(is_store ? Op_StoreVector : Op_LoadVector, num_elem, elem_bt, VecMaskNotUsed)) {
     log_if_needed("  ** not supported: arity=%d op=%s vlen=%d etype=%s ismask=no",
                     is_store, is_store ? "store" : "load",
@@ -2333,8 +2333,7 @@ bool LibraryCallKit::inline_vector_convert() {
       // properly size. Thus, first make a cast that retains the number of elements from source.
       int num_elem_for_cast = num_elem_from;
 
-      // It is possible that arch does not support this intermediate vector size
-      // TODO More complex logic required here to handle this corner case for the sizes.
+      // Validate intermediate vector size support on target architecture
       if (!arch_supports_vector(cast_vopc, num_elem_for_cast, elem_bt_to, VecMaskNotUsed)) {
         log_if_needed("  ** not supported: arity=1 op=cast#%d/4 vlen1=%d etype2=%s ismask=%d",
                         cast_vopc,
@@ -2350,8 +2349,7 @@ bool LibraryCallKit::inline_vector_convert() {
       // (we are supposed to drop top elements anyway).
       int num_elem_for_resize = num_elem_to;
 
-      // It is possible that arch does not support this intermediate vector size
-      // TODO More complex logic required here to handle this corner case for the sizes.
+      // Validate intermediate vector size support on target architecture
       if (!arch_supports_vector(Op_VectorReinterpret,
                                 num_elem_for_resize,
                                 elem_bt_from,

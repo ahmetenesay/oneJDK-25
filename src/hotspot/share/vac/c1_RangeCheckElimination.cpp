@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2012, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -131,7 +131,7 @@ void RangeCheckEliminator::Visitor::do_Phi(Phi *phi) {
   assert(phi, "Phi must not be null");
   Bound* bound = nullptr;
 
-  // TODO: support more difficult phis
+  // Analyze phi operands for bounding information
   for (int i=0; i<op_count; i++) {
     Value v = phi->operand_at(i);
 

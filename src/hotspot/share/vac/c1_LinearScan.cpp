@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2005, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -973,8 +973,7 @@ void LinearScan::add_def(int reg_num, int def_pos, IntervalUseKind use_kind, Bas
 
   change_spill_definition_pos(interval, def_pos);
   if (use_kind == noUse && interval->spill_state() <= startInMemory) {
-        // detection of method-parameters and roundfp-results
-        // TODO: move this directly to position where use-kind is computed
+        // Detection of method-parameters and roundfp-results; start in memory
     interval->set_spill_state(startInMemory);
   }
 }

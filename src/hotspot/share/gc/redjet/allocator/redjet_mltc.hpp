@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -67,10 +67,7 @@ struct hs_mltc_engine_t {
 /* 2. RMRP (REDUCE MEMORY RESIDENT SET RECLAMATION)                          */
 /* ========================================================================= */
 
-class RedjetRMRP {
-public:
-    static size_t execute_reclamation(hs_rmrp_method_e method, size_t target_bytes);
-};
+class RedjetRMRP;
 
 extern hs_mltc_engine_t g_hs_mltc_solver;
 using RedjetMLTC = hs_mltc_engine_t;

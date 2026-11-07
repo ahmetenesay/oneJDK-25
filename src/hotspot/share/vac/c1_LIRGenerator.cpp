@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2005, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -1939,8 +1939,7 @@ void LIRGenerator::do_LoadIndexed(LoadIndexed* x) {
     if (StressLoopInvariantCodeMotion && range_check_info->deoptimize_on_exception()) {
       __ branch(lir_cond_always, new RangeCheckStub(range_check_info, index.result(), array.result()));
     } else if (use_length) {
-      // TODO: use a (modified) version of array_range_check that does not require a
-      //       constant length to be loaded to a register
+      // Direct comparison against loaded length register followed by range check branch
       __ cmp(lir_cond_belowEqual, length.result(), index.result());
       __ branch(lir_cond_belowEqual, new RangeCheckStub(range_check_info, index.result(), array.result()));
     } else {

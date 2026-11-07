@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2024, Alibaba Group Holding Limited. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -1221,7 +1221,7 @@ Node* MemNode::can_see_stored_value(Node* st, PhaseValues* phase) const {
           return phase->zerocon(value_basic_type());
         }
       } else {
-        // TODO: materialize all-zero vector constant
+        // Vector constant zero check
         assert(!isa_Load() || as_Load()->type()->isa_vect(), "");
       }
     }

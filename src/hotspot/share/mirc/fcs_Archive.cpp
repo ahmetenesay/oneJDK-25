@@ -23,6 +23,7 @@
  */
 
 #include "mirc/fcs_Archive.hpp"
+#include "is/isMacrowebHolder.hpp"
 #include "runtime/os.hpp"
 #include <cstdio>
 #include <cstring>
@@ -56,6 +57,8 @@ uint64_t FCSArchive::compute_cpu_fingerprint() {
 #elif defined(__riscv)
   fp |= (1ULL << 2); // RISC-V base
 #endif
+  // Incorporate granular CPU microarchitecture and ISA feature bits
+  fp |= (isMacrowebHolder::get_isa_features() << 8);
   fp ^= (uint64_t)FCSA_MAGIC;
   return fp;
 }

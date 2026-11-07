@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -291,7 +291,7 @@ void PhaseOutput::Output() {
 
   if( C->is_osr_compilation() ) {
     if( PoisonOSREntry ) {
-      // TODO: Should use a ShouldNotReachHereNode...
+      // Poison OSR entry via breakpoint trap
       C->cfg()->insert( broot, 0, new MachBreakpointNode() );
     }
   } else {

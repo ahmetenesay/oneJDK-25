@@ -22,8 +22,8 @@
  * if you need additional information or have any questions.
  */
 
-#ifndef SHARE_MIRC_MIRC_SIMULATOR_HPP
-#define SHARE_MIRC_MIRC_SIMULATOR_HPP
+#ifndef SHARE_MIRC_DYNTOPOSELSIMU_HPP
+#define SHARE_MIRC_DYNTOPOSELSIMU_HPP
 
 #include <cstdint>
 #include <cstddef>
@@ -231,4 +231,4 @@ public:
 
 typedef DyntoposelSimu MIRC_Simulator;
 
-#endif // SHARE_MIRC_DYNTOPSEL_SIMU_HPP
+#endif // SHARE_MIRC_DYNTOPOSELSIMU_HPP

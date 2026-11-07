@@ -25,11 +25,11 @@
 #include "gc/redjet/allocator/redjet_rmrp.hpp"
 #include "gc/redjet/runtime/redjetGearkit.hpp"
 
-std::atomic<uint64_t> RedjetRMRPSubsystem::_total_plump_reclaimed_bytes{0};
-std::atomic<uint64_t> RedjetRMRPSubsystem::_total_sequential_reclaimed_bytes{0};
-std::atomic<uint32_t> RedjetRMRPSubsystem::_total_reclamation_cycles{0};
+std::atomic<uint64_t> RedjetRMRP::_total_plump_reclaimed_bytes{0};
+std::atomic<uint64_t> RedjetRMRP::_total_sequential_reclaimed_bytes{0};
+std::atomic<uint32_t> RedjetRMRP::_total_reclamation_cycles{0};
 
-size_t RedjetRMRPSubsystem::execute_reclamation(hs_rmrp_method_e method, size_t target_bytes) {
+size_t RedjetRMRP::execute_reclamation(hs_rmrp_method_e method, size_t target_bytes) {
   _total_reclamation_cycles.fetch_add(1, std::memory_order_relaxed);
   if (method == hs_rmrp_method_e::PLUMP) {
     return execute_plump_reclamation(target_bytes);
@@ -38,14 +38,14 @@ size_t RedjetRMRPSubsystem::execute_reclamation(hs_rmrp_method_e method, size_t 
   }
 }
 
-size_t RedjetRMRPSubsystem::execute_plump_reclamation(size_t target_bytes) {
+size_t RedjetRMRP::execute_plump_reclamation(size_t target_bytes) {
   hs_unified_log_emit(HS_Ebin0_RMRP_COALESCE_DECOMMIT, HS_Ebin1_INFO, 0, "rmrp_plump",
                       "RMRP Plump: Executing bulk coalesce and physical memory resident set decommit");
   _total_plump_reclaimed_bytes.fetch_add(target_bytes, std::memory_order_relaxed);
   return target_bytes;
 }
 
-size_t RedjetRMRPSubsystem::execute_sequential_trimming(size_t target_bytes) {
+size_t RedjetRMRP::execute_sequential_trimming(size_t target_bytes) {
   hs_unified_log_emit(HS_Ebin0_RMRP_SPAN_TRIM, HS_Ebin1_INFO, 0, "rmrp_sequential",
                       "RMRP Sequential: Executing span trimming on cold pages");
   _total_sequential_reclaimed_bytes.fetch_add(target_bytes, std::memory_order_relaxed);

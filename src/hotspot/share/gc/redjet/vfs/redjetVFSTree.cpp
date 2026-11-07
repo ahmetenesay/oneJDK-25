@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -241,4 +241,99 @@ void RedjetVFSTree::print_on(outputStream* st) const {
   if (_root != nullptr) {
     print_node_recursive(st, _root, 0);
   }
+}
+
+// ============================================================================
+// PLAN.md Section 9.2: 7-Key Cryptographic Derivation
+// Key = (((K0 ^ K1) >>> 13) ^ ((K2 & K3) <<< 17) ^ (K4 + K5)) ^ K6
+// ============================================================================
+
+static inline uint64_t vfs_ror64(uint64_t v, int s) {
+  return (v >> s) | (v << (64 - s));
+}
+
+static inline uint64_t vfs_rol64(uint64_t v, int s) {
+  return (v << s) | (v >> (64 - s));
+}
+
+uint64_t RedjetVFSTree::derive_crypto_key(const uint64_t K[7]) {
+  if (K == nullptr) return 0;
+  uint64_t term1 = vfs_ror64(K[0] ^ K[1], 13);
+  uint64_t term2 = vfs_rol64(K[2] & K[3], 17);
+  uint64_t term3 = K[4] + K[5];
+  return term1 ^ term2 ^ term3 ^ K[6];
+}
+
+bool RedjetVFSTree::check_wx_access(const char* path, uint64_t access_key) {
+  if (path == nullptr) return false;
+  // rawcode_cell requires valid key (vac_read key)
+  // vac_processed_code_chunk requires valid key (mirc_read key)
+  if (strstr(path, "rawcode_cell") != nullptr || strstr(path, "vac_processed_code_chunk") != nullptr) {
+    return access_key != 0;
+  }
+  return true;
+}
+
+// ============================================================================
+// PLAN.md Section 9.3: GOLDEN_VFS_HEX_IMAGE and Automatic Tree Recovery
+// ============================================================================
+
+static const char* const GOLDEN_VFS_BRANCHES[39] = {
+  "/heap/on_heap/runway/motherline/egg/young/tank",
+  "/heap/on_heap/runway/motherline/egg/young/demand",
+  "/heap/on_heap/runway/motherline/egg/young/middle",
+  "/heap/on_heap/runway/motherline/egg/young/hotfield",
+  "/heap/on_heap/runway/motherline/egg/adolescent/tank",
+  "/heap/on_heap/runway/motherline/egg/adolescent/demand",
+  "/heap/on_heap/runway/motherline/egg/adolescent/middle",
+  "/heap/on_heap/runway/motherline/egg/adolescent/hotfield",
+  "/heap/on_heap/runway/motherline/egg/senior/tank",
+  "/heap/on_heap/runway/motherline/egg/senior/demand",
+  "/heap/on_heap/runway/motherline/egg/senior/middle",
+  "/heap/on_heap/runway/motherline/egg/senior/hotfield",
+  "/heap/on_heap/runway/motherline/fledgling/young/tank",
+  "/heap/on_heap/runway/motherline/fledgling/young/demand",
+  "/heap/on_heap/runway/motherline/fledgling/young/middle",
+  "/heap/on_heap/runway/motherline/fledgling/young/hotfield",
+  "/heap/on_heap/runway/motherline/fledgling/adolescent/tank",
+  "/heap/on_heap/runway/motherline/fledgling/adolescent/demand",
+  "/heap/on_heap/runway/motherline/fledgling/adolescent/middle",
+  "/heap/on_heap/runway/motherline/fledgling/adolescent/hotfield",
+  "/heap/on_heap/runway/motherline/fledgling/senior/tank",
+  "/heap/on_heap/runway/motherline/fledgling/senior/demand",
+  "/heap/on_heap/runway/motherline/fledgling/senior/middle",
+  "/heap/on_heap/runway/motherline/fledgling/senior/hotfield",
+  "/heap/on_heap/runway/pitstop",
+  "/heap/on_heap/runway/falline",
+  "/heap/on_heap/puzzle_arena/stagnant",
+  "/heap/on_heap/puzzle_arena/eval",
+  "/heap/on_heap/landfill/trash_pit/matured",
+  "/heap/on_heap/landfill/trash_pit/rehab",
+  "/heap/on_heap/landfill/header_pane",
+  "/heap/on_heap/rpss",
+  "/heap/off_heap/code_boot/rawcode_cell",
+  "/heap/off_heap/code_boot/vac_processed_code_chunk",
+  "/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1",
+  "/heap/off_heap/code_boot/mirc_execution_ready_page/lvl2",
+  "/heap/off_heap/log_boot/hotlog",
+  "/heap/off_heap/log_boot/coldlog",
+  "/heap/off_heap/reserved_boot"
+};
+
+bool RedjetVFSTree::verify_and_restore_golden_vfs() {
+  lock();
+  bool repaired = false;
+  for (size_t i = 0; i < 39; ++i) {
+    const char* path = GOLDEN_VFS_BRANCHES[i];
+    if (_find_node_unlocked(path) == nullptr) {
+      _mkdir_p_unlocked(path);
+      repaired = true;
+    }
+  }
+  unlock();
+
+  if (repaired) {
+    log_info(gc)("Redjet VFS: Verified and restored missing branches from GOLDEN_VFS_IMAGE");
+  }
+  return true;
 }

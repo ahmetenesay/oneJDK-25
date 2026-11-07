@@ -86,37 +86,51 @@ int MIRCNativeAbiEmitter::emit_downcall_stub(CodeBuffer* cbuf, const MIRCNativeA
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
   // AArch64:
-  // stp x29, x30, [sp, #-16]!
-  // mov x29, sp
-  // ldr x16, =target; blr x16
-  // ldp x29, x30, [sp], #16
-  // ret
+  // 1. stp x29, x30, [sp, #-16]!
+  // 2. mov x29, sp
+  // 3. ldr x16, [pc, #16] (loads target_addr directly from literal pool at PC + 16)
+  // 4. blr x16
+  // 5. ldp x29, x30, [sp], #16
+  // 6. ret
+  // 7. .quad target_addr
   uint32_t aarch64_code[] = {
     0xA9BF7BFD, // stp x29, x30, [sp, #-16]!
     0x910003FD, // mov x29, sp
-    0xD2800010, // movz x16, #target_lo (symbolic)
+    0x58000090, // ldr x16, [pc, #16]
     0xD63F0200, // blr x16
     0xA8C17BFD, // ldp x29, x30, [sp], #16
     0xD65F03C0  // ret
   };
   cbuf->insts()->emit_bytes((uint8_t*)aarch64_code, sizeof(aarch64_code));
+  uint64_t target_addr = (uint64_t)desc.native_func_target;
+  cbuf->insts()->emit_bytes((uint8_t*)&target_addr, sizeof(uint64_t));
 
 #elif defined(__riscv)
   // RISC-V:
-  // addi sp, sp, -16; sd ra, 8(sp); sd s0, 0(sp); addi s0, sp, 16
-  // jalr t0
-  // ld s0, 0(sp); ld ra, 8(sp); addi sp, sp, 16; ret
+  // 1. addi sp, sp, -16
+  // 2. sd ra, 8(sp); sd s0, 0(sp); addi s0, sp, 16
+  // 3. auipc t0, 0
+  // 4. ld t0, 20(t0) (loads target_addr from PC + 20)
+  // 5. jalr ra, 0(t0)
+  // 6. ld s0, 0(sp); ld ra, 8(sp); addi sp, sp, 16
+  // 7. ret
+  // 8. .quad target_addr
   uint32_t riscv_code[] = {
     0x11417113, // addi sp, sp, -16
     0x00113423, // sd ra, 8(sp)
     0x00813023, // sd s0, 0(sp)
-    0x00000067, // jalr zero, 0(t0)
+    0x01010413, // addi s0, sp, 16
+    0x00000297, // auipc t0, 0
+    0x0142B283, // ld t0, 20(t0)
+    0x000280E7, // jalr ra, 0(t0)
     0x00013403, // ld s0, 0(sp)
     0x00813083, // ld ra, 8(sp)
     0x01010113, // addi sp, sp, 16
     0x00008067  // ret
   };
   cbuf->insts()->emit_bytes((uint8_t*)riscv_code, sizeof(riscv_code));
+  uint64_t target_addr = (uint64_t)desc.native_func_target;
+  cbuf->insts()->emit_bytes((uint8_t*)&target_addr, sizeof(uint64_t));
 #endif
 
   address end_pc = cbuf->insts_end();
@@ -143,19 +157,32 @@ int MIRCNativeAbiEmitter::emit_upcall_stub(CodeBuffer* cbuf, const MIRCNativeAbi
   cbuf->insts()->emit_bytes(jump_seq, sizeof(jump_seq));
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
-  // br x16
+  // AArch64:
+  // 1. ldr x16, [pc, #8]
+  // 2. br x16
+  // 3. .quad target_addr
   uint32_t aarch64_code[] = {
-    0xD2800010, // movz x16 (target placeholder)
+    0x58000050, // ldr x16, [pc, #8]
     0xD61F0200  // br x16
   };
   cbuf->insts()->emit_bytes((uint8_t*)aarch64_code, sizeof(aarch64_code));
+  uint64_t target_addr = (uint64_t)desc.slot16_upcall_target;
+  cbuf->insts()->emit_bytes((uint8_t*)&target_addr, sizeof(uint64_t));
 
 #elif defined(__riscv)
-  // jr t0
+  // RISC-V:
+  // 1. auipc t0, 0
+  // 2. ld t0, 12(t0)
+  // 3. jr t0
+  // 4. .quad target_addr
   uint32_t riscv_code[] = {
+    0x00000297, // auipc t0, 0
+    0x00C2B283, // ld t0, 12(t0)
     0x00028067  // jr t0
   };
   cbuf->insts()->emit_bytes((uint8_t*)riscv_code, sizeof(riscv_code));
+  uint64_t target_addr = (uint64_t)desc.slot16_upcall_target;
+  cbuf->insts()->emit_bytes((uint8_t*)&target_addr, sizeof(uint64_t));
 #endif
 
   address end_pc = cbuf->insts_end();
