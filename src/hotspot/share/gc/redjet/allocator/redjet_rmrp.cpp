@@ -44,9 +44,11 @@
 #endif
 
 // Static member definitions
-std::atomic<uint64_t> RedjetRMRP::_total_plump_reclaimed_bytes{0};
-std::atomic<uint64_t> RedjetRMRP::_total_sequential_reclaimed_bytes{0};
-std::atomic<uint32_t> RedjetRMRP::_total_reclamation_cycles{0};
+std::atomic<uint64_t> RedjetRMRP::_total_plump_reclaimed_bytes{ 0 };
+std::atomic<uint64_t> RedjetRMRP::_total_sequential_reclaimed_bytes{ 0 };
+std::atomic<uint64_t> RedjetRMRP::_total_vfs_reclaimed_bytes{ 0 };
+std::atomic<uint32_t> RedjetRMRP::_total_reclamation_cycles{ 0 };
+std::atomic<uint32_t> RedjetRMRP::_total_vfs_compaction_triggers{ 0 };
 
 RedjetRMRPBarrier      RedjetRMRP::_barrier;
 RedjetRMRPDeduplicator RedjetRMRP::_deduplicator;
@@ -153,6 +155,41 @@ size_t RedjetRMRPBarrier::decommit_cold_pages(size_t target_reclaim_bytes) {
     return reclaimed;
 }
 
+RedjetRMRPResidentBloatSignal RedjetRMRPBarrier::evaluate_bloat_signal(
+    float threshold_ratio, size_t min_cold_bytes) const noexcept {
+
+    RedjetRMRPResidentBloatSignal sig;
+    size_t count = _entry_count.load(std::memory_order_relaxed);
+    sig.total_monitored_pages = count;
+
+    if (count == 0) {
+        return sig;
+    }
+
+    size_t cold_count = 0;
+    size_t cold_bytes = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        uint8_t st = _entries[i].state.load(std::memory_order_relaxed);
+        if (st == static_cast<uint8_t>(RedjetPageResidentState::RESIDENT_COLD) ||
+            st == static_cast<uint8_t>(RedjetPageResidentState::DECOMMITTED_IDLE)) {
+            cold_count++;
+            cold_bytes += _entries[i].page_size;
+        }
+    }
+
+    sig.cold_page_count = cold_count;
+    sig.cold_resident_bytes = cold_bytes;
+    sig.cold_page_ratio = static_cast<float>(cold_count) / static_cast<float>(count);
+
+    // Bloat signal triggers if cold ratio exceeds threshold AND minimum bytes met
+    if (sig.cold_page_ratio >= threshold_ratio || cold_bytes >= min_cold_bytes) {
+        sig.bloat_detected = true;
+    }
+
+    return sig;
+}
+
 bool RedjetRMRPBarrier::is_page_cold(uintptr_t addr) const noexcept {
     uintptr_t page_base = addr & ~static_cast<uintptr_t>(4095);
     size_t count = _entry_count.load(std::memory_order_relaxed);
@@ -196,7 +233,6 @@ bool RedjetRMRPDeduplicator::is_page_all_zero(const void* page_addr, size_t page
         if (ptr64[i] != 0ULL) return false;
     }
 
-    // Remaining tail bytes if page_sz is not multiple of 8
     size_t tail_bytes = page_sz % sizeof(uint64_t);
     if (tail_bytes > 0) {
         const uint8_t* tail_ptr = reinterpret_cast<const uint8_t*>(ptr64 + rem_words);
@@ -219,7 +255,6 @@ size_t RedjetRMRPDeduplicator::deduplicate_zero_pages_in_range(void* base_addr, 
         if (is_page_all_zero(cur_page, page_sz)) {
             _total_zero_pages_detected.fetch_add(1, std::memory_order_relaxed);
 
-            // Reclaim physical RSS by resetting or decommitting page
 #if defined(_WIN32)
             VirtualAlloc(cur_page, page_sz, MEM_RESET, PAGE_READWRITE);
 #elif defined(__linux__)
@@ -245,6 +280,7 @@ size_t RedjetRMRPDeduplicator::deduplicate_zero_pages_in_range(void* base_addr, 
 RedjetRMRPCompactor::RedjetRMRPCompactor() {
     _plump_cycles.store(0, std::memory_order_relaxed);
     _sequential_cycles.store(0, std::memory_order_relaxed);
+    _vfs_compaction_cycles.store(0, std::memory_order_relaxed);
     _coalesced_hole_bytes.store(0, std::memory_order_relaxed);
 }
 
@@ -284,8 +320,27 @@ size_t RedjetRMRPCompactor::execute_sequential_compaction(void* arena_base, size
     return actual_trimmed;
 }
 
+size_t RedjetRMRPCompactor::execute_vfs_compaction(void* arena_base, size_t target_reclaim_bytes) {
+    _vfs_compaction_cycles.fetch_add(1, std::memory_order_relaxed);
+
+    // Decommit cold pages tracked in barrier
+    size_t reclaimed = RedjetRMRP::barrier().decommit_cold_pages(target_reclaim_bytes);
+
+    if (arena_base != nullptr && reclaimed < target_reclaim_bytes) {
+        size_t rem = target_reclaim_bytes - reclaimed;
+        size_t dedup = RedjetRMRP::deduplicate_zero_pages(arena_base, rem);
+        reclaimed += dedup;
+    }
+
+    _coalesced_hole_bytes.fetch_add(reclaimed, std::memory_order_relaxed);
+
+    hs_unified_log_emit(HS_Ebin0_RMRP_COALESCE_DECOMMIT, HS_Ebin1_INFO, 0, "vfs_compactor",
+                        "RMRP Autonomous VFS Compactor: Coalesced VFS holes and decommitted cold memory frames");
+    return reclaimed;
+}
+
 /* ========================================================================= */
-/* 4. REDJET RMRP STATIC APIS                                                */
+/* 4. REDJET RMRP STATIC APIS & AUTONOMOUS COMPACTION TRIGGER               */
 /* ========================================================================= */
 
 size_t RedjetRMRP::execute_reclamation(hs_rmrp_method_e method, size_t target_bytes) {
@@ -311,6 +366,43 @@ size_t RedjetRMRP::execute_sequential_trimming(size_t target_bytes) {
   size_t reclaimed = _compactor.execute_sequential_compaction(nullptr, target_bytes, target_bytes);
   _total_sequential_reclaimed_bytes.fetch_add(reclaimed, std::memory_order_relaxed);
   return reclaimed;
+}
+
+RedjetRMRPResidentBloatSignal RedjetRMRP::check_resident_bloat(float threshold_ratio) {
+  return _barrier.evaluate_bloat_signal(threshold_ratio);
+}
+
+RedjetVFSCompactionTriggerResult RedjetRMRP::evaluate_and_trigger_vfs_compaction(
+    float fragmentation_score, bool mltc_lull_active, size_t target_reclaim_bytes) {
+
+    RedjetVFSCompactionTriggerResult res;
+    res.fragmentation_score = fragmentation_score;
+    res.lull_signal = mltc_lull_active;
+    res.compaction_timestamp_tsc = sacculus_rdtsc();
+
+    // Signal 2: Evaluate RMRP cold-page resident bloat
+    RedjetRMRPResidentBloatSignal bloat_sig = check_resident_bloat(0.25f);
+    res.bloat_signal = bloat_sig.bloat_detected;
+
+    // Compaction condition:
+    // 1. Fragmentation score > 35% (0.35f) OR Cold-page resident bloat detected
+    // 2. AND MLTC bus traffic pacing lull window is open (or emergency override if fragmentation > 70%)
+    bool frag_trigger = (fragmentation_score > 0.35f);
+    bool emergency_frag = (fragmentation_score > 0.70f);
+
+    if ((frag_trigger || res.bloat_signal || emergency_frag) && (mltc_lull_active || emergency_frag)) {
+        res.triggered = true;
+        _total_vfs_compaction_triggers.fetch_add(1, std::memory_order_relaxed);
+
+        size_t reclaimed = _compactor.execute_vfs_compaction(nullptr, target_reclaim_bytes);
+        res.reclaimed_bytes = reclaimed;
+        _total_vfs_reclaimed_bytes.fetch_add(reclaimed, std::memory_order_relaxed);
+
+        hs_unified_log_emit(HS_Ebin0_RMRP_COALESCE_DECOMMIT, HS_Ebin1_WARN, 0, "rmrp_vfs_comp",
+                            "RMRP Autonomous VFS Compaction Triggered: 3 signals converged (Frag > 35%, Bloat, Lull Window)");
+    }
+
+    return res;
 }
 
 size_t RedjetRMRP::deduplicate_zero_pages(void* base_addr, size_t bytes, size_t page_sz) {

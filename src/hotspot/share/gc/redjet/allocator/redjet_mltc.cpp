@@ -23,6 +23,7 @@
  */
 
 #include "gc/redjet/allocator/redjet_mltc.hpp"
+#include "gc/redjet/allocator/redjet_rmrp.hpp"
 #include "gc/redjet/runtime/redjetHardware.hpp"
 #include <thread>
 #include <algorithm>
@@ -362,7 +363,12 @@ bool hs_mltc_engine_t::check_and_solve(size_t used_bytes, size_t capacity_bytes,
         solved = true;
     }
 
-    // 4. Update arbitrator weights
+    // 4. Autonomous VFS Compaction Trigger (3-signal evaluation)
+    if (check_autonomous_vfs_compaction_trigger(used_bytes, capacity_bytes)) {
+        solved = true;
+    }
+
+    // 5. Update arbitrator weights
     RedjetBusCongestionLevel level = current_congestion_level();
     arbitrator.rebalance_bandwidth_weights(level);
 
@@ -438,3 +444,74 @@ RedjetBusCongestionLevel hs_mltc_engine_t::current_congestion_level() const noex
 RedjetMLTCTelemetrySnapshot hs_mltc_engine_t::get_latest_telemetry() const {
     return latest_snapshot;
 }
+
+float hs_mltc_engine_t::compute_vfs_fragmentation_score(size_t used_bytes, size_t capacity_bytes) const noexcept {
+    if (capacity_bytes == 0 || used_bytes == 0) return 0.0f;
+
+    // Minimum baseline to avoid spurious triggers on cold/empty arenas
+    if (capacity_bytes < 16ULL * 1024 * 1024) return 0.0f;
+
+    // 1. Hole & Tombstone Fragmentation: ratio of active emptybox / phantom reservations
+    RedjetEmptyBoxTelemetry eb_tel = RedjetEmptyBoxManager::get_telemetry();
+    float eb_frag_ratio = 0.0f;
+    if (used_bytes > 0 && eb_tel.active_reserved_bytes > 0) {
+        eb_frag_ratio = static_cast<float>(eb_tel.active_reserved_bytes) / static_cast<float>(used_bytes + eb_tel.active_reserved_bytes);
+    }
+
+    // 2. Bus Misalignment / Hazard Fragmentation
+    float align_frag_ratio = 0.0f;
+    if (total_inspected > 0) {
+        align_frag_ratio = static_cast<float>(misaligned_count) / static_cast<float>(total_inspected);
+    }
+
+    // 3. High-Watermark Utilization Span Hole Ratio
+    float occupancy_ratio = static_cast<float>(used_bytes) / static_cast<float>(capacity_bytes);
+    float span_sparsity = 0.0f;
+    if (occupancy_ratio >= 0.50f && occupancy_ratio < 0.95f) {
+        span_sparsity = (1.0f - occupancy_ratio) * 0.5f;
+    }
+
+    // Aggregate weighted fragmentation score [0.0f .. 1.0f]
+    float frag_score = (0.50f * eb_frag_ratio) + (0.30f * align_frag_ratio) + (0.20f * span_sparsity);
+    if (frag_score > 1.0f) frag_score = 1.0f;
+    return frag_score;
+}
+
+bool hs_mltc_engine_t::is_bus_traffic_lull_window() const noexcept {
+    RedjetBusCongestionLevel level = current_congestion_level();
+    if ((level == RedjetBusCongestionLevel::CONGESTION_FREE || level == RedjetBusCongestionLevel::MILD_CONTENTION)
+        && velocity_mbps < 250.0f
+        && pacer.active_throttle_rate() == 0) {
+        return true;
+    }
+    return false;
+}
+
+bool hs_mltc_engine_t::check_autonomous_vfs_compaction_trigger(
+    size_t used_bytes, size_t capacity_bytes, size_t target_reclaim_bytes) {
+
+    // Signal 1: Fragmentation Score
+    float frag_score = compute_vfs_fragmentation_score(used_bytes, capacity_bytes);
+
+    // Signal 3: MLTC Bus Traffic Pacing Lull Window
+    bool lull_window = is_bus_traffic_lull_window();
+
+    if (lull_window) {
+        compaction_lull_windows_utilized.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // Call RMRP to evaluate Signal 2 (Cold-page resident bloat) and trigger compaction if signals align
+    RedjetVFSCompactionTriggerResult res = RedjetRMRP::evaluate_and_trigger_vfs_compaction(
+        frag_score, lull_window, target_reclaim_bytes);
+
+    if (res.triggered) {
+        autonomous_vfs_compactions_triggered.fetch_add(1, std::memory_order_relaxed);
+        hs_unified_log_emit(HS_Ebin0_RMRP_COALESCE_DECOMMIT, HS_Ebin1_INFO, 0, "mltc_vfs_comp",
+                            "[MLTC-VFS-COMP] Autonomous VFS compaction dispatched: Frag=%.2f, Bloat=%d, Lull=%d, Reclaimed=%zu",
+                            res.fragmentation_score, res.bloat_signal ? 1 : 0, res.lull_signal ? 1 : 0, res.reclaimed_bytes);
+        return true;
+    }
+
+    return false;
+}
+

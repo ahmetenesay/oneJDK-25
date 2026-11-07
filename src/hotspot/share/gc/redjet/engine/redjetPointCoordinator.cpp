@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -29,6 +29,17 @@
 #include <cstring>
 #include <thread>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+#if defined(_M_X64) || defined(__x86_64__)
+#include <immintrin.h>
+#endif
+
+#include "gc/redjet/runtime/redjetEmptyBox.hpp"
 #include "gc/redjet/runtime/redjetFlags.hpp"
 #include "gc/redjet/runtime/redjetGC.hpp"
 #include "gc/redjet/runtime/redjetGearkit.hpp"
@@ -483,6 +494,105 @@ void RedjetPointCoordinator::snapshot_telemetry(RedjetTwoPointTelemetry* out) {
   out->dockpoint_auto_pageins      = g_coord.dockpoint_auto_pageins.load(std::memory_order_relaxed);
   out->dockpoint_host_gc_requests  = g_coord.dockpoint_host_gc_requests.load(std::memory_order_relaxed);
   out->c1_heat_reports             = g_coord.c1_heat_reports.load(std::memory_order_relaxed);
+}
+
+/* ========================================================================= */
+/* 3. HARDWARE SYNCHRONIZATION & 2-POINT RENDEZVOUS                          */
+/* ========================================================================= */
+
+void RedjetPointCoordinator::sync_point() {
+  // 1. Arm global parkpoint for instantaneous rendezvous
+  arm_parkpoint();
+
+  // 2. Hardware full memory fence
+  hardware_fence();
+
+  // 3. Flush instruction cache across all processor cores
+  flush_icache();
+
+  // 4. Disarm parkpoint to resume threads instantly
+  disarm_parkpoint();
+}
+
+void RedjetPointCoordinator::hardware_fence() {
+  std::atomic_thread_fence(std::memory_order_seq_cst);
+#if defined(_M_X64) || defined(__x86_64__)
+  _mm_mfence();
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#if defined(_MSC_VER)
+  __dmb(_ARM64_BARRIER_ISH);
+  __isb(_ARM64_BARRIER_SY);
+#else
+  __asm__ __volatile__("dmb ish\n\tisb" ::: "memory");
+#endif
+#elif defined(__riscv)
+  __asm__ __volatile__("fence rw, rw\n\tfence.i" ::: "memory");
+#endif
+}
+
+void RedjetPointCoordinator::flush_icache(address code_begin, size_t code_size) {
+#if defined(_WIN32)
+  FlushInstructionCache(GetCurrentProcess(), code_begin, code_size);
+#elif defined(__linux__) || defined(__APPLE__)
+  if (code_begin != nullptr && code_size > 0) {
+    __builtin___clear_cache(reinterpret_cast<char*>(code_begin),
+                            reinterpret_cast<char*>(code_begin) + code_size);
+  }
+#endif
+}
+
+/* ========================================================================= */
+/* 4. EMPTYBOX & PARKPOINT HARDWARE PROTECTION                               */
+/* ========================================================================= */
+
+bool RedjetPointCoordinator::park_object_with_emptybox_guard(
+    void* target_slot, size_t slot_bytes, uint32_t tid, uint64_t timeout_cycles) {
+  if (!target_slot || slot_bytes == 0) return false;
+
+  request_object_park(target_slot);
+
+  RedjetEmptyBox* eb = RedjetEmptyBox::place_tombstone(
+      target_slot, slot_bytes, target_slot, tid, timeout_cycles);
+  if (eb != nullptr) {
+    RedjetEmptyBoxManager::record_reservation(slot_bytes);
+    return true;
+  }
+
+  // Cleanup failure to prevent permanent parkpoint stall / deadlock
+  release_object_park(target_slot);
+  return false;
+}
+
+bool RedjetPointCoordinator::unpark_object_and_reclaim_emptybox(
+    void* target_slot, uint32_t tid) {
+  if (!target_slot) return false;
+
+  RedjetEmptyBox* eb = RedjetEmptyBox::resolve_tombstone(target_slot, 64);
+  if (eb != nullptr && eb->isValid() && eb->is_reserved()) {
+    void* parked_obj = nullptr;
+    if (eb->reclaim_slot(tid, &parked_obj)) {
+      RedjetEmptyBoxManager::record_claim(eb->reserved_slot_bytes);
+    }
+  }
+
+  release_object_park(target_slot);
+  return true;
+}
+
+/* ========================================================================= */
+/* 5. DOCKPOINT TRAMPOLINE & CANARY ENFORCEMENT                              */
+/* ========================================================================= */
+
+void* RedjetPointCoordinator::resolve_dockpoint_target(void* method_ptr, uint16_t active_simd_idx) {
+  if (!method_ptr) return nullptr;
+  g_coord.dockpoint_triggers.fetch_add(1, std::memory_order_relaxed);
+  return method_ptr;
+}
+
+bool RedjetPointCoordinator::verify_dockpoint_canary(void* obj_ptr) {
+  if (!obj_ptr) return false;
+  g_coord.dockpoint_canary_checks.fetch_add(1, std::memory_order_relaxed);
+  return inspect_and_verify_object(obj_ptr);
 }
 
 /* ========================================================================= */

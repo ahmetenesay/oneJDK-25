@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -173,6 +173,19 @@ public:
   static void     register_controlpoint_hook(RedjetControlpointHostHookFn hook, void* user_data = nullptr) {
     register_dockpoint_hook(hook, user_data);
   }
+
+  // 3. Hardware Synchronization & 2-Point Rendezvous
+  static void sync_point();
+  static void hardware_fence();
+  static void flush_icache(address code_begin = nullptr, size_t code_size = 0);
+
+  // 4. EmptyBox & Parkpoint Hardware Protection
+  static bool park_object_with_emptybox_guard(void* target_slot, size_t slot_bytes, uint32_t tid, uint64_t timeout_cycles);
+  static bool unpark_object_and_reclaim_emptybox(void* target_slot, uint32_t tid);
+
+  // 5. Dockpoint Trampoline & Canary Enforcement
+  static void* resolve_dockpoint_target(void* method_ptr, uint16_t active_simd_idx);
+  static bool  verify_dockpoint_canary(void* obj_ptr);
 
   // C1 Heat Feedback Receiver -> Puzzler / Self-Advance Coach
   static void report_c1_method_heat(void* method_ptr, uint32_t loop_depth, uint32_t lir_op_weight, bool bypass_warmup);

@@ -193,13 +193,30 @@ def X86_MachPollPoint_node : X86_MachPollPoint;
 // Redjet TailTraces Clasp Dead Reference Signal & Off-Heap Eviction
 // ============================================================================
 
-// Redjet DeadReferenceSignal — Clasp emission to RPSS ring buffer
+// Redjet DeadReferenceSignal — Clasp emission to RPSS ring buffer (64-bit)
 class X86_RedjetDeadRefSignal : GCBarrier<"movq\t[$rpss_addr], $dead_oop\t# redjet tailtraces signal", "Redjet TailTraces Clasp Dead Reference Signal (x86_64)", 15, "ialu_mem_reg"> {
   let BarrierType = 3; // Redjet
   list<dag> Pattern = [(redjet_dead_ref_signal i64mem:$rpss_addr, GR64:$dead_oop)];
 }
 
 def X86_RedjetDeadRefSignal_node : X86_RedjetDeadRefSignal;
+def X86_RedjetDeadRefSignalVolatile_node : X86_RedjetDeadRefSignal;
+
+// Redjet DeadReferenceSignalN — Narrow 32-bit compressed OOP clasp emission
+class X86_RedjetDeadRefSignalN : GCBarrier<"movl\t[$rpss_addr], $dead_oop\t# redjet tailtraces narrow signal", "Redjet TailTraces Clasp Narrow Dead Reference Signal (x86_64)", 15, "ialu_mem_reg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_dead_ref_signal_n i32mem:$rpss_addr, GR32:$dead_oop)];
+}
+
+def X86_RedjetDeadRefSignalN_node : X86_RedjetDeadRefSignalN;
+
+// Redjet DeadReferenceSignalAtomic — Atomic exchange/fetch-add ring buffer clasp emission
+class X86_RedjetDeadRefSignalAtomic : GCBarrier<"lock\n\txchgq\t$dead_oop, [$rpss_addr]\t# redjet tailtraces atomic signal", "Redjet TailTraces Atomic Clasp Signal (x86_64)", 80, "pipe_cmpxchg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(set GR64:$res, (redjet_dead_ref_signal_atomic i64mem:$rpss_addr, GR64:$dead_oop))];
+}
+
+def X86_RedjetDeadRefSignalAtomic_node : X86_RedjetDeadRefSignalAtomic;
 
 // Redjet OffHeapEvict — Deterministic RAII eviction for @RJGC(Mark = "ImmediateEviction")
 class X86_RedjetOffHeapEvict : GCBarrier<"call\tredjet_offheap_evict\t# redjet offheap evict", "Redjet Off-Heap Immediate Eviction Barrier (x86_64)", 40, "call"> {
@@ -210,5 +227,43 @@ class X86_RedjetOffHeapEvict : GCBarrier<"call\tredjet_offheap_evict\t# redjet o
 def X86_RedjetOffHeapEvict_node : X86_RedjetOffHeapEvict;
 
 // ============================================================================
+// Redjet EmptyBox Guard (Phantom Slot & Tombstone Hardware Protection)
+// Magic: 0xEB0C5107
+// ============================================================================
+
+// Redjet EmptyBoxGuard — Tests slot header against HS_EMPTYBOX_MAGIC (0xEB0C5107)
+class X86_RedjetEmptyBoxGuard : GCBarrier<"cmpl\t$mem, $$0xEB0C5107\t# redjet emptybox guard", "Redjet GC EmptyBox Guard Test (x86_64)", 15, "ialu_mem_imm"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_emptybox_guard i32mem:$mem)];
+}
+
+def X86_RedjetEmptyBoxGuard_node : X86_RedjetEmptyBoxGuard;
+
+// Redjet EmptyBoxGuardBranch — Tests magic and branches if slot is a protected tombstone
+class X86_RedjetEmptyBoxGuardBranch : GCBarrier<"cmpl\t$mem, $$0xEB0C5107\n\tje\t$parked_protect\t# redjet emptybox branch", "Redjet GC EmptyBox Branch Guard (x86_64)", 20, "branch"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_emptybox_guard_br i32mem:$mem, brtarget:$parked_protect)];
+}
+
+def X86_RedjetEmptyBoxGuardBranch_node : X86_RedjetEmptyBoxGuardBranch;
+
+// Redjet EmptyBoxClaim — Atomic compare-and-exchange to reclaim parked slot
+class X86_RedjetEmptyBoxClaim : GCBarrier<"lock\n\tcmpxchgq\t$new_oop, $mem\t# redjet emptybox claim", "Redjet GC EmptyBox Atomic Claim (x86_64)", 100, "pipe_cmpxchg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(set GR64:$expected, (redjet_emptybox_claim i64mem:$mem, GR64:$expected, GR64:$new_oop))];
+}
+
+def X86_RedjetEmptyBoxClaim_node : X86_RedjetEmptyBoxClaim;
+
+// Redjet EmptyBoxTimeoutCheck — Compares current timestamp against timeout deadline
+class X86_RedjetEmptyBoxTimeoutCheck : GCBarrier<"rdtsc\n\tshlq\t$$32, %rdx\n\torq\t%rdx, %rax\n\tcmpq\t$timeout_tsc, %rax\n\tsetae\t$is_expired\t# redjet emptybox timeout", "Redjet GC EmptyBox Timeout Check (x86_64)", 30, "ialu_reg_reg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(set GR32:$is_expired, (redjet_emptybox_timeout GR64:$timeout_tsc))];
+}
+
+def X86_RedjetEmptyBoxTimeoutCheck_node : X86_RedjetEmptyBoxTimeoutCheck;
+
+// ============================================================================
 // End of X86_Redjet.td
 // ============================================================================
+

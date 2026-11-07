@@ -202,13 +202,30 @@ def RISCV_MachPollPoint_node : RISCV_MachPollPoint;
 // Redjet TailTraces Clasp Dead Reference Signal & Off-Heap Eviction
 // ============================================================================
 
-// Redjet DeadReferenceSignal — Clasp emission to RPSS ring buffer
+// Redjet DeadReferenceSignal — Clasp emission to RPSS ring buffer (64-bit)
 class RISCV_RedjetDeadRefSignal : GCBarrier<"sd\t$dead_oop, 0($rpss_addr)\t# redjet tailtraces signal", "Redjet TailTraces Clasp Dead Reference Signal (RISC-V)", 15, "ialu_mem_reg"> {
   let BarrierType = 3; // Redjet
   list<dag> Pattern = [(redjet_dead_ref_signal GPR:$rpss_addr, GPR:$dead_oop)];
 }
 
 def RISCV_RedjetDeadRefSignal_node : RISCV_RedjetDeadRefSignal;
+def RISCV_RedjetDeadRefSignalVolatile_node : RISCV_RedjetDeadRefSignal;
+
+// Redjet DeadReferenceSignalN — Narrow 32-bit compressed OOP clasp emission
+class RISCV_RedjetDeadRefSignalN : GCBarrier<"sw\t$dead_oop, 0($rpss_addr)\t# redjet tailtraces narrow signal", "Redjet TailTraces Clasp Narrow Dead Reference Signal (RISC-V)", 15, "ialu_mem_reg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_dead_ref_signal_n GPR:$rpss_addr, GPR:$dead_oop)];
+}
+
+def RISCV_RedjetDeadRefSignalN_node : RISCV_RedjetDeadRefSignalN;
+
+// Redjet DeadReferenceSignalAtomic — Atomic exchange clasp emission
+class RISCV_RedjetDeadRefSignalAtomic : GCBarrier<"amoswap.d.aqrl\t$res, $dead_oop, ($rpss_addr)\t# redjet tailtraces atomic signal", "Redjet TailTraces Atomic Clasp Signal (RISC-V)", 80, "pipe_cmpxchg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(set GPR:$res, (redjet_dead_ref_signal_atomic GPR:$rpss_addr, GPR:$dead_oop))];
+}
+
+def RISCV_RedjetDeadRefSignalAtomic_node : RISCV_RedjetDeadRefSignalAtomic;
 
 // Redjet OffHeapEvict — Deterministic RAII eviction for @RJGC(Mark = "ImmediateEviction")
 class RISCV_RedjetOffHeapEvict : GCBarrier<"call\tredjet_offheap_evict\t# redjet offheap evict", "Redjet Off-Heap Immediate Eviction Barrier (RISC-V)", 40, "call"> {
@@ -219,5 +236,43 @@ class RISCV_RedjetOffHeapEvict : GCBarrier<"call\tredjet_offheap_evict\t# redjet
 def RISCV_RedjetOffHeapEvict_node : RISCV_RedjetOffHeapEvict;
 
 // ============================================================================
+// Redjet EmptyBox Guard (Phantom Slot & Tombstone Hardware Protection)
+// Magic: 0xEB0C5107
+// ============================================================================
+
+// Redjet EmptyBoxGuard — Tests slot header against HS_EMPTYBOX_MAGIC (0xEB0C5107)
+class RISCV_RedjetEmptyBoxGuard : GCBarrier<"lwu\tt0, 0($mem)\n\tli\tt1, 0xEB0C5107\n\tsub\tt0, t0, t1\t# redjet emptybox guard", "Redjet GC EmptyBox Guard Test (RISC-V)", 15, "ialu_mem_imm"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_emptybox_guard GPR:$mem)];
+}
+
+def RISCV_RedjetEmptyBoxGuard_node : RISCV_RedjetEmptyBoxGuard;
+
+// Redjet EmptyBoxGuardBranch — Tests magic and branches if slot is a protected tombstone
+class RISCV_RedjetEmptyBoxGuardBranch : GCBarrier<"lwu\tt0, 0($mem)\n\tli\tt1, 0xEB0C5107\n\tbeq\tt0, t1, $parked_protect\t# redjet emptybox branch", "Redjet GC EmptyBox Branch Guard (RISC-V)", 20, "branch"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(redjet_emptybox_guard_br GPR:$mem, bare_simm13_lsb0:$parked_protect)];
+}
+
+def RISCV_RedjetEmptyBoxGuardBranch_node : RISCV_RedjetEmptyBoxGuardBranch;
+
+// Redjet EmptyBoxClaim — Atomic compare-and-exchange to reclaim parked slot
+class RISCV_RedjetEmptyBoxClaim : GCBarrier<"lr.d/sc.d\t$res, $new_oop, ($mem)\t# redjet emptybox claim", "Redjet GC EmptyBox Atomic Claim (RISC-V)", 100, "pipe_cmpxchg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(set GPR:$res, (redjet_emptybox_claim GPR:$mem, GPR:$expected, GPR:$new_oop))];
+}
+
+def RISCV_RedjetEmptyBoxClaim_node : RISCV_RedjetEmptyBoxClaim;
+
+// Redjet EmptyBoxTimeoutCheck — Compares current timestamp against timeout deadline
+class RISCV_RedjetEmptyBoxTimeoutCheck : GCBarrier<"rdtime\tt0\n\tsltu\tt1, t0, $timeout_tsc\n\txori\t$is_expired, t1, 1\t# redjet emptybox timeout", "Redjet GC EmptyBox Timeout Check (RISC-V)", 30, "ialu_reg_reg"> {
+  let BarrierType = 3; // Redjet
+  list<dag> Pattern = [(set GPR:$is_expired, (redjet_emptybox_timeout GPR:$timeout_tsc))];
+}
+
+def RISCV_RedjetEmptyBoxTimeoutCheck_node : RISCV_RedjetEmptyBoxTimeoutCheck;
+
+// ============================================================================
 // End of RISCV_Redjet.td
 // ============================================================================
+

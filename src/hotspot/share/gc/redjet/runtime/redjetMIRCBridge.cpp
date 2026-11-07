@@ -26,6 +26,7 @@
 #include "ci/ciMethod.hpp"
 #include "mirc/mirc.hpp"
 #include "gc/redjet/puzzler/redjetPuzzleArena.hpp"
+#include "gc/redjet/puzzler/redjetPuzzleArenaDuel.hpp"
 #include "gc/redjet/puzzler/redjetCoach.hpp"
 #include "gc/redjet/engine/redjetPointCoordinator.hpp"
 #include "gc/redjet/runtime/redjetGearkit.hpp"
@@ -50,12 +51,18 @@ bool RedjetMIRCBridge::register_mirc_duel(ciMethod* method, MIRC_Lvl1_Table* lvl
     return false;
   }
 
+  // 1. Direct nmethod-level dual execution engine with 64-iteration TSC profiling
+  mirc_hotswap_delta_t delta;
+  if (RedjetPuzzleArenaDuelEngine::execute_nmethod_duel(lvl1_tab->method_id, lvl1_tab, nullptr, &delta)) {
+    return true;
+  }
+
+  // 2. Fallback to default puzzle arena submission
   RedjetPuzzleArena* arena = hs_get_default_puzzle_arena();
   if (arena == nullptr) {
     return false;
   }
 
-  mirc_hotswap_delta_t delta;
   if (arena->submit_duel(nullptr, lvl1_tab, &delta)) {
     arena->apply_hotswap_delta_2points(delta);
     hs_hotlog_emit(HS_Ebin0_HOTSWAP, HS_Ebin1_INFO, delta.method_id, delta.new_simd_idx,

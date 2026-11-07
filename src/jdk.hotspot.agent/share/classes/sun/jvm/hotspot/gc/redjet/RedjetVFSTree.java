@@ -104,7 +104,7 @@ public class RedjetVFSTree {
     // Puzzle Arena & Park Arena
     b.add(new BranchDesc("/heap/on_heap/puzzle_arena/stagnant", "Objects pending profile evaluation in puzzler arena", false));
     b.add(new BranchDesc("/heap/on_heap/puzzle_arena/eval", "Active duel evaluation and benchmarking arena", false));
-    b.add(new BranchDesc("/heap/on_heap/park_arena", "Java to Native pinned transition buffer (is_pinned = 1)", false));
+    b.add(new BranchDesc("/heap/on_heap/park_arena", "Java to Native pinned transition buffer (is_pinned = 1, RedjetParkProvenanceHeader, EmptyBox phantom slot reservation)", false));
 
     // Landfill
     b.add(new BranchDesc("/heap/on_heap/landfill/trash_pit/matured", "Totally dead objects ready for irreversible sweep", false));

@@ -224,6 +224,10 @@ struct hs_mltc_engine_t {
     std::atomic<uint64_t>    last_telemetry_sample_tsc{ 0 };
     RedjetMLTCTelemetrySnapshot latest_snapshot{};
 
+    // Autonomous VFS Compaction 3-Signal Telemetry & Control
+    std::atomic<uint64_t> autonomous_vfs_compactions_triggered{ 0 };
+    std::atomic<uint64_t> compaction_lull_windows_utilized{ 0 };
+
     RJ_API bool check_and_solve(size_t used_bytes, size_t capacity_bytes, float alloc_rate_mbps);
     RJ_API void reset();
 
@@ -234,6 +238,14 @@ struct hs_mltc_engine_t {
     RJ_API bool arbitrate_core_bandwidth(uint32_t core_id, size_t requested_bytes, uint32_t* out_delay_us = nullptr);
     RJ_API RedjetBusCongestionLevel current_congestion_level() const noexcept;
     RJ_API RedjetMLTCTelemetrySnapshot get_latest_telemetry() const;
+
+    // Autonomous VFS Compaction 3-Signal Evaluations:
+    // Signal 1: Fragmentation Score (>35% or threshold)
+    RJ_API float compute_vfs_fragmentation_score(size_t used_bytes, size_t capacity_bytes) const noexcept;
+    // Signal 3: MLTC Bus Traffic Pacing Lull Window
+    RJ_API bool is_bus_traffic_lull_window() const noexcept;
+    // Autonomous Compaction Trigger Dispatching
+    RJ_API bool check_autonomous_vfs_compaction_trigger(size_t used_bytes, size_t capacity_bytes, size_t target_reclaim_bytes = 64 * 1024 * 1024);
 };
 
 class RedjetRMRP;
