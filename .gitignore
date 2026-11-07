@@ -30,3 +30,7 @@ NashornProfile.txt
 
 # Exclude non-Java pure-mathematics references from RedletGC
 src/hotspot/share/gc/redlet/.code_references/
+
+# Exclude standalone GPU SDK clones
+src/hotspot/cpu/x86/hip/
+src/hotspot/cpu/x86/lz/
