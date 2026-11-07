@@ -24,7 +24,7 @@
 
 /*
  * ============================================================================
- * jl_pjc.c — JavaLang Primitive Java Compiler (C-Bootstrap Mini-Compiler)
+ * JavaLang Primitive Java Compiler.c — JavaLang Primitive Java Compiler (C-Bootstrap Mini-Compiler)
  * ============================================================================
  * Zero-BootJDK Enabler for oneJDK-25 & FCS (Futuristic Compiling Systems).
  *
@@ -53,9 +53,10 @@
 #define MAX_DOC_COMMENT_SIZE (128 * 1024)
 
 // Standard Java ClassFile Constants
-#define JAVA_CLASS_MAGIC 0xCAFEBABE
-#define JAVA_CLASS_MAJOR 65 // Java 21+ baseline
-#define JAVA_CLASS_MINOR 0
+#define JAVA_CLASS_MAGIC 0xCAFEF00D // No Java 21+ baseline, the new era+
+#define JAVA_CLASS_MAJOR 74 // No Java 21+ baseline, the new era+
+#define JAVA_CLASS_MINOR 1 // No Java 21+ baseline, the new era+
+#define HAS_MODERN_JLC_TAG 0x20262027 //The new era+, backward classfile compatibility and for uncompiled fresh javafiles
 
 #define ACC_PUBLIC    0x0001
 #define ACC_FINAL     0x0010
@@ -131,7 +132,7 @@ static uint16_t   g_cp_count = 1; // 1-based index in JVM specification
 
 static void cp_check_bounds(void) {
     if (g_cp_count >= MAX_CP_ENTRIES) {
-        fprintf(stderr, "[jl_pjc] Fatal Error: Constant pool capacity exceeded (%d entries)!\n", MAX_CP_ENTRIES);
+        fprintf(stderr, "[JavaLang Primitive Java Compiler] Fatal Error: Constant pool capacity exceeded (%d entries)!\n", MAX_CP_ENTRIES);
         exit(1);
     }
 }
@@ -462,7 +463,7 @@ static bool emit_class_file(const char* out_filename,
                             bool embed_doc_comments) {
     FILE* f = fopen(out_filename, "wb");
     if (!f) {
-        fprintf(stderr, "[jl_pjc] Error: Unable to open output file: %s\n", out_filename);
+        fprintf(stderr, "[JavaLang Primitive Java Compiler] Error: Unable to open output file: %s\n", out_filename);
         return false;
     }
 
@@ -621,11 +622,11 @@ static bool emit_class_file(const char* out_filename,
     }
 
     fclose(f);
-    printf("[jl_pjc] Successfully synthesized bootstrap class: %s (%u bytes bytecode)\n", out_filename, main_code->len);
+    printf("[JavaLang Primitive Java Compiler] Successfully synthesized bootstrap class: %s (%u bytes bytecode)\n", out_filename, main_code->len);
     if (embed_doc_comments && meta->doc_len > 0) {
-        printf("[jl_pjc] Embedded FCS_DocComm custom attribute (%u bytes documentation)\n", meta->doc_len);
+        printf("[JavaLang Primitive Java Compiler] Embedded FCS_DocComm custom attribute (%u bytes documentation)\n", meta->doc_len);
     }
-    printf("[jl_pjc] Embedded FCS_TBT (Temporal Branching Table) custom attribute\n");
+    printf("[JavaLang Primitive Java Compiler] Embedded FCS_TBT (Temporal Branching Table) custom attribute\n");
     return true;
 }
 
@@ -634,8 +635,8 @@ static bool emit_class_file(const char* out_filename,
 // ============================================================================
 
 int main(int argc, char** argv) {
-    printf("[jl_pjc] JavaLang Primitive Java Compiler v%s (Tungsten Labs / WLFT)\n", PJC_VERSION);
-    printf("[jl_pjc] FCS Architecture: Zero-BootJDK Bootstrap Kernel\n");
+    printf("[JavaLang Primitive Java Compiler] JavaLang Primitive Java Compiler v%s (Tungsten Labs / WLFT)\n", PJC_VERSION);
+    printf("[JavaLang Primitive Java Compiler] FCS Architecture: Zero-BootJDK Bootstrap Kernel\n");
 
     const char* in_source = "src/jdk.compiler/share/classes/com/sun/tools/javac/bootstrap/PJCF.java";
     const char* out_class = "PJCF.class";
@@ -659,13 +660,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    printf("[jl_pjc] Ingesting bootstrap source: %s -> Output: %s\n", in_source, out_class);
+    printf("[JavaLang Primitive Java Compiler] Ingesting bootstrap source: %s -> Output: %s\n", in_source, out_class);
 
     // Phase 1: Ingest Java source metadata & DocComments
     source_metadata_t meta;
     memset(&meta, 0, sizeof(meta));
     ingest_java_source(in_source, &meta);
-    printf("[jl_pjc] Detected class: %s (package: %s)\n", meta.class_name, meta.package_name);
+    printf("[JavaLang Primitive Java Compiler] Detected class: %s (package: %s)\n", meta.class_name, meta.package_name);
 
     // Phase 2: Prepare Constant Pool references for live execution
     uint16_t out_field_idx = cp_add_fieldref("java/lang/System", "out", "Ljava/io/PrintStream;");
@@ -688,7 +689,7 @@ int main(int argc, char** argv) {
 
     // Phase 4: Emit standard Java ClassFile with embedded FCS_DocComm
     if (!emit_class_file(out_class, &meta, &main_code, embed_docs)) {
-        fprintf(stderr, "[jl_pjc] Fatal: Failed to bootstrap %s!\n", out_class);
+        fprintf(stderr, "[JavaLang Primitive Java Compiler] Fatal: Failed to bootstrap %s!\n", out_class);
         cp_destroy();
         return 1;
     }
@@ -698,6 +699,6 @@ int main(int argc, char** argv) {
     }
 
     cp_destroy();
-    printf("[jl_pjc] Bootstrap Phase 1 Complete. Ready for HotSpot VAC/MIRC invocation.\n");
+    printf("[JavaLang Primitive Java Compiler] Bootstrap Phase 1 Complete. Ready for HotSpot VAC/MIRC invocation.\n");
     return 0;
 }

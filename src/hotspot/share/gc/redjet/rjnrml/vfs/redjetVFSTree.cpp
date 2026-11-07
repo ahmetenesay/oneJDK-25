@@ -50,7 +50,7 @@ void RedjetVFSTree::init() {
   _root = new RedjetVFSNode("/", "/");
   unlock();
 
-  // 1. Motherline Egg (Young / Eden generation)
+  // 1. Motherline Egg (Newborn unoptimized generation)
   mkdir_p("/heap/on_heap/runway/motherline/egg/young/tank");
   mkdir_p("/heap/on_heap/runway/motherline/egg/young/demand");
   mkdir_p("/heap/on_heap/runway/motherline/egg/young/middle");
@@ -64,7 +64,7 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/runway/motherline/egg/senior/middle");
   mkdir_p("/heap/on_heap/runway/motherline/egg/senior/hotfield");
 
-  // 2. Motherline Fledgling (Survivor generation)
+  // 2. Motherline Fledgling (Optimized generation)
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/young/tank");
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/young/demand");
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/young/middle");
@@ -78,27 +78,34 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/senior/middle");
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/senior/hotfield");
 
-  // 3. Fast Allocation, Caching & Snatching
+  // 3. Optimization Lobby
   mkdir_p("/heap/on_heap/runway/pitstop");
+
+  // 4. Pretrashing Coffin
   mkdir_p("/heap/on_heap/runway/falline");
 
-  // 4. Puzzle(Coach) Arena & Compaction
+  // 5. Puzzle(Coach) Arena - Optimization Race(measuring)
   mkdir_p("/heap/on_heap/puzzle_arena/stagnant");
   mkdir_p("/heap/on_heap/puzzle_arena/eval");
 
-  // 5. Landfill (Matured, Rehabilitation & Dead pool)
+  // 6. Landfill (Matured, Rehabilitation & Meta Storage)
   mkdir_p("/heap/on_heap/landfill/trash_pit/matured");
   mkdir_p("/heap/on_heap/landfill/trash_pit/rehab");
   mkdir_p("/heap/on_heap/landfill/header_pane");
 
-  // 6. Off-Heap Boots
+  // 7. Reference Harbingers(TailTraces Signals) Storage - Reference Predicting Signal Storage
+  mkdir_p("/heap/on_heap/rpss");
+
+  // 8. Off-Heap Pieces
   mkdir_p("/heap/off_heap/code_boot/rawcode_cell");
-  mkdir_p("/heap/off_heap/code_boot/processed_code_chunk");
+  mkdir_p("/heap/off_heap/code_boot/vac_processed_code_chunk");
+  mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1");
+  mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl2");
   mkdir_p("/heap/off_heap/log_boot/hotlog");
   mkdir_p("/heap/off_heap/log_boot/coldlog");
   mkdir_p("/heap/off_heap/reserved_boot");
 
-  log_info(gc, init)("Redjet VFS Memory Tree: Initialized 34 standard hierarchical heap branches");
+  log_info(gc, init)("Redjet VFS Memory Tree: Initialized 39 standard hierarchical heap branches");
 }
 
 void RedjetVFSTree::destroy() {
