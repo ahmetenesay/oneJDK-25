@@ -174,6 +174,30 @@ struct VAC_Table_Snapshot_Compact {
 
     return snap;
   }
+
+  // =========================================================================
+  // VFS /heap/off_heap/code_boot Cassette Serialization & W^X Key Enforcement
+  //   - rawcode_cell: sealed read-only, unlocked exclusively via KEY_VAC_READ
+  //   - vac_processed_code_chunk: W^X protected, unlocked exclusively via KEY_MIRC_READ
+  //   - Universal GC compatible: falls back to C-heap cassette when !UseRedjetGC
+  // =========================================================================
+  static const uint8_t* seal_rawcode_cell(uint32_t method_id,
+                                          const uint8_t* raw_bytecode,
+                                          size_t bytecode_len,
+                                          uint64_t vac_access_key);
+
+  static bool serialize_to_vfs_chunk(const VAC_Table_Snapshot_Compact* snap,
+                                     const Discrete_TBT_Table* tbt_opt,
+                                     uint64_t mirc_seal_key,
+                                     void** out_chunk_addr,
+                                     size_t* out_chunk_bytes);
+
+  static VAC_Table_Snapshot_Compact* deserialize_from_vfs_chunk(const void* chunk_addr,
+                                                                size_t chunk_bytes,
+                                                                uint64_t mirc_read_key,
+                                                                Discrete_TBT_Table* out_tbt_opt = nullptr);
+
+  static uint64_t compute_cassette_digest(const void* payload, size_t bytes) noexcept;
 };
 
 #endif // SHARE_VAC_VAC_TABLESNAPSHOT_HPP

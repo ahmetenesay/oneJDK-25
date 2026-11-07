@@ -644,6 +644,8 @@ public final class PJCF {
     public static boolean preserveAssets  = true; // DEFAULT ACTIVE: Embed Custom Asset Payloads into FCS_CustomAsset
     public static boolean prevacSort      = true; // DEFAULT ACTIVE: Definitions-First canonical block ordering
     public static boolean pilfEnabled     = true; // DEFAULT ACTIVE: Pseudo Inverted Logic Flow (Loop & Guard Inversion)
+    public static boolean staticAnalyze   = true; // DEFAULT ACTIVE: JLCStaticAnalyzer + Rust-style diagnostics
+    public static boolean autoBugfix      = true; // DEFAULT ACTIVE: Auto-Scope, IEEE-754 Shield, Boxing-to-Scalar, GC Lookahead
 
     // ========================================================================
     // CLI Entry Point
@@ -652,11 +654,12 @@ public final class PJCF {
     public static void main(String[] args) {
         System.out.println("================================================================================");
         System.out.println(" [" + COMPILER_NAME + "]");
-        System.out.println(" Engine: Lightweight Pre-VAC Sorter & MIRC Bootstrap Bridge");
+        System.out.println(" Engine: Lightweight Pre-VAC Sorter, Static Bugfixer & MIRC Bootstrap Bridge");
         System.out.println(" Binary Target: " + NATIVE_BINARY_NAME);
         System.out.println(" Version: " + VERSION);
         System.out.println(" Mode: Pre-VAC Sort: " + (prevacSort ? "ON" : "OFF") +
                            " | PILF (Inverted Flow): " + (pilfEnabled ? "ON" : "OFF") +
+                           " | Auto-Bugfix: " + (autoBugfix ? "ON" : "OFF") +
                            " | Preserves: " +
                            ((preserveVars && preserveJavadoc && preserveAssets) ? "ALL ON (Default)" : "CUSTOM"));
         System.out.println("================================================================================");
@@ -677,7 +680,7 @@ public final class PJCF {
                 if (success) {
                     compiledFiles++;
                 } else {
-                    System.err.println("[PJCF] Error: Compilation failed for source: " + arg);
+                    System.err.println("[PJCF] Error: Compilation failed for input: " + arg);
                     System.exit(1);
                 }
             }
@@ -685,22 +688,93 @@ public final class PJCF {
 
         long durationMs = (System.nanoTime() - startTimeNs) / 1_000_000L;
         System.out.println("[PJCF] Frontend Processing Succeeded: " + compiledFiles +
-                           " files in " + durationMs + " ms.");
+                           " artifact(s) in " + durationMs + " ms.");
     }
 
     public static boolean compileSourceFile(String sourcePath) {
+        java.nio.file.Path inputPath = java.nio.file.Paths.get(sourcePath);
+
+        // Legacy 0xCAFEBABE .class / .jar re-synthesis into modern 0xCAFEF00D v74.1
+        if (sourcePath.endsWith(".class") || sourcePath.endsWith(".jar")) {
+            try {
+                com.sun.tools.javac.jlc.JLCDecompilerFrontend decompiler =
+                        new com.sun.tools.javac.jlc.JLCDecompilerFrontend();
+                if (sourcePath.endsWith(".class")) {
+                    byte[] raw = java.nio.file.Files.readAllBytes(inputPath);
+                    com.sun.tools.javac.jlc.JLCDecompilerFrontend.FrontendDirectiveProfile profile =
+                            decompiler.discoverFrontendHook(inputPath);
+                    com.sun.tools.javac.jlc.JLCDecompilerFrontend.ResynthesisResult res =
+                            decompiler.resynthesizeClassBytes(raw, profile, false);
+                    java.nio.file.Files.write(inputPath, res.modernClassBytes);
+                    return true;
+                } else {
+                    java.nio.file.Path outJar = java.nio.file.Paths.get(
+                            sourcePath.substring(0, sourcePath.length() - 4) + "-fcs.jar");
+                    decompiler.resynthesizeJarArchive(inputPath, outJar);
+                    return true;
+                }
+            } catch (java.io.IOException ex) {
+                System.err.println("[PJCF] Re-synthesis failed for '" + sourcePath + "': " + ex.getMessage());
+                return false;
+            }
+        }
+
         if (!sourcePath.endsWith(".java")) {
-            System.err.println("[PJCF] Warning: Skipping non-Java file: " + sourcePath);
+            System.err.println("[PJCF] Warning: Skipping unsupported file: " + sourcePath);
             return false;
         }
-        // Minimal pipeline:
-        // 1. Ingest source
-        // 2. If prevacSort is true -> Run PreVacSorter.sortAndClean()
-        // 3. If preserveVars is true -> Populate LocalVariableTable with original names
-        // 4. If preserveJavadoc is true -> Attach FCS_DocComm ClassFile attribute
-        // 5. If preserveAssets is true -> Attach FCS_CustomAsset ClassFile attribute
-        // 6. Forward clean bytecode to HotSpot VAC
-        return true;
+
+        try {
+            String rawSource = java.nio.file.Files.readString(inputPath, java.nio.charset.StandardCharsets.UTF_8);
+            com.sun.tools.javac.jlc.JLCDiagnostics diag = new com.sun.tools.javac.jlc.JLCDiagnostics(true);
+
+            // 1. Run JLCStaticAnalyzer (Scope leaks, IEEE-754 Shield, Boxing, TailTraces, System.gc() Lookahead)
+            com.sun.tools.javac.jlc.JLCStaticAnalyzer analyzer = new com.sun.tools.javac.jlc.JLCStaticAnalyzer();
+            com.sun.tools.javac.jlc.JLCStaticAnalyzer.AnalysisReport report =
+                    staticAnalyze ? analyzer.analyzeSource(sourcePath, rawSource, diag) : null;
+
+            String effectiveSource = rawSource;
+            if (report != null && autoBugfix) {
+                com.sun.tools.javac.jlc.JLCBugfixer fixer = new com.sun.tools.javac.jlc.JLCBugfixer();
+                com.sun.tools.javac.jlc.JLCBugfixer.BugfixResult fixed =
+                        fixer.applyFixes(report, true, true, true);
+                effectiveSource = fixed.transformedSource;
+            }
+
+            if (staticAnalyze) {
+                diag.flushTo(System.out, new com.sun.tools.javac.jlc.JLCDiagnostics.SourceFileBuffer(sourcePath, rawSource));
+                if (diag.hasErrors()) {
+                    return false;
+                }
+            }
+
+            // 2. Lift lines into canonical MethodStatements & run PreVacSorter
+            List<MethodStatement> statements = new ArrayList<>();
+            for (String line : effectiveSource.split("\n")) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty() && !trimmed.startsWith("//") && !trimmed.startsWith("/*") && !trimmed.startsWith("*")) {
+                    StatementKind kind = trimmed.startsWith("return") ? StatementKind.STORE_RETURN : StatementKind.EXECUTION;
+                    statements.add(new MethodStatement(kind, "", trimmed));
+                }
+            }
+            if (prevacSort) {
+                PreVacSorter.sortAndClean(statements);
+            }
+
+            // 3. Emit JDWP/JDB Debug & FCS TailTraces / PreflightGCHint binary attribute tables
+            com.sun.tools.javac.jlc.JLCDebugSymbolEmitter debugEmitter =
+                    new com.sun.tools.javac.jlc.JLCDebugSymbolEmitter();
+            com.sun.tools.javac.jlc.JLCDebugSymbolEmitter.ConstantPoolBuilder cp =
+                    new com.sun.tools.javac.jlc.JLCDebugSymbolEmitter.ConstantPoolBuilder();
+            if (report != null) {
+                debugEmitter.emitFcsTailTracesAttribute(cp, report.deadReferenceClasps);
+                debugEmitter.emitFcsPreflightGcHintAttribute(cp, report.preflightCleanHints);
+            }
+            return true;
+        } catch (java.io.IOException ex) {
+            System.err.println("[PJCF] Failed reading '" + sourcePath + "': " + ex.getMessage());
+            return false;
+        }
     }
 
     private static void handleOption(String opt) {
@@ -735,6 +809,18 @@ public final class PJCF {
             case "--no-pilf":
                 pilfEnabled = false;
                 break;
+            case "--analyze":
+                staticAnalyze = true;
+                break;
+            case "--no-analyze":
+                staticAnalyze = false;
+                break;
+            case "--autofix":
+                autoBugfix = true;
+                break;
+            case "--no-autofix":
+                autoBugfix = false;
+                break;
             case "-version":
             case "--version":
                 System.out.println(COMPILER_NAME + " (" + NATIVE_BINARY_NAME + ") version " + VERSION);
@@ -751,7 +837,7 @@ public final class PJCF {
     }
 
     private static void printUsage() {
-        System.out.println("Usage: " + NATIVE_BINARY_NAME + " <options> <source files>");
+        System.out.println("Usage: " + NATIVE_BINARY_NAME + " <options> <source/class/jar files>");
         System.out.println("Options:");
         System.out.println("  -d <directory>           Specify destination directory for classfiles");
         System.out.println("  -classpath <path>        Specify user class lookup path");
@@ -759,6 +845,8 @@ public final class PJCF {
         System.out.println("  --no-prevac-sort         Disable Pre-VAC canonical sorting");
         System.out.println("  --pilf                   Enable Pseudo Inverted Logic Flow (Loop & Guard Inversion) (Default: ON)");
         System.out.println("  --no-pilf                Disable Pseudo Inverted Logic Flow");
+        System.out.println("  --analyze                Enable JLCStaticAnalyzer & Rust-style diagnostics (Default: ON)");
+        System.out.println("  --autofix                Enable JLCBugfixer Auto-Scope, IEEE Shield & Unboxer (Default: ON)");
         System.out.println("  --preserve-vars          Guarantee 100% original variable names (Default: ON)");
         System.out.println("  --no-preserve-vars       Disable original variable preservation");
         System.out.println("  --preserve-javadoc       Embed Javadoc into FCS_DocComm custom attribute (Default: ON)");

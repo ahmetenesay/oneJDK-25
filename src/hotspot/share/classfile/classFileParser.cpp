@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -944,6 +944,8 @@ public:
     _annotation_RedjetNestedExec,
     _annotation_RedjetBypassWarmup,
     _annotation_RedjetExemptPin,
+    _annotation_RJGC,
+    _annotation_PrecisionTarget,
     _annotation_LIMIT
   };
   const Location _location;
@@ -1922,21 +1924,33 @@ AnnotationCollector::annotation_index(const ClassLoaderData* loader_data,
     case VM_SYMBOL_ENUM_NAME(java_lang_Deprecated): {
       return _java_lang_Deprecated;
     }
+    case VM_SYMBOL_ENUM_NAME(jdk_gc_redjet_RedjetBatchExec_signature):
     case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetBatchExec_signature): {
       if (_location != _in_method && _location != _in_class) break;
       return _annotation_RedjetBatchExec;
     }
+    case VM_SYMBOL_ENUM_NAME(jdk_gc_redjet_RedjetNestedExec_signature):
     case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetNestedExec_signature): {
       if (_location != _in_method && _location != _in_class) break;
       return _annotation_RedjetNestedExec;
     }
+    case VM_SYMBOL_ENUM_NAME(jdk_gc_redjet_RedjetBypassWarmup_signature):
     case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetBypassWarmup_signature): {
       if (_location != _in_method && _location != _in_class) break;
       return _annotation_RedjetBypassWarmup;
     }
+    case VM_SYMBOL_ENUM_NAME(jdk_gc_redjet_RedjetExemptPin_signature):
     case VM_SYMBOL_ENUM_NAME(org_wlft_hsvm_annotation_RedjetExemptPin_signature): {
       if (_location != _in_method && _location != _in_class) break;
       return _annotation_RedjetExemptPin;
+    }
+    case VM_SYMBOL_ENUM_NAME(jdk_gc_redjet_RJGC_signature): {
+      if (_location != _in_method && _location != _in_class && _location != _in_field) break;
+      return _annotation_RJGC;
+    }
+    case VM_SYMBOL_ENUM_NAME(jdk_gc_redjet_PrecisionTarget_signature): {
+      if (_location != _in_method && _location != _in_class) break;
+      return _annotation_PrecisionTarget;
     }
     default: {
       break;
@@ -2000,6 +2014,10 @@ void MethodAnnotationCollector::apply_to(const methodHandle& m) {
   }
   if (has_annotation(_annotation_RedjetExemptPin))
     m->set_redjet_exempt_pin(true);
+  if (has_annotation(_annotation_RJGC))
+    m->set_redjet_rjgc(true);
+  if (has_annotation(_annotation_PrecisionTarget))
+    m->set_redjet_precision_target(true);
 }
 
 void ClassFileParser::ClassAnnotationCollector::apply_to(InstanceKlass* ik) {
@@ -2032,13 +2050,17 @@ void ClassFileParser::ClassAnnotationCollector::apply_to(InstanceKlass* ik) {
   if (has_annotation(_annotation_RedjetBatchExec) ||
       has_annotation(_annotation_RedjetNestedExec) ||
       has_annotation(_annotation_RedjetBypassWarmup) ||
-      has_annotation(_annotation_RedjetExemptPin)) {
+      has_annotation(_annotation_RedjetExemptPin) ||
+      has_annotation(_annotation_RJGC) ||
+      has_annotation(_annotation_PrecisionTarget)) {
     Array<Method*>* methods = ik->methods();
     int length = methods->length();
     const bool is_batch  = has_annotation(_annotation_RedjetBatchExec);
     const bool is_nested = has_annotation(_annotation_RedjetNestedExec);
     const bool is_bypass = has_annotation(_annotation_RedjetBypassWarmup);
     const bool is_exempt = has_annotation(_annotation_RedjetExemptPin);
+    const bool is_rjgc   = has_annotation(_annotation_RJGC);
+    const bool is_prec   = has_annotation(_annotation_PrecisionTarget);
     for (int i = 0; i < length; i++) {
       Method* m = methods->at(i);
       if (m->is_static_initializer()) {
@@ -2053,6 +2075,8 @@ void ClassFileParser::ClassAnnotationCollector::apply_to(InstanceKlass* ik) {
         }
       }
       if (is_exempt) m->set_redjet_exempt_pin(true);
+      if (is_rjgc)   m->set_redjet_rjgc(true);
+      if (is_prec)   m->set_redjet_precision_target(true);
     }
   }
 }

@@ -47,13 +47,19 @@
 
 struct alignas(64) RedjetDuelProfile64 {
     static constexpr size_t ITERATIONS = 64;
+    static constexpr size_t OUTLIER_TRIM_COUNT = 6; // 10% trimmed from top and bottom (PLAN.md Sec 8.8)
 
     uint64_t tsc_deltas[ITERATIONS]{ 0 };
+    uint64_t inst_retired[ITERATIONS]{ 0 };
+    uint64_t l1d_misses[ITERATIONS]{ 0 };
+
     uint64_t mean_tsc{ 0 };
     uint64_t min_tsc{ UINT64_MAX };
     uint64_t max_tsc{ 0 };
     uint64_t median_tsc{ 0 };
-    uint64_t trimmed_mean_tsc{ 0 }; // Trims top and bottom 4 outlier samples
+    uint64_t trimmed_mean_tsc{ 0 }; // Trims top and bottom 10% (6 samples each)
+    uint64_t mean_inst_retired{ 0 };
+    uint64_t mean_l1d_misses{ 0 };
     double   std_dev{ 0.0 };
 
     void analyze() noexcept;
@@ -67,6 +73,10 @@ struct alignas(64) RedjetNMethodDuelResult {
     uint64_t baseline_cycles{ 0 };
     uint64_t winning_cycles{ 0 };
     uint64_t cycles_gained{ 0 };
+    uint64_t baseline_inst_retired{ 0 };
+    uint64_t winning_inst_retired{ 0 };
+    uint64_t baseline_l1d_misses{ 0 };
+    uint64_t winning_l1d_misses{ 0 };
     double   speedup{ 1.0 };
     bool     precision_verified{ false };
     bool     hotswap_performed{ false };

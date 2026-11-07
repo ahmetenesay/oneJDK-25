@@ -172,7 +172,66 @@ public:
 };
 
 /* ========================================================================= */
-/* 3. onejdk::live_ref<T> BIDIRECTIONAL NATIVE POINTER TRACKING SMART POINTER*/
+/* 3. REDJET NATIVE TRACKER (TLS Ring & Bidirectional Live Reference Updater)*/
+/* ========================================================================= */
+
+struct alignas(64) RedjetLiveRefSlot {
+    std::atomic<void*>    target_address{ nullptr }; // Points to live object in heap/slab
+    void**                holder_slot{ nullptr };     // Address of pointer inside live_ref ControlBlock
+    uint64_t              ref_id{ 0 };
+    uint32_t              thread_id{ 0 };
+    std::atomic<bool>     is_occupied{ false };
+    std::atomic<uint64_t> generation{ 0 };
+};
+
+class RedjetNativeTracker {
+public:
+    static constexpr size_t TRACKER_CAPACITY = 1024;
+    static constexpr size_t TRACKER_MASK     = TRACKER_CAPACITY - 1;
+
+private:
+    RedjetLiveRefSlot   _slots[TRACKER_CAPACITY];
+    alignas(64) std::atomic<uint64_t> _alloc_cursor{ 0 };
+    std::atomic<size_t> _active_slots{ 0 };
+    uint32_t            _thread_id{ 0 };
+    RedjetNativeTracker* _next{ nullptr };
+
+    static alignas(64) std::atomic<RedjetNativeTracker*> _head_tracker;
+    static hs_ticket_lock_t                              _registry_lock;
+    static std::atomic<uint64_t>                         _total_relocations_updated;
+    static std::atomic<uint64_t>                         _total_reverse_syncs;
+
+public:
+    RedjetNativeTracker(uint32_t tid = 0);
+    ~RedjetNativeTracker();
+
+    // TLS thread instance access
+    RJ_API static RedjetNativeTracker& thread_tracker();
+
+    // Register a live reference into the TLS ring
+    RJ_API uint64_t register_live_slot(void** holder_ptr, void* initial_target);
+
+    // Unregister a live reference slot
+    RJ_API void unregister_live_slot(uint64_t slot_id, void** holder_ptr);
+
+    // GC Relocation Hook: Called by Redjet GC when objects are compacted or evacuated
+    // Scans all registered native trackers across threads and atomically updates holder slots
+    RJ_API static size_t update_relocated_object(const void* old_addr, void* new_addr);
+
+    // Bulk range relocation update (e.g., slab compaction)
+    RJ_API static size_t update_relocated_range(const void* old_base, void* new_base, size_t range_bytes);
+
+    // Reverse Native -> Java Synchronization (e.g. realloc)
+    RJ_API static bool update_native_memory_segment(const void* old_native_ptr, void* new_native_ptr, size_t new_size = 0);
+
+    // Telemetry
+    static uint64_t total_relocations_updated() noexcept { return _total_relocations_updated.load(std::memory_order_relaxed); }
+    static uint64_t total_reverse_syncs() noexcept { return _total_reverse_syncs.load(std::memory_order_relaxed); }
+    size_t active_slots() const noexcept { return _active_slots.load(std::memory_order_relaxed); }
+};
+
+/* ========================================================================= */
+/* 4. onejdk::live_ref<T> BIDIRECTIONAL NATIVE POINTER TRACKING SMART POINTER*/
 /* ========================================================================= */
 
 namespace onejdk {
@@ -183,9 +242,11 @@ private:
     struct ControlBlock {
         T*                    ptr{ nullptr };
         uint64_t              registry_ref_id{ 0 };
+        uint64_t              tracker_slot_id{ 0 };
         std::atomic<uint32_t> ref_count{ 1 };
 
-        ControlBlock(T* p, uint64_t ref_id) : ptr(p), registry_ref_id(ref_id), ref_count(1) {}
+        ControlBlock(T* p, uint64_t ref_id, uint64_t slot_id)
+            : ptr(p), registry_ref_id(ref_id), tracker_slot_id(slot_id), ref_count(1) {}
     };
 
     ControlBlock* _ctrl{ nullptr };
@@ -193,6 +254,10 @@ private:
     void release_internal() noexcept {
         if (_ctrl != nullptr) {
             if (_ctrl->ref_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                if (_ctrl->tracker_slot_id != 0) {
+                    RedjetNativeTracker::thread_tracker().unregister_live_slot(
+                        _ctrl->tracker_slot_id, reinterpret_cast<void**>(&(_ctrl->ptr)));
+                }
                 if (_ctrl->registry_ref_id != 0) {
                     g_redjet_native_registry.release_ref(_ctrl->registry_ref_id);
                 }
@@ -208,7 +273,10 @@ public:
     explicit live_ref(T* raw_ptr, uint32_t thread_id = 0) {
         if (raw_ptr != nullptr) {
             uint64_t ref_id = g_redjet_native_registry.register_ref(static_cast<void*>(raw_ptr), thread_id);
-            _ctrl = new ControlBlock(raw_ptr, ref_id);
+            _ctrl = new ControlBlock(raw_ptr, ref_id, 0);
+            uint64_t slot_id = RedjetNativeTracker::thread_tracker().register_live_slot(
+                reinterpret_cast<void**>(&(_ctrl->ptr)), static_cast<void*>(raw_ptr));
+            _ctrl->tracker_slot_id = slot_id;
         }
     }
 
@@ -280,7 +348,10 @@ public:
         release_internal();
         if (new_ptr != nullptr) {
             uint64_t ref_id = g_redjet_native_registry.register_ref(static_cast<void*>(new_ptr), thread_id);
-            _ctrl = new ControlBlock(new_ptr, ref_id);
+            _ctrl = new ControlBlock(new_ptr, ref_id, 0);
+            uint64_t slot_id = RedjetNativeTracker::thread_tracker().register_live_slot(
+                reinterpret_cast<void**>(&(_ctrl->ptr)), static_cast<void*>(new_ptr));
+            _ctrl->tracker_slot_id = slot_id;
         }
     }
 
@@ -295,5 +366,10 @@ inline live_ref<T> make_live(Args&&... args) {
 }
 
 } // namespace onejdk
+
+extern "C" {
+  RJ_API void onejdk_update_native_ref(void* old_ptr, void* new_ptr);
+  RJ_API void* onejdk_get_live_ref_target(uint64_t ref_id);
+}
 
 #endif // SHARE_GC_REDJET_API_REDJETNATIVESDK_HPP

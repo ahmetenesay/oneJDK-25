@@ -273,6 +273,29 @@ class RISCV_RedjetEmptyBoxTimeoutCheck : GCBarrier<"rdtime\tt0\n\tsltu\tt1, t0, 
 def RISCV_RedjetEmptyBoxTimeoutCheck_node : RISCV_RedjetEmptyBoxTimeoutCheck;
 
 // ============================================================================
+// Redjet RVV 1.0 Accelerated Barrier Instructions
+// ============================================================================
+
+// Redjet SimdDispatch_RVV10 — RVV 1.0 vector fused multiply-accumulate dispatch
+class RISCV_RedjetSimdDispatch_RVV10 : GCBarrier<"vfmacc.vv\t$dst, $src1, $src2\t# redjet rvv 1.0 simd dispatch", "Redjet RVV 1.0 Vector Dispatch (RISC-V)", 40, "ialu_reg_mem"> {
+  let BarrierType = 3;
+  let Predicates = [HasStdExtV];
+  list<dag> Pattern = [(set GPR:$dst, (redjet_simd_dispatch GPR:$dst, GPR:$src1, GPR:$src2))];
+}
+
+def RISCV_RedjetSimdDispatch_RVV10_node : RISCV_RedjetSimdDispatch_RVV10;
+
+// Redjet ClearCacheline_RVV10 — 64-byte zeroing via RVV 1.0 unit-stride store
+class RISCV_RedjetClearCacheline_RVV10 : GCBarrier<"vsetivli\tzero, 8, e64, m1, ta, ma\n\tvmv.v.i\tv0, 0\n\tvse64.v\tv0, ($mem)\t# redjet rvv cacheline clear", "Redjet RVV 1.0 Cacheline Clear (RISC-V)", 15, "ialu_mem_reg"> {
+  let BarrierType = 3;
+  let Predicates = [HasStdExtV];
+  list<dag> Pattern = [(redjet_dead_ref_signal GPR:$mem, GPR:$mem)];
+}
+
+def RISCV_RedjetClearCacheline_RVV10_node : RISCV_RedjetClearCacheline_RVV10;
+
+// ============================================================================
 // End of RISCV_Redjet.td
 // ============================================================================
+
 

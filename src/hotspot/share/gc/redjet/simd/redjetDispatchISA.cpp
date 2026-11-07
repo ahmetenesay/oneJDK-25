@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,6 +23,7 @@
  */
 
 #include "gc/redjet/simd/redjetDispatchISA.hpp"
+#include "gc/redjet/simd/redjetSIMD.hpp"
 #include <cstring>
 #include <cstdio>
 #include <chrono>
@@ -1088,27 +1089,9 @@ void hs_kernel_gc_card_table_scan(const HS_hotspot_tensor_t* in, int nin, HS_hot
     uint32_t* dirty_indices = static_cast<uint32_t*>(out[0].data);
     if (!cards || !dirty_indices) return;
     size_t card_count = in[0].byte_size;
-    size_t dirty_count = 0;
     size_t max_dirty = out[0].byte_size / sizeof(uint32_t);
 
-    size_t i = 0;
-    // 64-bit word scanning for fast skip of clean 8-card chunks
-    for (; i + 8 <= card_count && dirty_count < max_dirty; i += 8) {
-        uint64_t word;
-        std::memcpy(&word, cards + i, sizeof(uint64_t));
-        if (word != 0) {
-            for (size_t b = 0; b < 8 && dirty_count < max_dirty; ++b) {
-                if (cards[i + b] != 0) {
-                    dirty_indices[dirty_count++] = static_cast<uint32_t>(i + b);
-                }
-            }
-        }
-    }
-    for (; i < card_count && dirty_count < max_dirty; ++i) {
-        if (cards[i] != 0) {
-            dirty_indices[dirty_count++] = static_cast<uint32_t>(i);
-        }
-    }
+    size_t dirty_count = RedjetSIMD::scan_card_table(cards, card_count, dirty_indices, max_dirty);
     out[0].shape[0] = static_cast<int32_t>(dirty_count);
 }
 

@@ -217,6 +217,17 @@ extern "C" {
 #define CC (char*)  /* cast a literal from (const char*) */
 #define FN_PTR(f) CAST_FROM_FN_PTR(void*, &f)
 
+#if INCLUDE_REDJETGC
+extern "C" {
+  void JNICALL Java_jdk_gc_redjet_GCHints_notifyHint0(JNIEnv* env, jclass clazz);
+  jlong JNICALL Java_jdk_gc_redjet_BatchScope_enterBatch0(JNIEnv* env, jclass clazz, jint priority, jboolean bypass_warmup);
+  void JNICALL Java_jdk_gc_redjet_BatchScope_exitBatch0(JNIEnv* env, jclass clazz, jlong handle);
+  void JNICALL Java_jdk_gc_redjet_BatchScope_abortBatch0(JNIEnv* env, jclass clazz, jlong handle);
+  jfloat JNICALL Java_jdk_gc_redjet_PrecisionScope_enterPrecision0(JNIEnv* env, jclass clazz, jfloat epsilon);
+  void JNICALL Java_jdk_gc_redjet_PrecisionScope_exitPrecision0(JNIEnv* env, jclass clazz, jfloat prev_epsilon);
+}
+#endif
+
 static JNINativeMethod lookup_special_native_methods[] = {
   { CC"Java_jdk_internal_misc_Unsafe_registerNatives",             nullptr, FN_PTR(JVM_RegisterJDKInternalMiscUnsafeMethods) },
   { CC"Java_java_lang_invoke_MethodHandleNatives_registerNatives", nullptr, FN_PTR(JVM_RegisterMethodHandleMethods) },
@@ -236,6 +247,14 @@ static JNINativeMethod lookup_special_native_methods[] = {
   { CC"Java_jdk_jfr_internal_JVM_registerNatives",                 nullptr, FN_PTR(jfr_register_natives)            },
 #endif
   { CC"Java_jdk_internal_misc_ScopedMemoryAccess_registerNatives", nullptr, FN_PTR(JVM_RegisterJDKInternalMiscScopedMemoryAccessMethods) },
+#if INCLUDE_REDJETGC
+  { CC"Java_jdk_gc_redjet_GCHints_notifyHint0",                    nullptr, FN_PTR(Java_jdk_gc_redjet_GCHints_notifyHint0) },
+  { CC"Java_jdk_gc_redjet_BatchScope_enterBatch0",                 nullptr, FN_PTR(Java_jdk_gc_redjet_BatchScope_enterBatch0) },
+  { CC"Java_jdk_gc_redjet_BatchScope_exitBatch0",                  nullptr, FN_PTR(Java_jdk_gc_redjet_BatchScope_exitBatch0) },
+  { CC"Java_jdk_gc_redjet_BatchScope_abortBatch0",                 nullptr, FN_PTR(Java_jdk_gc_redjet_BatchScope_abortBatch0) },
+  { CC"Java_jdk_gc_redjet_PrecisionScope_enterPrecision0",          nullptr, FN_PTR(Java_jdk_gc_redjet_PrecisionScope_enterPrecision0) },
+  { CC"Java_jdk_gc_redjet_PrecisionScope_exitPrecision0",           nullptr, FN_PTR(Java_jdk_gc_redjet_PrecisionScope_exitPrecision0) },
+#endif
 };
 
 static address lookup_special_native(const char* jni_name) {

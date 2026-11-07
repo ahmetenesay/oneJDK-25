@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -624,6 +624,24 @@ uint64_t redjet_rt_group_enter(uint32_t group_hex_id, uint32_t priority, bool by
 
 void redjet_rt_group_exit(uint64_t handle) {
   RedjetBatchScopeManager::exit_group(handle);
+}
+
+JNIEXPORT jlong JNICALL Java_jdk_gc_redjet_BatchScope_enterBatch0(JNIEnv* env, jclass clazz, jint priority, jboolean bypass_warmup) {
+  (void)env;
+  (void)clazz;
+  return static_cast<jlong>(RedjetBatchScopeManager::enter_batch(static_cast<uint32_t>(priority), bypass_warmup != 0, true));
+}
+
+JNIEXPORT void JNICALL Java_jdk_gc_redjet_BatchScope_exitBatch0(JNIEnv* env, jclass clazz, jlong handle) {
+  (void)env;
+  (void)clazz;
+  RedjetBatchScopeManager::exit_batch(static_cast<uint64_t>(handle));
+}
+
+JNIEXPORT void JNICALL Java_jdk_gc_redjet_BatchScope_abortBatch0(JNIEnv* env, jclass clazz, jlong handle) {
+  (void)env;
+  (void)clazz;
+  RedjetBatchScopeManager::abort_batch(static_cast<uint64_t>(handle));
 }
 
 } // extern "C"

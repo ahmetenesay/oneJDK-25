@@ -34,6 +34,7 @@
 #include "gc/redjet/runtime/redjetRingLog.hpp"
 #include "gc/redjet/simd/redjetDispatchISA.hpp"
 #include "gc/redjet/allocator/redjetMotherline.hpp"
+#include "gc/redjet/allocator/redjetLandfill.hpp"
 #include "gc/redjet/allocator/redjetRunway.hpp"
 #include "gc/redjet/allocator/redjetSlabAllocator.hpp"
 #include "gc/redjet/engine/redjetPitstop.hpp"
@@ -57,40 +58,53 @@
 #include "runtime/globals.hpp"
 #include "services/memoryManager.hpp"
 
-class RedjetMemoryPool;
+class RedjetUnifiedHeapPool;
+class RedjetReferenceProcessor;
+class RedjetClassUnloader;
+class RedjetGCMemoryManager;
+class RedjetGCPolicyCounters;
 
 class RedjetHeap : public CollectedHeap {
   friend class VMStructs;
 
 private:
-  RedjetMonitoringSupport* _monitoring_support;
-  MemoryPool*              _pool;
-  GCMemoryManager          _memory_manager;
-  ContiguousSpace*         _space;
-  VirtualSpace             _virtual_space;
-  size_t                   _max_tlab_size;
+  RedjetMonitoringSupport*  _monitoring_support;
+  MemoryPool*               _pool;
+  GCMemoryManager           _memory_manager;
+  RedjetGCMemoryManager*    _gc_memory_manager;
+  RedjetReferenceProcessor* _ref_processor;
+  RedjetClassUnloader*      _class_unloader;
+  RedjetGCPolicyCounters*   _policy_counters;
+  ContiguousSpace*          _space;
+  VirtualSpace              _virtual_space;
+  size_t                    _max_tlab_size;
 
-  sacculus_hotlog_t        _hotlog;
-  sacculus_coldlog_t       _coldlog;
-  RedjetVFSTree            _vfs_tree;
-  RedjetFalline            _falline;
-  RedjetTBBArenaManager    _tbb_arenas;
-  RedjetMotherline         _motherline;
-  RedjetRunway             _runway;
-  RedjetSlabAllocator      _slab_allocator;
-  RedjetLandfill           _landfill;
-  RedjetPitstop            _pitstop;
-  RedjetPuzzleArena        _puzzle_arena;
-  RedjetGC                 _gc;
-  RedjetMarkBitMap         _mark_bitmap;
-  RedjetRootScanner*       _root_scanner;
-  msimd_context            _msimd_ctx;
+  sacculus_hotlog_t         _hotlog;
+  sacculus_coldlog_t        _coldlog;
+  RedjetVFSTree             _vfs_tree;
+  RedjetFalline             _falline;
+  RedjetTBBArenaManager     _tbb_arenas;
+  RedjetMotherline          _motherline;
+  RedjetRunway              _runway;
+  RedjetSlabAllocator       _slab_allocator;
+  RedjetLandfill            _landfill;
+  RedjetPitstop             _pitstop;
+  RedjetPuzzleArena         _puzzle_arena;
+  RedjetGC                  _gc;
+  RedjetMarkBitMap          _mark_bitmap;
+  RedjetRootScanner*        _root_scanner;
+  msimd_context             _msimd_ctx;
 
-  std::atomic<uint64_t>    _current_sweep_no;
-  std::atomic<size_t>      _allocated_bytes;
+  std::atomic<uint64_t>     _current_sweep_no;
+  std::atomic<size_t>       _allocated_bytes;
 
 public:
   static RedjetHeap* heap();
+
+  RedjetReferenceProcessor* reference_processor() const { return _ref_processor; }
+  RedjetClassUnloader*      class_unloader()      const { return _class_unloader; }
+  RedjetGCMemoryManager*    gc_memory_manager()   const { return _gc_memory_manager; }
+  RedjetGCPolicyCounters*   policy_counters()     const { return _policy_counters; }
 
   RedjetHeap();
   ~RedjetHeap();
@@ -153,7 +167,7 @@ public:
   void verify_nmethod(nmethod* nm) override {}
 
   void prepare_for_verify() override {}
-  void verify(VerifyOption option) override {}
+  void verify(VerifyOption option) override;
 
   MemRegion reserved_region() const { return _reserved; }
   bool is_in_reserved(const void* addr) const {
@@ -161,7 +175,7 @@ public:
   }
 
   void print_heap_on(outputStream* st) const override;
-  void print_gc_on(outputStream* st) const override {}
+  void print_gc_on(outputStream* st) const override;
   void print_tracing_info() const override;
   bool print_location(outputStream* st, void* addr) const override;
 

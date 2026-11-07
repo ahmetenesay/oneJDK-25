@@ -264,6 +264,38 @@ class X86_RedjetEmptyBoxTimeoutCheck : GCBarrier<"rdtsc\n\tshlq\t$$32, %rdx\n\to
 def X86_RedjetEmptyBoxTimeoutCheck_node : X86_RedjetEmptyBoxTimeoutCheck;
 
 // ============================================================================
+// Redjet APX NDD/NF & AVX10.2 Accelerated Barrier Instructions
+// ============================================================================
+
+// Redjet EmptyBoxGuard_NDD — Non-destructive compare against HS_EMPTYBOX_MAGIC
+class X86_RedjetEmptyBoxGuard_NDD : GCBarrier<"cmp_ndd\t$dst, $mem, $$0xEB0C5107\t# redjet emptybox guard apx", "Redjet GC EmptyBox Guard APX NDD (x86_64)", 10, "ialu_mem_imm"> {
+  let BarrierType = 3;
+  let Predicates = [HasAPXF];
+  list<dag> Pattern = [(set GR32:$dst, (redjet_emptybox_guard i32mem:$mem))];
+}
+
+def X86_RedjetEmptyBoxGuard_NDD_node : X86_RedjetEmptyBoxGuard_NDD;
+
+// Redjet Parkpoint_NF — Loop bottom check with Status Flags Update Suppression
+class X86_RedjetParkpoint_NF : GCBarrier<"testb_nf\t$$1, [r15 + $park_offset]\n\tjnz\t$cold_park_and_swap\t# redjet parkpoint nf", "Redjet GC Parkpoint Loop Poll APX NF (x86_64)", 15, "branch"> {
+  let BarrierType = 3;
+  let Predicates = [HasAPXF, HasNF];
+  list<dag> Pattern = [(redjet_parkpoint i32imm:$park_offset, brtarget:$cold_park_and_swap)];
+}
+
+def X86_RedjetParkpoint_NF_node : X86_RedjetParkpoint_NF;
+
+// Redjet SimdDispatch_AVX10 — AVX10.1 / AVX10.2 full vector dispatch without SSE transition penalty
+class X86_RedjetSimdDispatch_AVX10 : GCBarrier<"vfmadd231pd\t$src2, $src1, $dst\t# redjet avx10 simd dispatch", "Redjet AVX10 SIMD Dispatch (x86_64)", 50, "ialu_reg_mem"> {
+  let BarrierType = 3;
+  let Predicates = [HasAVX10_1];
+  list<dag> Pattern = [(set GR64:$dst, (redjet_simd_dispatch GR64:$dst, GR64:$src1, GR64:$src2))];
+}
+
+def X86_RedjetSimdDispatch_AVX10_node : X86_RedjetSimdDispatch_AVX10;
+
+// ============================================================================
 // End of X86_Redjet.td
 // ============================================================================
+
 

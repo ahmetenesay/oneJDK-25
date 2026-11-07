@@ -66,6 +66,9 @@ struct alignas(64) RedjetClaspSignal {
     uint32_t              region_id;
     uint64_t              timestamp_ns;
     uint64_t              probation_epoch;
+    uint64_t              bpu_site_hash{ 0 };
+    uint8_t               bpu_confidence_pct{ 0 };
+    bool                  bpu_fast_probation{ false };
     std::atomic<uint8_t>  phase{ static_cast<uint8_t>(RedjetSignalPhase::PHASE_1_PROBATION) };
     std::atomic<bool>     escape_detected{ false };
 };
@@ -92,6 +95,9 @@ private:
     std::atomic<uint64_t>             _total_signals_received{ 0 };
     std::atomic<uint64_t>             _total_signals_drained{ 0 };
     std::atomic<uint64_t>             _total_false_positives_cancelled{ 0 };
+    std::atomic<uint64_t>             _total_quarantined_in_morgue{ 0 };
+    std::atomic<uint64_t>             _total_rehabilitated_objects{ 0 };
+    std::atomic<uint64_t>             _total_contention_events{ 0 };
     std::atomic<uint64_t>             _current_tailtraces_epoch{ 1 };
 
     // Thread Clasp Lifecycle Registry
@@ -125,12 +131,43 @@ public:
     // Drains pending confirmed signals into Redjet GC mark bitmap / landfill
     RJ_API size_t drain_signals(void (*reclaim_callback)(void* obj, uint32_t region_id));
 
+    // Branchless Clasp Emission (MOV [r15 + clasp_offset], id)
+    RJ_API static inline void emit_branchless_clasp(uint32_t thread_clasp_id,
+                                                    uintptr_t r15_thread_addr,
+                                                    size_t clasp_offset) noexcept {
+      volatile uint32_t* target = reinterpret_cast<volatile uint32_t*>(r15_thread_addr + clasp_offset);
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(__x86_64__))
+      *target = thread_clasp_id;
+#elif defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64))
+      __asm__ __volatile__ (
+        "movl %0, (%1, %2)"
+        :
+        : "r"(thread_clasp_id), "r"(r15_thread_addr), "r"(clasp_offset)
+        : "memory"
+      );
+#else
+      *target = thread_clasp_id;
+#endif
+    }
+
+    // 2-Stage Morgue Quarantine in Falline with 1-epoch retention
+    RJ_API bool stage_morgue_quarantine_falline(void* dead_obj, size_t footprint_bytes, uint32_t thread_id);
+
+    // Contention Detection on Clasp Rings
+    RJ_API bool detect_clasp_contention(uint32_t thread_id) noexcept;
+
+    // Object Rehabilitation from Morgue Quarantine
+    RJ_API bool rehabilitate_quarantined_object(void* obj_ptr);
+
     // Telemetry
     RJ_API uint64_t total_signals() const { return _total_signals_received.load(std::memory_order_relaxed); }
     RJ_API uint64_t pending_signals() const;
     RJ_API uint64_t false_positives_cancelled() const { return _total_false_positives_cancelled.load(std::memory_order_relaxed); }
     RJ_API uint64_t current_epoch() const { return _current_tailtraces_epoch.load(std::memory_order_relaxed); }
     RJ_API size_t   active_clasps() const { return _active_clasp_count.load(std::memory_order_relaxed); }
+    RJ_API uint64_t quarantined_in_morgue() const { return _total_quarantined_in_morgue.load(std::memory_order_relaxed); }
+    RJ_API uint64_t rehabilitated_objects() const { return _total_rehabilitated_objects.load(std::memory_order_relaxed); }
+    RJ_API uint64_t contention_events() const { return _total_contention_events.load(std::memory_order_relaxed); }
 };
 
 extern RedjetTailTraces g_redjet_tail_traces;

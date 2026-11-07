@@ -24,6 +24,11 @@
 
 #include "gc/redjet/runtime/redjetTensorViews.hpp"
 #include "gc/redjet/simd/redjetDispatchISA.hpp"
+#ifndef REDJET_STANDALONE_BUILD
+#include "gc/redjet/allocator/redjetHeap.hpp"
+#include "memory/universe.hpp"
+#include "gc/shared/gc_globals.hpp"
+#endif
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -209,13 +214,17 @@ void sacculus_folder_tree_t::init() {
     mkdir_p("/heap/on_heap/runway/motherline/fledgling/senior/hotfield");
     mkdir_p("/heap/on_heap/runway/pitstop");
     mkdir_p("/heap/on_heap/runway/falline");
+    mkdir_p("/heap/on_heap/motherline/park_arena");
+    mkdir_p("/heap/on_heap/rpss");
     mkdir_p("/heap/on_heap/puzzle_arena/stagnant");
     mkdir_p("/heap/on_heap/puzzle_arena/eval");
     mkdir_p("/heap/on_heap/landfill/trash_pit/matured");
     mkdir_p("/heap/on_heap/landfill/trash_pit/rehab");
     mkdir_p("/heap/on_heap/landfill/header_pane");
     mkdir_p("/heap/off_heap/code_boot/rawcode_cell");
-    mkdir_p("/heap/off_heap/code_boot/processed_code_chunk");
+    mkdir_p("/heap/off_heap/code_boot/vac_processed_code_chunk");
+    mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1");
+    mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl2");
     mkdir_p("/heap/off_heap/log_boot/hotlog");
     mkdir_p("/heap/off_heap/log_boot/coldlog");
     mkdir_p("/heap/off_heap/reserved_boot");
@@ -354,6 +363,11 @@ bool sacculus_folder_tree_t::bind_tensor(const char* folder_path, HS_hotspot_liv
     }
     node->objects.push_back(obj);
     node->used_bytes.fetch_add(footprint, std::memory_order_relaxed);
+#ifndef REDJET_STANDALONE_BUILD
+    if (UseRedjetGC && Universe::is_fully_initialized()) {
+        RedjetHeap::heap()->vfs_tree()->record_path_alloc(folder_path, footprint);
+    }
+#endif
     hs_hotlog_emit(HS_Ebin0_VFS_BIND_TENSOR, HS_Ebin1_TRACE, obj->function_id, 0,
         obj->generation, obj->region, 0, 0, static_cast<uint32_t>(footprint / 1024), node->name);
     return true;
@@ -405,6 +419,11 @@ size_t sacculus_folder_tree_t::evict_folder(const char* folder_path, sacculus_ru
         freed_total += item.second;
     }
     if (freed_total > 0 || !to_free.empty()) {
+#ifndef REDJET_STANDALONE_BUILD
+        if (UseRedjetGC && Universe::is_fully_initialized() && freed_total > 0) {
+            RedjetHeap::heap()->vfs_tree()->record_path_free(folder_path, freed_total);
+        }
+#endif
         hs_hotlog_emit(HS_Ebin0_VFS_EVICT_TREE, HS_Ebin1_INFO, 0, static_cast<uint16_t>(to_free.size()),
             0, 0, 0, 0, static_cast<uint32_t>(freed_total / 1024), folder_path);
     }

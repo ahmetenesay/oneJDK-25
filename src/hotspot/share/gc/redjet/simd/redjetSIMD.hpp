@@ -86,6 +86,11 @@ RJ_API size_t hs_filter_live_states_sse42(const uint8_t* states, size_t count, u
 RJ_API size_t hs_filter_live_states_neon(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
 RJ_API size_t hs_filter_live_states_scalar(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
 
+/* Card Table Vectorized Scanning */
+RJ_API size_t hs_filter_card_table_avx512(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out);
+RJ_API size_t hs_filter_card_table_avx2(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out);
+RJ_API size_t hs_filter_card_table_universal(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out);
+
 #ifdef __cplusplus
 }
 #endif
@@ -111,6 +116,7 @@ public:
     static void decay_heats(float* heats, size_t count, float decay_f, uint64_t* sweep_counts = nullptr);
 
     static size_t filter_live_states(const uint8_t* states, size_t count, uint8_t target_state, size_t* out_indices);
+    static size_t scan_card_table(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out);
 
     static bool has_avx10();
     static bool has_avx10_2();

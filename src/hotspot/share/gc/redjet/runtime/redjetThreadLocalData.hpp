@@ -82,6 +82,7 @@ private:
   void*                   _inline_pinned_hdrs[MAX_INLINE_PINNED_HDRS];
   RedjetBatchFrameCompact _batch_stack[MAX_BATCH_STACK_DEPTH];
   void*                   _ext_point_ctx;
+  volatile int            _nmethod_disarmed;
 
   RedjetThreadLocalData() :
     _point_flags(0),
@@ -101,7 +102,8 @@ private:
     _park_yields(0),
     _dock_triggers(0),
     _dock_checks(0),
-    _ext_point_ctx(nullptr) {
+    _ext_point_ctx(nullptr),
+    _nmethod_disarmed(0) {
     for (uint32_t i = 0; i < MAX_INLINE_PINNED_HDRS; ++i) {
       _inline_pinned_hdrs[i] = nullptr;
     }
@@ -129,6 +131,10 @@ public:
     if (RedjetGCUseDeadReferenceSignals) {
       g_redjet_tail_traces.register_thread_clasp(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(thread)));
     }
+  }
+
+  static void create(Thread* thread) {
+    initialize(thread);
   }
 
   static void destroy(Thread* thread) {
@@ -369,6 +375,19 @@ public:
   static ByteSize active_hook_hdr_offset()     { return active_dock_hdr_offset(); }
   static ByteSize hook_enter_tsc_offset()      { return dock_enter_tsc_offset(); }
   static ByteSize cp_bytes_since_check_offset(){ return dock_bytes_since_check_offset(); }
+
+  // HotSpot Standard nmethod entry barrier support
+  static ByteSize nmethod_disarmed_offset() {
+    return Thread::gc_data_offset() + in_ByteSize(offset_of(RedjetThreadLocalData, _nmethod_disarmed));
+  }
+
+  static int nmethod_disarmed_value(const Thread* thread) {
+    return data(thread)->_nmethod_disarmed;
+  }
+
+  static void set_nmethod_disarmed_value(Thread* thread, int val) {
+    data(thread)->_nmethod_disarmed = val;
+  }
 };
 
 STATIC_ASSERT(sizeof(RedjetThreadLocalData) <= sizeof(GCThreadLocalData));

@@ -321,6 +321,8 @@ class JavaThread: public Thread {
   jint                  _in_deopt_handler;       // count of deoptimization
                                                  // handlers thread is in
   volatile bool         _doing_unsafe_access;    // Thread may fault due to unsafe access
+  volatile uint8_t      _park_flag;              // PointCoordinator Tier 1/2 Park flag (PLAN.md Sec 8.2)
+  volatile uint8_t      _dock_flag;              // PointCoordinator Tier 1/2 Dock flag (PLAN.md Sec 8.2)
   bool                  _do_not_unlock_if_synchronized;  // Do not unlock the receiver of a synchronized method (since it was
                                                          // never locked) when throwing an exception. Used by interpreter only.
 #if INCLUDE_JVMTI
@@ -650,6 +652,15 @@ private:
     assert(in_bytes(offset) < 128, "Offset >= 128");
     return offset;
   }
+
+  // PointCoordinator 2-Point Poll Support (PLAN.md Section 8.2)
+  uint8_t park_flag() const override { return _park_flag; }
+  void set_park_flag(uint8_t val) override { _park_flag = val; }
+  uint8_t dock_flag() const override { return _dock_flag; }
+  void set_dock_flag(uint8_t val) override { _dock_flag = val; }
+
+  static ByteSize park_flag_offset() { return byte_offset_of(JavaThread, _park_flag); }
+  static ByteSize dock_flag_offset() { return byte_offset_of(JavaThread, _dock_flag); }
 
   void set_requires_cross_modify_fence(bool val) PRODUCT_RETURN NOT_PRODUCT({ _requires_cross_modify_fence = val; })
 

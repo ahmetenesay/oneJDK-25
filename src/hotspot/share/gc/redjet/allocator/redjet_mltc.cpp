@@ -24,10 +24,13 @@
 
 #include "gc/redjet/allocator/redjet_mltc.hpp"
 #include "gc/redjet/allocator/redjet_rmrp.hpp"
+#include "gc/redjet/allocator/redjetPageDefrag.hpp"
+#include "gc/redjet/allocator/redjetStreamThrottle.hpp"
 #include "gc/redjet/runtime/redjetHardware.hpp"
 #include <thread>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
 #include <immintrin.h>
@@ -52,6 +55,7 @@ RedjetMLTCPacer::RedjetMLTCPacer() {
     _total_paced_allocations.store(0, std::memory_order_relaxed);
     _total_stall_delay_ns.store(0, std::memory_order_relaxed);
     _active_throttle_rate_percent.store(0, std::memory_order_relaxed);
+    _last_replenish_tsc.store(sacculus_rdtsc(), std::memory_order_relaxed);
 }
 
 bool RedjetMLTCPacer::should_pace_allocation(size_t requested_bytes, float current_velocity_mbps) noexcept {
@@ -96,165 +100,190 @@ uint32_t RedjetMLTCPacer::compute_pace_delay_us(size_t requested_bytes, RedjetBu
 
 void RedjetMLTCPacer::apply_bus_pacing(size_t requested_bytes, uint32_t thread_id) {
     RedjetBusCongestionLevel level = g_hs_mltc_solver.current_congestion_level();
+    if (level == RedjetBusCongestionLevel::CONGESTION_FREE) return;
+
     uint32_t delay_us = compute_pace_delay_us(requested_bytes, level);
+    if (delay_us == 0) return;
 
-    if (delay_us > 0) {
-        _total_paced_allocations.fetch_add(1, std::memory_order_relaxed);
-        _total_stall_delay_ns.fetch_add(static_cast<uint64_t>(delay_us) * 1000ULL, std::memory_order_relaxed);
+    uint64_t start_tsc = sacculus_rdtsc();
+    uint64_t target_cycles = static_cast<uint64_t>(delay_us) * 3000; // ~3 GHz CPU
 
-        const uint64_t start_tsc = sacculus_rdtsc();
-        const uint64_t spin_target_cycles = static_cast<uint64_t>(delay_us) * 2500ULL; // Approximate 2.5 GHz cycles
-        
-        if (delay_us < 10) {
-            while ((sacculus_rdtsc() - start_tsc) < spin_target_cycles) {
-#if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
-                _mm_pause();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-#if defined(_MSC_VER)
-                __yield();
-#else
-                __asm__ __volatile__("yield" ::: "memory");
+    // Fine-grained hardware spinning
+    while ((sacculus_rdtsc() - start_tsc) < target_cycles) {
+#if defined(_M_X64) || defined(__x86_64__)
+        _mm_pause();
+#elif defined(__aarch64__)
+        asm volatile("yield" ::: "memory");
 #endif
-#endif
-            }
-        } else {
-            std::this_thread::yield();
-        }
-
-        hs_hotlog_emit(HS_Ebin0_ALLOC_PACE_STALL, HS_Ebin1_TRACE, thread_id,
-                       static_cast<uint16_t>(level), 0, 0, 0, 0,
-                       delay_us, "mltc_pacer_delay");
     }
+
+    uint64_t elapsed_cycles = sacculus_rdtsc() - start_tsc;
+    uint64_t elapsed_ns = (elapsed_cycles * 10) / 30; // Approx ns
+
+    _total_paced_allocations.fetch_add(1, std::memory_order_relaxed);
+    _total_stall_delay_ns.fetch_add(elapsed_ns, std::memory_order_relaxed);
 }
 
 void RedjetMLTCPacer::replenish_credits(uint64_t elapsed_us, float target_mbps) {
     if (elapsed_us == 0) return;
-    float bytes_per_us = (target_mbps * 1024.0f * 1024.0f) / 1000000.0f;
-    uint64_t add_credits = static_cast<uint64_t>(bytes_per_us * static_cast<float>(elapsed_us));
 
+    // Bytes per microsecond = MB/s
+    uint64_t added_credits = static_cast<uint64_t>(target_mbps * static_cast<float>(elapsed_us));
     uint64_t cur = _pacing_credit_pool.load(std::memory_order_relaxed);
     uint64_t max_credits = DEFAULT_BURST_ALLOWANCE_BYTES;
-    if (cur + add_credits > max_credits) {
-        _pacing_credit_pool.store(max_credits, std::memory_order_relaxed);
-    } else {
-        _pacing_credit_pool.fetch_add(add_credits, std::memory_order_relaxed);
-    }
+
+    uint64_t next = cur + added_credits;
+    if (next > max_credits) next = max_credits;
+
+    _pacing_credit_pool.store(next, std::memory_order_relaxed);
 }
 
 /* ========================================================================= */
-/* 2. REDJET MLTC LEAK DETECTOR IMPLEMENTATION                               */
+/* 2. STAGNANT CYCLE LEAK DETECTOR IMPLEMENTATION                            */
 /* ========================================================================= */
 
-RedjetMLTCLeakDetector::RedjetMLTCLeakDetector() {
+RedjetMLTCLeakDetector::RedjetMLTCLeakDetector()
+    : _history_count(0), _history_head(0), _kalman_filter(0.0f, 0.02f, 0.15f) {
+    _history_lock.next_ticket.store(0, std::memory_order_relaxed);
+    _history_lock.now_serving.store(0, std::memory_order_relaxed);
     _consecutive_stagnant_cycles.store(0, std::memory_order_relaxed);
     _memory_growth_slope.store(0.0f, std::memory_order_relaxed);
+    _autocorrelation_lag1.store(0.0f, std::memory_order_relaxed);
     _current_leak_tier.store(static_cast<uint8_t>(RedjetLeakRiskTier::LEAK_CLEAN), std::memory_order_relaxed);
     _total_leak_alerts.store(0, std::memory_order_relaxed);
-
-    for (size_t i = 0; i < HISTORY_CAPACITY; ++i) {
-        _history[i] = HeapSample{};
-    }
 }
 
 RedjetLeakRiskTier RedjetMLTCLeakDetector::record_sweep_observation(
     uint64_t sweep_cycle, size_t live_bytes, size_t capacity_bytes, size_t reclaimed_bytes) {
-
     hs_ticket_guard_t guard(_history_lock);
 
-    size_t idx = (_history_head + _history_count) % HISTORY_CAPACITY;
-    if (_history_count == HISTORY_CAPACITY) {
-        _history_head = (_history_head + 1) % HISTORY_CAPACITY;
-    } else {
-        _history_count++;
-    }
+    float raw_used_mb = static_cast<float>(live_bytes) / (1024.0f * 1024.0f);
+    float filtered_mb = _kalman_filter.update(raw_used_mb);
 
-    _history[idx].timestamp_ns = sacculus_now_ns();
+    size_t idx = _history_head;
+    _history[idx].timestamp_ns = sacculus_rdtsc();
     _history[idx].used_bytes = live_bytes;
     _history[idx].retained_bytes = (capacity_bytes > live_bytes) ? (capacity_bytes - live_bytes) : 0;
     _history[idx].sweep_cycle = sweep_cycle;
+    _history[idx].filtered_used_mb = filtered_mb;
 
-    // Check if reclaimed bytes is abnormally low compared to total live bytes (stagnancy)
-    if (live_bytes > 0 && reclaimed_bytes < (live_bytes / 100)) {
-        _consecutive_stagnant_cycles.fetch_add(1, std::memory_order_relaxed);
-    } else {
-        _consecutive_stagnant_cycles.store(0, std::memory_order_relaxed);
+    _history_head = (_history_head + 1) % HISTORY_CAPACITY;
+    if (_history_count < HISTORY_CAPACITY) {
+        _history_count++;
     }
 
     float slope = compute_growth_slope();
-    _memory_growth_slope.store(slope, std::memory_order_relaxed);
+    float autocorr = compute_autocorrelation(1);
+
+    _memory_growth_slope.store(slope, std::memory_order_release);
+    _autocorrelation_lag1.store(autocorr, std::memory_order_release);
 
     RedjetLeakRiskTier tier = RedjetLeakRiskTier::LEAK_CLEAN;
-    size_t stagnants = _consecutive_stagnant_cycles.load(std::memory_order_relaxed);
 
-    if (stagnants >= STAGNANT_CYCLE_THRESHOLD * 2 || (capacity_bytes > 0 && (live_bytes * 100 / capacity_bytes) > 90)) {
-        tier = RedjetLeakRiskTier::LEAK_CRITICAL;
-        _total_leak_alerts.fetch_add(1, std::memory_order_relaxed);
-        hs_unified_log_emit(HS_Ebin0_ERROR, HS_Ebin1_ERROR, static_cast<uint32_t>(sweep_cycle),
-                            "mltc_leak_crit", "[MLTC-LEAK] Critical stagnant memory retention detected!");
-    } else if (stagnants >= STAGNANT_CYCLE_THRESHOLD || slope > 0.15f) {
-        tier = RedjetLeakRiskTier::LEAK_SUSPECT;
-        hs_unified_log_emit(HS_Ebin0_ERROR, HS_Ebin1_WARN, static_cast<uint32_t>(sweep_cycle),
-                            "mltc_leak_suspect", "[MLTC-LEAK] Monotonic stagnant memory growth suspected.");
-    } else if (stagnants >= 2 || slope > 0.05f) {
+    // Mathematical leak assessment:
+    // Sustained positive slope + strong lag-1 autocorrelation (indicating structural retention)
+    if (slope > 5.0f && autocorr > 0.85f) {
+        size_t stag = _consecutive_stagnant_cycles.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (stag >= 10) {
+            tier = RedjetLeakRiskTier::LEAK_CRITICAL;
+        } else if (stag >= 5) {
+            tier = RedjetLeakRiskTier::LEAK_SUSPECT;
+        } else {
+            tier = RedjetLeakRiskTier::LEAK_WATCH;
+        }
+    } else if (slope > 2.0f && autocorr > 0.70f) {
+        _consecutive_stagnant_cycles.fetch_add(1, std::memory_order_relaxed);
         tier = RedjetLeakRiskTier::LEAK_WATCH;
+    } else {
+        _consecutive_stagnant_cycles.store(0, std::memory_order_relaxed);
+        tier = RedjetLeakRiskTier::LEAK_CLEAN;
     }
 
     _current_leak_tier.store(static_cast<uint8_t>(tier), std::memory_order_release);
+    if (tier != RedjetLeakRiskTier::LEAK_CLEAN) {
+        _total_leak_alerts.fetch_add(1, std::memory_order_relaxed);
+    }
+
     return tier;
 }
 
 float RedjetMLTCLeakDetector::compute_growth_slope() noexcept {
-    if (_history_count < 3) return 0.0f;
+    if (_history_count < 4) return 0.0f;
 
-    // Simple linear regression over recorded samples: y = live_bytes, x = index
+    // Linear regression: y = mx + b
+    // x = sample index (0 .. N-1), y = filtered_used_mb
     float sum_x = 0.0f;
     float sum_y = 0.0f;
     float sum_xy = 0.0f;
-    float sum_xx = 0.0f;
-    const float n = static_cast<float>(_history_count);
+    float sum_x2 = 0.0f;
 
-    for (size_t i = 0; i < _history_count; ++i) {
-        size_t idx = (_history_head + i) % HISTORY_CAPACITY;
+    size_t n = _history_count;
+    float nf = static_cast<float>(n);
+
+    for (size_t i = 0; i < n; ++i) {
+        size_t sample_idx = (_history_head + HISTORY_CAPACITY - n + i) % HISTORY_CAPACITY;
         float x = static_cast<float>(i);
-        float y = static_cast<float>(_history[idx].used_bytes / 1024); // KB
+        float y = _history[sample_idx].filtered_used_mb;
 
         sum_x += x;
         sum_y += y;
         sum_xy += x * y;
-        sum_xx += x * x;
+        sum_x2 += x * x;
     }
 
-    float denom = (n * sum_xx - sum_x * sum_x);
-    if (std::abs(denom) < 1e-5f) return 0.0f;
+    float denom = (nf * sum_x2) - (sum_x * sum_x);
+    if (std::abs(denom) < 0.0001f) return 0.0f;
 
-    float slope = (n * sum_xy - sum_x * sum_y) / denom;
-    // Normalize relative to initial sample
-    size_t first_idx = _history_head;
-    float base_kb = static_cast<float>(_history[first_idx].used_bytes / 1024);
-    if (base_kb > 0.0f) {
-        return slope / base_kb;
-    }
+    float slope = ((nf * sum_xy) - (sum_x * sum_y)) / denom;
     return slope;
 }
 
+float RedjetMLTCLeakDetector::compute_autocorrelation(size_t lag) noexcept {
+    if (_history_count <= lag + 2) return 0.0f;
+
+    size_t n = _history_count;
+    float mean = 0.0f;
+
+    for (size_t i = 0; i < n; ++i) {
+        size_t idx = (_history_head + HISTORY_CAPACITY - n + i) % HISTORY_CAPACITY;
+        mean += _history[idx].filtered_used_mb;
+    }
+    mean /= static_cast<float>(n);
+
+    float num = 0.0f;
+    float den = 0.0f;
+
+    for (size_t i = 0; i < n; ++i) {
+        size_t idx = (_history_head + HISTORY_CAPACITY - n + i) % HISTORY_CAPACITY;
+        float diff = _history[idx].filtered_used_mb - mean;
+        den += diff * diff;
+
+        if (i + lag < n) {
+            size_t next_idx = (_history_head + HISTORY_CAPACITY - n + i + lag) % HISTORY_CAPACITY;
+            float next_diff = _history[next_idx].filtered_used_mb - mean;
+            num += diff * next_diff;
+        }
+    }
+
+    if (den < 0.0001f) return 0.0f;
+    return num / den;
+}
+
 bool RedjetMLTCLeakDetector::requires_emergency_mitigation() const noexcept {
-    return _current_leak_tier.load(std::memory_order_relaxed) == static_cast<uint8_t>(RedjetLeakRiskTier::LEAK_CRITICAL);
+    uint8_t t = _current_leak_tier.load(std::memory_order_relaxed);
+    return (t == static_cast<uint8_t>(RedjetLeakRiskTier::LEAK_CRITICAL) ||
+            t == static_cast<uint8_t>(RedjetLeakRiskTier::LEAK_SUSPECT));
 }
 
 /* ========================================================================= */
-/* 3. REDJET MLTC ARBITRATOR IMPLEMENTATION                                  */
+/* 3. CORE MEMORY ARBITRATOR IMPLEMENTATION                                  */
 /* ========================================================================= */
 
-RedjetMLTCArbitrator::RedjetMLTCArbitrator() {
-    _core_count = 0;
-    _p_core_priority_boost.store(120, std::memory_order_relaxed);
-    _e_core_traffic_cap.store(80, std::memory_order_relaxed);
-}
+RedjetMLTCArbitrator::RedjetMLTCArbitrator() : _core_count(0) {
+    _arb_lock.next_ticket.store(0, std::memory_order_relaxed);
+    _arb_lock.now_serving.store(0, std::memory_order_relaxed);
 
-void RedjetMLTCArbitrator::init(size_t logical_cores) {
-    hs_ticket_guard_t guard(_arb_lock);
-    _core_count = (logical_cores > MAX_TRACKED_CORES) ? MAX_TRACKED_CORES : logical_cores;
-    for (size_t i = 0; i < _core_count; ++i) {
+    for (size_t i = 0; i < MAX_TRACKED_CORES; ++i) {
         _cores[i].core_id = static_cast<uint32_t>(i);
         _cores[i].is_efficiency_core = false;
         _cores[i].numa_node = 0;
@@ -262,64 +291,70 @@ void RedjetMLTCArbitrator::init(size_t logical_cores) {
         _cores[i].throttle_weight.store(100, std::memory_order_relaxed);
         _cores[i].stall_events.store(0, std::memory_order_relaxed);
     }
+
+    // Default NUMA latency matrix (normalized: 1.0 local, 1.8 remote)
+    for (size_t s = 0; s < MAX_NUMA_NODES; ++s) {
+        for (size_t d = 0; d < MAX_NUMA_NODES; ++d) {
+            _numa_latency_matrix[s][d] = (s == d) ? 1.0f : 1.8f;
+        }
+    }
+}
+
+void RedjetMLTCArbitrator::init(size_t logical_cores) {
+    _core_count = std::min<size_t>(logical_cores, MAX_TRACKED_CORES);
 }
 
 void RedjetMLTCArbitrator::register_core(uint32_t core_id, bool is_e_core, uint32_t numa_node) {
     if (core_id >= MAX_TRACKED_CORES) return;
     hs_ticket_guard_t guard(_arb_lock);
-    if (core_id >= _core_count) {
-        _core_count = core_id + 1;
-    }
+
     _cores[core_id].core_id = core_id;
     _cores[core_id].is_efficiency_core = is_e_core;
-    _cores[core_id].numa_node = numa_node;
-    _cores[core_id].throttle_weight.store(is_e_core ? _e_core_traffic_cap.load() : _p_core_priority_boost.load(),
+    _cores[core_id].numa_node = (numa_node < MAX_NUMA_NODES) ? numa_node : 0;
+    _cores[core_id].throttle_weight.store(is_e_core ? _e_core_traffic_cap.load(std::memory_order_relaxed)
+                                                    : _p_core_priority_boost.load(std::memory_order_relaxed),
                                           std::memory_order_relaxed);
 }
 
 bool RedjetMLTCArbitrator::arbitrate_allocation(uint32_t core_id, size_t bytes, uint32_t* out_delay_us) {
-    if (core_id >= _core_count) {
-        if (out_delay_us) *out_delay_us = 0;
-        return true;
-    }
+    if (core_id >= MAX_TRACKED_CORES) return true;
 
-    CoreArbitrationState& c = _cores[core_id];
-    c.allocated_bytes_epoch.fetch_add(bytes, std::memory_order_relaxed);
+    uint32_t weight = _cores[core_id].throttle_weight.load(std::memory_order_relaxed);
+    _cores[core_id].allocated_bytes_epoch.fetch_add(bytes, std::memory_order_relaxed);
 
-    uint32_t weight = c.throttle_weight.load(std::memory_order_relaxed);
     if (weight < 50) {
-        // Severe core throttling in effect
-        c.stall_events.fetch_add(1, std::memory_order_relaxed);
-        if (out_delay_us) {
+        _cores[core_id].stall_events.fetch_add(1, std::memory_order_relaxed);
+        if (out_delay_us != nullptr) {
             *out_delay_us = (50 - weight) * 2;
         }
-        return false;
+        return false; // Throttled
     }
 
-    if (out_delay_us) *out_delay_us = 0;
+    if (out_delay_us != nullptr) {
+        *out_delay_us = 0;
+    }
     return true;
 }
 
 void RedjetMLTCArbitrator::rebalance_bandwidth_weights(RedjetBusCongestionLevel bus_level) {
     for (size_t i = 0; i < _core_count; ++i) {
-        CoreArbitrationState& c = _cores[i];
-        if (bus_level >= RedjetBusCongestionLevel::BUS_SATURATION) {
-            if (c.is_efficiency_core) {
-                // Heavily throttle background/E-cores to give runway to latency-critical mutators
-                c.throttle_weight.store(30, std::memory_order_relaxed);
-            } else {
-                c.throttle_weight.store(80, std::memory_order_relaxed);
-            }
-        } else if (bus_level == RedjetBusCongestionLevel::HIGH_CONTENTION) {
-            if (c.is_efficiency_core) {
-                c.throttle_weight.store(60, std::memory_order_relaxed);
-            } else {
-                c.throttle_weight.store(100, std::memory_order_relaxed);
-            }
-        } else {
-            // Normal operating weights
-            c.throttle_weight.store(c.is_efficiency_core ? _e_core_traffic_cap.load() : _p_core_priority_boost.load(),
-                                    std::memory_order_relaxed);
+        bool is_e = _cores[i].is_efficiency_core;
+        switch (bus_level) {
+            case RedjetBusCongestionLevel::CONGESTION_FREE:
+                _cores[i].throttle_weight.store(is_e ? 80 : 120, std::memory_order_relaxed);
+                break;
+            case RedjetBusCongestionLevel::MILD_CONTENTION:
+                _cores[i].throttle_weight.store(is_e ? 60 : 110, std::memory_order_relaxed);
+                break;
+            case RedjetBusCongestionLevel::HIGH_CONTENTION:
+                _cores[i].throttle_weight.store(is_e ? 40 : 90, std::memory_order_relaxed);
+                break;
+            case RedjetBusCongestionLevel::BUS_SATURATION:
+                _cores[i].throttle_weight.store(is_e ? 20 : 70, std::memory_order_relaxed);
+                break;
+            case RedjetBusCongestionLevel::EMERGENCY_THROTTLE:
+                _cores[i].throttle_weight.store(is_e ? 10 : 40, std::memory_order_relaxed);
+                break;
         }
     }
 }
@@ -331,105 +366,86 @@ void RedjetMLTCArbitrator::reset_epoch_counters() {
 }
 
 /* ========================================================================= */
-/* 4. REDJET MLTC NEXUS IMPLEMENTATION                                       */
+/* 4. ALIGNMENT HAZARD AUTO-REPAIR ENGINE IMPLEMENTATION                     */
+/* ========================================================================= */
+
+RedjetAlignmentHazardEngine::RedjetAlignmentHazardEngine() {
+    _alignment_checks.store(0, std::memory_order_relaxed);
+    _hazards_detected.store(0, std::memory_order_relaxed);
+    _realignments_performed.store(0, std::memory_order_relaxed);
+}
+
+/* ========================================================================= */
+/* 5. MLTC SOLVER NEXUS IMPLEMENTATION                                       */
 /* ========================================================================= */
 
 bool hs_mltc_engine_t::check_and_solve(size_t used_bytes, size_t capacity_bytes, float alloc_rate_mbps) {
     velocity_mbps = alloc_rate_mbps;
-    bool solved = false;
 
-    // 1. Continuous upward trend / potential leak detection
-    if (capacity_bytes > 0 && (used_bytes * 100 / capacity_bytes) > 85) {
-        continuous_upward_trend.store(true, std::memory_order_relaxed);
+    // Check leak risk
+    RedjetLeakRiskTier risk = evaluate_leak_risk(0, used_bytes, capacity_bytes, 0);
+    if (risk == RedjetLeakRiskTier::LEAK_CRITICAL || risk == RedjetLeakRiskTier::LEAK_SUSPECT) {
+        continuous_upward_trend.store(true, std::memory_order_release);
         emergency_compactions.fetch_add(1, std::memory_order_relaxed);
-        hs_unified_log_emit(HS_Ebin0_ERROR, HS_Ebin1_WARN, 0, "mltc_leak",
-                            "[MLTC-LEAK] Continuous upward heap trend detected: invoking emergency defragmentation");
-        solved = true;
+
+        // Dispatch autonomous VFS compaction solver
+        check_autonomous_vfs_compaction_trigger(used_bytes, capacity_bytes, 64 * 1024 * 1024);
+        return true;
     }
 
-    // 2. High allocation velocity / traffic congestion detection
-    if (alloc_rate_mbps > 500.0f) {
-        throttled_allocations.fetch_add(1, std::memory_order_relaxed);
-        hs_unified_log_emit(HS_Ebin0_ALLOC_PACE_STALL, HS_Ebin1_WARN, 0, "mltc_congest",
-                            "[MLTC-CONGEST] High allocation velocity detected: engaging traffic throttling and page rebate");
-        solved = true;
-    }
-
-    // 3. SRAM/DRAM Bus hazard misalignment detection
-    if (total_inspected > 0 && (misaligned_count * 100 / total_inspected) > 20) {
-        realignments_forced.fetch_add(1, std::memory_order_relaxed);
-        hs_unified_log_emit(HS_Ebin0_GC_ALIGN, HS_Ebin1_WARN, 0, "mltc_align",
-                            "[MLTC-ALIGN] Memory bus hazard detected: forcing 256-byte cache/DRAM realignment");
-        solved = true;
-    }
-
-    // 4. Autonomous VFS Compaction Trigger (3-signal evaluation)
-    if (check_autonomous_vfs_compaction_trigger(used_bytes, capacity_bytes)) {
-        solved = true;
-    }
-
-    // 5. Update arbitrator weights
-    RedjetBusCongestionLevel level = current_congestion_level();
-    arbitrator.rebalance_bandwidth_weights(level);
-
-    return solved;
+    continuous_upward_trend.store(false, std::memory_order_release);
+    return false;
 }
 
 void hs_mltc_engine_t::reset() {
+    velocity_mbps = 0.0f;
+    misaligned_count = 0;
+    total_inspected = 0;
     continuous_upward_trend.store(false, std::memory_order_relaxed);
     emergency_compactions.store(0, std::memory_order_relaxed);
     throttled_allocations.store(0, std::memory_order_relaxed);
     realignments_forced.store(0, std::memory_order_relaxed);
-    arbitrator.reset_epoch_counters();
 }
 
-void hs_mltc_engine_t::record_l3_dram_telemetry(
-    uint64_t l3_misses, uint64_t dram_cycles, uint64_t bus_stalls, float alloc_mbps) {
+void hs_mltc_engine_t::record_l3_dram_telemetry(uint64_t l3_misses, uint64_t dram_cycles, uint64_t bus_stalls, float alloc_mbps) {
+    uint64_t now_tsc = sacculus_rdtsc();
+    last_telemetry_sample_tsc.store(now_tsc, std::memory_order_relaxed);
 
-    uint64_t now = sacculus_now_ns();
-    last_telemetry_sample_tsc.store(sacculus_rdtsc(), std::memory_order_relaxed);
+    latest_snapshot.timestamp_ns = now_tsc;
+    latest_snapshot.l3_miss_count = l3_misses;
+    latest_snapshot.dram_access_cycles = dram_cycles;
+    latest_snapshot.bus_stall_cycles = bus_stalls;
+    latest_snapshot.bandwidth_mbps = alloc_mbps;
 
-    RedjetMLTCTelemetrySnapshot snap;
-    snap.timestamp_ns = now;
-    snap.l3_miss_count = l3_misses;
-    snap.dram_access_cycles = dram_cycles;
-    snap.bus_stall_cycles = bus_stalls;
-    snap.bandwidth_mbps = alloc_mbps;
+    // Calculate normalized congestion score: 0.0 (idle) to 1.0 (saturated)
+    float stall_score = (bus_stalls > 1000000) ? 1.0f : (static_cast<float>(bus_stalls) / 1000000.0f);
+    float bw_score = (alloc_mbps > 1200.0f) ? 1.0f : (alloc_mbps / 1200.0f);
+    float score = 0.6f * bw_score + 0.4f * stall_score;
+    latest_snapshot.congestion_score = score;
 
-    // Calculate congestion score: normalized based on L3 miss rate and bus stall cycles
-    float l3_factor = (l3_misses > 100000) ? 1.0f : static_cast<float>(l3_misses) / 100000.0f;
-    float stall_factor = (bus_stalls > 500000) ? 1.0f : static_cast<float>(bus_stalls) / 500000.0f;
-    float velocity_factor = (alloc_mbps > 1000.0f) ? 1.0f : (alloc_mbps / 1000.0f);
-
-    snap.congestion_score = (0.4f * l3_factor) + (0.4f * stall_factor) + (0.2f * velocity_factor);
-
-    if (snap.congestion_score > 0.85f) {
-        snap.congestion_level = RedjetBusCongestionLevel::EMERGENCY_THROTTLE;
-    } else if (snap.congestion_score > 0.70f) {
-        snap.congestion_level = RedjetBusCongestionLevel::BUS_SATURATION;
-    } else if (snap.congestion_score > 0.50f) {
-        snap.congestion_level = RedjetBusCongestionLevel::HIGH_CONTENTION;
-    } else if (snap.congestion_score > 0.25f) {
-        snap.congestion_level = RedjetBusCongestionLevel::MILD_CONTENTION;
+    if (score < 0.25f) {
+        latest_snapshot.congestion_level = RedjetBusCongestionLevel::CONGESTION_FREE;
+    } else if (score < 0.50f) {
+        latest_snapshot.congestion_level = RedjetBusCongestionLevel::MILD_CONTENTION;
+    } else if (score < 0.75f) {
+        latest_snapshot.congestion_level = RedjetBusCongestionLevel::HIGH_CONTENTION;
+    } else if (score < 0.90f) {
+        latest_snapshot.congestion_level = RedjetBusCongestionLevel::BUS_SATURATION;
     } else {
-        snap.congestion_level = RedjetBusCongestionLevel::CONGESTION_FREE;
+        latest_snapshot.congestion_level = RedjetBusCongestionLevel::EMERGENCY_THROTTLE;
     }
 
-    snap.active_mutator_threads = 0;
-    snap.throttled_thread_count = static_cast<uint32_t>(throttled_allocations.load(std::memory_order_relaxed));
-
-    latest_snapshot = snap;
-    arbitrator.rebalance_bandwidth_weights(snap.congestion_level);
+    arbitrator.rebalance_bandwidth_weights(latest_snapshot.congestion_level);
 }
 
 void hs_mltc_engine_t::pace_mutator_allocation(size_t bytes, uint32_t thread_id) {
     if (pacer.should_pace_allocation(bytes, velocity_mbps)) {
+        throttled_allocations.fetch_add(1, std::memory_order_relaxed);
         pacer.apply_bus_pacing(bytes, thread_id);
     }
 }
 
-RedjetLeakRiskTier hs_mltc_engine_t::evaluate_leak_risk(
-    uint64_t sweep_cycle, size_t live_bytes, size_t capacity_bytes, size_t reclaimed_bytes) {
+RedjetLeakRiskTier hs_mltc_engine_t::evaluate_leak_risk(uint64_t sweep_cycle, size_t live_bytes, size_t capacity_bytes, size_t reclaimed_bytes) {
     return leak_detector.record_sweep_observation(sweep_cycle, live_bytes, capacity_bytes, reclaimed_bytes);
 }
 
@@ -446,72 +462,29 @@ RedjetMLTCTelemetrySnapshot hs_mltc_engine_t::get_latest_telemetry() const {
 }
 
 float hs_mltc_engine_t::compute_vfs_fragmentation_score(size_t used_bytes, size_t capacity_bytes) const noexcept {
-    if (capacity_bytes == 0 || used_bytes == 0) return 0.0f;
-
-    // Minimum baseline to avoid spurious triggers on cold/empty arenas
-    if (capacity_bytes < 16ULL * 1024 * 1024) return 0.0f;
-
-    // 1. Hole & Tombstone Fragmentation: ratio of active emptybox / phantom reservations
-    RedjetEmptyBoxTelemetry eb_tel = RedjetEmptyBoxManager::get_telemetry();
-    float eb_frag_ratio = 0.0f;
-    if (used_bytes > 0 && eb_tel.active_reserved_bytes > 0) {
-        eb_frag_ratio = static_cast<float>(eb_tel.active_reserved_bytes) / static_cast<float>(used_bytes + eb_tel.active_reserved_bytes);
+    if (capacity_bytes == 0) return 0.0f;
+    float used_ratio = static_cast<float>(used_bytes) / static_cast<float>(capacity_bytes);
+    // If utilized ratio is low (<30%) in large capacity, fragmentation or unused bloat is high
+    if (used_ratio < 0.30f && capacity_bytes > 64 * 1024 * 1024) {
+        return (0.30f - used_ratio) / 0.30f * 0.60f + 0.20f;
     }
-
-    // 2. Bus Misalignment / Hazard Fragmentation
-    float align_frag_ratio = 0.0f;
-    if (total_inspected > 0) {
-        align_frag_ratio = static_cast<float>(misaligned_count) / static_cast<float>(total_inspected);
-    }
-
-    // 3. High-Watermark Utilization Span Hole Ratio
-    float occupancy_ratio = static_cast<float>(used_bytes) / static_cast<float>(capacity_bytes);
-    float span_sparsity = 0.0f;
-    if (occupancy_ratio >= 0.50f && occupancy_ratio < 0.95f) {
-        span_sparsity = (1.0f - occupancy_ratio) * 0.5f;
-    }
-
-    // Aggregate weighted fragmentation score [0.0f .. 1.0f]
-    float frag_score = (0.50f * eb_frag_ratio) + (0.30f * align_frag_ratio) + (0.20f * span_sparsity);
-    if (frag_score > 1.0f) frag_score = 1.0f;
-    return frag_score;
+    return (1.0f - used_ratio) * 0.25f;
 }
 
 bool hs_mltc_engine_t::is_bus_traffic_lull_window() const noexcept {
-    RedjetBusCongestionLevel level = current_congestion_level();
-    if ((level == RedjetBusCongestionLevel::CONGESTION_FREE || level == RedjetBusCongestionLevel::MILD_CONTENTION)
-        && velocity_mbps < 250.0f
-        && pacer.active_throttle_rate() == 0) {
-        return true;
-    }
-    return false;
+    return (latest_snapshot.congestion_level == RedjetBusCongestionLevel::CONGESTION_FREE ||
+            latest_snapshot.congestion_level == RedjetBusCongestionLevel::MILD_CONTENTION);
 }
 
-bool hs_mltc_engine_t::check_autonomous_vfs_compaction_trigger(
-    size_t used_bytes, size_t capacity_bytes, size_t target_reclaim_bytes) {
-
-    // Signal 1: Fragmentation Score
+bool hs_mltc_engine_t::check_autonomous_vfs_compaction_trigger(size_t used_bytes, size_t capacity_bytes, size_t target_reclaim_bytes) {
     float frag_score = compute_vfs_fragmentation_score(used_bytes, capacity_bytes);
+    bool lull = is_bus_traffic_lull_window();
 
-    // Signal 3: MLTC Bus Traffic Pacing Lull Window
-    bool lull_window = is_bus_traffic_lull_window();
-
-    if (lull_window) {
-        compaction_lull_windows_utilized.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    // Call RMRP to evaluate Signal 2 (Cold-page resident bloat) and trigger compaction if signals align
-    RedjetVFSCompactionTriggerResult res = RedjetRMRP::evaluate_and_trigger_vfs_compaction(
-        frag_score, lull_window, target_reclaim_bytes);
-
+    RedjetVFSCompactionTriggerResult res = RedjetRMRP::evaluate_and_trigger_vfs_compaction(frag_score, lull, target_reclaim_bytes);
     if (res.triggered) {
         autonomous_vfs_compactions_triggered.fetch_add(1, std::memory_order_relaxed);
-        hs_unified_log_emit(HS_Ebin0_RMRP_COALESCE_DECOMMIT, HS_Ebin1_INFO, 0, "mltc_vfs_comp",
-                            "[MLTC-VFS-COMP] Autonomous VFS compaction dispatched: Frag=%.2f, Bloat=%d, Lull=%d, Reclaimed=%zu",
-                            res.fragmentation_score, res.bloat_signal ? 1 : 0, res.lull_signal ? 1 : 0, res.reclaimed_bytes);
+        compaction_lull_windows_utilized.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
-
     return false;
 }
-

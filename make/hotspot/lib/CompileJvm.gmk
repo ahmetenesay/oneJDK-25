@@ -117,7 +117,7 @@ endif
 JVM_CFLAGS += -I$(TOPDIR)/src/java.base/share/native/libzip/zstd/lib
 
 # These files and directories are always excluded
-JVM_EXCLUDE_FILES += args.cc SacFor_VM.cpp
+JVM_EXCLUDE_FILES += args.cc
 JVM_EXCLUDES += adlc .code_references hip lz
 JVM_EXCLUDE_PATTERNS += /.code_references/
 

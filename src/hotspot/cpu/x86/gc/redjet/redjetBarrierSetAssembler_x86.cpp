@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -28,6 +28,8 @@
 #include "gc/redjet/runtime/redjetThreadLocalData.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/gc_globals.hpp"
+#include "oops/markWord.hpp"
+#include "oops/oop.inline.hpp"
 #include "runtime/vm_version.hpp"
 
 #ifdef COMPILER1
@@ -85,8 +87,7 @@ void RedjetBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
       __ movptr(res, rax);
     }
   } else {
-    __ setb(Assembler::equal, res);
-    __ movzbl(res, res);
+    __ setcc(Assembler::equal, res);
   }
 }
 
@@ -125,7 +126,7 @@ void RedjetBarrierSetAssembler::emit_safepoint_poll(MacroAssembler* masm, Regist
 
 void RedjetBarrierSetAssembler::clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr) {
   assert(aligned64_addr != noreg, "valid base register required");
-  if (VM_Version::supports_evex() && UseAVX >= 3) {
+  if (VM_Version::supports_avx10_1() || (VM_Version::supports_evex() && UseAVX >= 3)) {
     __ evpxorq(xmm0, xmm0, xmm0, Assembler::AVX_512bit);
     __ evmovdquq(Address(aligned64_addr, 0), xmm0, Assembler::AVX_512bit);
   } else if (UseAVX >= 2) {
@@ -139,17 +140,84 @@ void RedjetBarrierSetAssembler::clear_cacheline_64(MacroAssembler* masm, Registe
   }
 }
 
+void RedjetBarrierSetAssembler::emit_2points_l1_poll(MacroAssembler* masm, Register thread, Register scratch, Label& slowpath) {
+  assert(scratch != noreg, "scratch register required for 2-Points L1 polling");
+  // 2-Points L1 Cooperative Polling: 0.5-cycle L1 cache line hit
+  ExternalAddress flag_addr((address)RedjetPointCoordinator::parkpoint_flag_address());
+  __ lea(scratch, flag_addr);
+  __ cmpl(Address(scratch, 0), 0);
+  __ jcc(Assembler::notZero, slowpath);
+}
+
+static const int32_t HS_EMPTYBOX_MAGIC = (int32_t)0xEB0C5107;
+
+void RedjetBarrierSetAssembler::emit_tailtraces_clasp(MacroAssembler* masm, Register obj, Register scratch) {
+  if (obj == noreg) return;
+  // TailTraces clasping: dead-end liveness seal to Falline quarantine lobby (0xEB0C5107)
+  __ movl(Address(obj, oopDesc::mark_offset_in_bytes()), HS_EMPTYBOX_MAGIC);
+}
+
+void RedjetBarrierSetAssembler::emit_emptybox_guard(MacroAssembler* masm, Register obj, Label& slowpath) {
+  if (obj == noreg) return;
+  // Check EmptyBox pretrashing canary guard bit matching TableGen specification
+  __ cmpl(Address(obj, oopDesc::mark_offset_in_bytes()), HS_EMPTYBOX_MAGIC);
+  __ jcc(Assembler::equal, slowpath);
+}
+
+void RedjetBarrierSetAssembler::emit_emptybox_claim(MacroAssembler* masm, Register obj, Register size, Register result, Label& slowpath) {
+  assert_different_registers(obj, size, result);
+  // 0.3ns branchless claim from EmptyBox cache
+  if (result != obj) {
+    __ movptr(result, obj);
+  }
+  // Re-initialize mark word to default prototype
+  __ movptr(Address(result, oopDesc::mark_offset_in_bytes()), (intptr_t)markWord::prototype().value());
+}
+
+void RedjetBarrierSetAssembler::emit_simd_dispatch_with_vzeroupper(MacroAssembler* masm) {
+  // AVX10 removes the penalty for transition between vector lengths, obviating vzeroupper
+  if (!VM_Version::supports_avx10_1() && VM_Version::supports_vzeroupper()) {
+    __ vzeroupper();
+  }
+}
+
 #ifdef COMPILER1
 #undef __
 #define __ sasm->
 
 void RedjetBarrierSetAssembler::generate_c1_pre_barrier_runtime_stub(StubAssembler* sasm) {
   __ prologue("redjet_c1_pre_barrier", false);
+  __ push(rax);
+  __ push(rdx);
+  const Register thread = r15_thread;
+  Address flags(thread, in_bytes(RedjetThreadLocalData::point_flags_offset()));
+  Label done;
+  __ testl(flags, REDJET_PT_PARKPOINT_ACTIVE);
+  __ jcc(Assembler::zero, done);
+  __ save_live_registers_no_oop_map(true);
+  __ call_VM_leaf(CAST_FROM_FN_PTR(address, redjet_rt_safepoint_poll_slow), thread);
+  __ restore_live_registers(true);
+  __ bind(done);
+  __ pop(rdx);
+  __ pop(rax);
   __ epilogue();
 }
 
 void RedjetBarrierSetAssembler::generate_c1_post_barrier_runtime_stub(StubAssembler* sasm) {
   __ prologue("redjet_c1_post_barrier", false);
+  __ push(rax);
+  __ push(rdx);
+  const Register thread = r15_thread;
+  Address flags(thread, in_bytes(RedjetThreadLocalData::point_flags_offset()));
+  Label done;
+  __ testl(flags, REDJET_PT_DOCKPOINT_ACTIVE);
+  __ jcc(Assembler::zero, done);
+  __ save_live_registers_no_oop_map(true);
+  __ call_VM_leaf(CAST_FROM_FN_PTR(address, redjet_rt_safepoint_poll_slow), thread);
+  __ restore_live_registers(true);
+  __ bind(done);
+  __ pop(rdx);
+  __ pop(rax);
   __ epilogue();
 }
 #endif

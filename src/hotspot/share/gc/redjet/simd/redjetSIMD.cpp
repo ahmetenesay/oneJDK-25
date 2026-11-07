@@ -482,6 +482,132 @@ RJ_API size_t hs_filter_live_states_scalar(const uint8_t* states, size_t count, 
 }
 
 /* ========================================================================= */
+/* VECTOR CARD TABLE SCANNING                                                */
+/* ========================================================================= */
+
+RJ_API size_t hs_filter_card_table_universal(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out) {
+    if (!cards || !out_indices || count == 0 || max_out == 0) return 0;
+    size_t matched = 0;
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
+    __m128i v_zero = _mm_setzero_si128();
+    size_t b = 0;
+    for (; b + 16 <= count && matched < max_out; b += 16) {
+        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(cards + b));
+        __m128i cmp = _mm_cmpeq_epi8(chunk, v_zero);
+        unsigned int clean_mask = static_cast<unsigned int>(_mm_movemask_epi8(cmp));
+        unsigned int dirty_mask = (~clean_mask) & 0xFFFFu;
+        while (dirty_mask != 0 && matched < max_out) {
+#if defined(_MSC_VER)
+            unsigned long bit_pos;
+            _BitScanForward(&bit_pos, dirty_mask);
+#else
+            unsigned int bit_pos = __builtin_ctz(dirty_mask);
+#endif
+            out_indices[matched++] = static_cast<uint32_t>(b + bit_pos);
+            dirty_mask &= dirty_mask - 1;
+        }
+    }
+    for (; b < count && matched < max_out; ++b) {
+        if (cards[b] != 0) {
+            out_indices[matched++] = static_cast<uint32_t>(b);
+        }
+    }
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
+    uint8x16_t v_zero = vdupq_n_u8(0);
+    size_t b = 0;
+    for (; b + 16 <= count && matched < max_out; b += 16) {
+        uint8x16_t chunk = vld1q_u8(cards + b);
+        uint8x16_t cmp = vmvnq_u8(vceqq_u8(chunk, v_zero));
+        uint64_t low = vgetq_lane_u64(vreinterpretq_u64_u8(cmp), 0);
+        uint64_t high = vgetq_lane_u64(vreinterpretq_u64_u8(cmp), 1);
+        if ((low | high) != 0) {
+            for (size_t k = 0; k < 16 && matched < max_out; ++k) {
+                if (cards[b + k] != 0) {
+                    out_indices[matched++] = static_cast<uint32_t>(b + k);
+                }
+            }
+        }
+    }
+    for (; b < count && matched < max_out; ++b) {
+        if (cards[b] != 0) {
+            out_indices[matched++] = static_cast<uint32_t>(b);
+        }
+    }
+#else
+    for (size_t b = 0; b < count && matched < max_out; ++b) {
+        if (cards[b] != 0) {
+            out_indices[matched++] = static_cast<uint32_t>(b);
+        }
+    }
+#endif
+    return matched;
+}
+
+RJ_API size_t hs_filter_card_table_avx2(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out) {
+    if (!cards || !out_indices || count == 0 || max_out == 0) return 0;
+#if defined(__AVX2__) || (defined(_M_X64) && defined(__AVX2__))
+    size_t matched = 0;
+    __m256i v_zero = _mm256_setzero_si256();
+    size_t b = 0;
+    for (; b + 32 <= count && matched < max_out; b += 32) {
+        __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(cards + b));
+        __m256i cmp = _mm256_cmpeq_epi8(chunk, v_zero);
+        unsigned int clean_mask = static_cast<unsigned int>(_mm256_movemask_epi8(cmp));
+        unsigned int dirty_mask = ~clean_mask;
+        while (dirty_mask != 0 && matched < max_out) {
+#if defined(_MSC_VER)
+            unsigned long bit_pos;
+            _BitScanForward(&bit_pos, dirty_mask);
+#else
+            unsigned int bit_pos = __builtin_ctz(dirty_mask);
+#endif
+            out_indices[matched++] = static_cast<uint32_t>(b + bit_pos);
+            dirty_mask &= dirty_mask - 1;
+        }
+    }
+    for (; b < count && matched < max_out; ++b) {
+        if (cards[b] != 0) {
+            out_indices[matched++] = static_cast<uint32_t>(b);
+        }
+    }
+    return matched;
+#else
+    return hs_filter_card_table_universal(cards, count, out_indices, max_out);
+#endif
+}
+
+RJ_API size_t hs_filter_card_table_avx512(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out) {
+    if (!cards || !out_indices || count == 0 || max_out == 0) return 0;
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    size_t matched = 0;
+    __m512i v_zero = _mm512_setzero_si512();
+    size_t b = 0;
+    for (; b + 64 <= count && matched < max_out; b += 64) {
+        __m512i chunk = _mm512_loadu_si512(reinterpret_cast<const void*>(cards + b));
+        __mmask64 mask = ~_mm512_cmpeq_epi8_mask(chunk, v_zero);
+        while (mask != 0 && matched < max_out) {
+#if defined(_MSC_VER)
+            unsigned long bit_pos;
+            _BitScanForward64(&bit_pos, mask);
+#else
+            unsigned int bit_pos = __builtin_ctzll(mask);
+#endif
+            out_indices[matched++] = static_cast<uint32_t>(b + bit_pos);
+            mask &= mask - 1;
+        }
+    }
+    for (; b < count && matched < max_out; ++b) {
+        if (cards[b] != 0) {
+            out_indices[matched++] = static_cast<uint32_t>(b);
+        }
+    }
+    return matched;
+#else
+    return hs_filter_card_table_avx2(cards, count, out_indices, max_out);
+#endif
+}
+
+/* ========================================================================= */
 /* REDJET SIMD DISPATCHER                                                    */
 /* ========================================================================= */
 
@@ -516,6 +642,19 @@ size_t RedjetSIMD::filter_live_states(const uint8_t* states, size_t count, uint8
         return hs_filter_live_states_neon(states, count, target_state, out_indices);
     } else {
         return hs_filter_live_states_scalar(states, count, target_state, out_indices);
+    }
+}
+
+size_t RedjetSIMD::scan_card_table(const uint8_t* cards, size_t count, uint32_t* out_indices, size_t max_out) {
+    if (!cards || !out_indices || count == 0 || max_out == 0) return 0;
+    hs_detect_cpu_features();
+
+    if (isMacrowebHolder::IS_AVX10_2() || isMacrowebHolder::IS_AVX10() || isMacrowebHolder::IS_AVX512()) {
+        return hs_filter_card_table_avx512(cards, count, out_indices, max_out);
+    } else if (isMacrowebHolder::IS_AVX2() || isMacrowebHolder::IS_AVX()) {
+        return hs_filter_card_table_avx2(cards, count, out_indices, max_out);
+    } else {
+        return hs_filter_card_table_universal(cards, count, out_indices, max_out);
     }
 }
 

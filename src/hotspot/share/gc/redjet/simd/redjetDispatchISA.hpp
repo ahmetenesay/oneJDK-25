@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -43,12 +43,24 @@
 #include "gc/redjet/runtime/redjetIntentCLI.hpp"
 #include "gc/redjet/simd/redjetALU.hpp"
 
+#ifndef RJ_MAX_INSTANCES
+#define RJ_MAX_INSTANCES 4096
+#endif
+#ifndef REDJET_MAX_INSTANCES
+#define REDJET_MAX_INSTANCES RJ_MAX_INSTANCES
+#endif
 #ifndef SACFOR_MAX_INSTANCES
-#define SACFOR_MAX_INSTANCES 4096
+#define SACFOR_MAX_INSTANCES RJ_MAX_INSTANCES
 #endif
 
+#ifndef RJ_MAX_DISPATCH_SLOTS
+#define RJ_MAX_DISPATCH_SLOTS 4096
+#endif
+#ifndef REDJET_MAX_DISPATCH_SLOTS
+#define REDJET_MAX_DISPATCH_SLOTS RJ_MAX_DISPATCH_SLOTS
+#endif
 #ifndef SACFOR_MAX_DISPATCH_SLOTS
-#define SACFOR_MAX_DISPATCH_SLOTS 4096
+#define SACFOR_MAX_DISPATCH_SLOTS RJ_MAX_DISPATCH_SLOTS
 #endif
 
 /* Vector ALU Opcodes */
@@ -74,53 +86,63 @@ enum hs_vector_alu_op_e : uint32_t {
 typedef void (*HS_hotspot_kernel_fn_t)(const HS_hotspot_tensor_t* inputs, int n_in,
                                            HS_hotspot_tensor_t* outputs, int n_out);
 using sacculus_kernel_fn_t = HS_hotspot_kernel_fn_t;
+using rj_kernel_fn_t       = HS_hotspot_kernel_fn_t;
+using redjet_kernel_fn_t   = HS_hotspot_kernel_fn_t;
 using hsKernelFn           = HS_hotspot_kernel_fn_t;
 
 /* ========================================================================= */
 /* 1. LOCK-FREE CAS INSTANCE POOL & SEQLOCK KERNEL DISPATCH TABLE            */
 /* ========================================================================= */
 
-struct SACFOR_ALIGN_CL sacculus_slot_t {
-    sacculus_live_header_t* obj{ nullptr };
-    std::atomic<int>        free{ 1 };
+struct RJ_ALIGN_CL redjet_slot_t {
+    redjet_live_header_t* obj{ nullptr };
+    std::atomic<int>      free{ 1 };
 };
-using hsSlot = sacculus_slot_t;
+using sacculus_slot_t = redjet_slot_t;
+using rj_slot_t       = redjet_slot_t;
+using hsSlot          = redjet_slot_t;
 
-struct sacculus_instance_pool_t {
+struct redjet_instance_pool_t {
     uint32_t              function_id{ 0 };
     char                  name[32]{ 0 };
-    sacculus_slot_t       slots[SACFOR_MAX_INSTANCES]{};
+    redjet_slot_t         slots[RJ_MAX_INSTANCES]{};
     std::atomic<uint32_t> used_count{ 0 };
     uint64_t              type_sig_hash{ 0 };
 
-    int32_t acquire(sacculus_live_header_t* obj) noexcept;
+    int32_t acquire(redjet_live_header_t* obj) noexcept;
     void    release(int32_t idx) noexcept;
 };
-using hsInstancePool = sacculus_instance_pool_t;
+using sacculus_instance_pool_t = redjet_instance_pool_t;
+using rj_instance_pool_t       = redjet_instance_pool_t;
+using hsInstancePool           = redjet_instance_pool_t;
 
-struct SACFOR_ALIGN_CL sacculus_dispatch_entry_t {
-    std::atomic<sacculus_kernel_fn_t>    fn{ nullptr };
-    std::atomic<uint32_t>                seqlock_version{ 0 };
-    uint32_t                             function_id{ 0 };
-    std::atomic<sacculus_live_header_t*> cached_live_header{ nullptr };
-    uint64_t                             best_cycles{ UINT64_MAX };
-    uint64_t                             call_count{ 0 };
+struct RJ_ALIGN_CL redjet_dispatch_entry_t {
+    std::atomic<redjet_kernel_fn_t>    fn{ nullptr };
+    std::atomic<uint32_t>              seqlock_version{ 0 };
+    uint32_t                           function_id{ 0 };
+    std::atomic<redjet_live_header_t*> cached_live_header{ nullptr };
+    uint64_t                           best_cycles{ UINT64_MAX };
+    uint64_t                           call_count{ 0 };
 };
-using hsDispatchEntry = sacculus_dispatch_entry_t;
+using sacculus_dispatch_entry_t = redjet_dispatch_entry_t;
+using rj_dispatch_entry_t       = redjet_dispatch_entry_t;
+using hsDispatchEntry           = redjet_dispatch_entry_t;
 
-struct sacculus_dispatch_table_t {
-    sacculus_dispatch_entry_t entries[SACFOR_MAX_DISPATCH_SLOTS]{};
+struct redjet_dispatch_table_t {
+    redjet_dispatch_entry_t entries[RJ_MAX_DISPATCH_SLOTS]{};
 
-    sacculus_dispatch_entry_t* get(uint32_t fn_id) noexcept;
-    void                       register_fn(uint32_t fn_id, sacculus_kernel_fn_t fn) noexcept;
-    void                       swap(uint32_t fn_id, sacculus_kernel_fn_t new_fn, uint64_t best) noexcept;
-    sacculus_kernel_fn_t       read_fn_seqlock(uint32_t fn_id, uint64_t* out_best_cycles = nullptr) const noexcept;
-    void                       init_default_kernels() noexcept;
+    redjet_dispatch_entry_t* get(uint32_t fn_id) noexcept;
+    void                     register_fn(uint32_t fn_id, redjet_kernel_fn_t fn) noexcept;
+    void                     swap(uint32_t fn_id, redjet_kernel_fn_t new_fn, uint64_t best) noexcept;
+    redjet_kernel_fn_t       read_fn_seqlock(uint32_t fn_id, uint64_t* out_best_cycles = nullptr) const noexcept;
+    void                     init_default_kernels() noexcept;
 };
-using hsDispatchTable = sacculus_dispatch_table_t;
+using sacculus_dispatch_table_t = redjet_dispatch_table_t;
+using rj_dispatch_table_t       = redjet_dispatch_table_t;
+using hsDispatchTable           = redjet_dispatch_table_t;
 
-extern sacculus_dispatch_table_t g_hs_dispatch_table;
-extern sacculus_instance_pool_t  g_hs_instance_pool;
+extern redjet_dispatch_table_t g_hs_dispatch_table;
+extern redjet_instance_pool_t  g_hs_instance_pool;
 
 /* ========================================================================= */
 /* 2. GLOBAL 65+ WORLD ISA CATALOG & FALLBACK HIERARCHY                      */
@@ -237,17 +259,17 @@ public:
         g_hs_dispatch_table.init_default_kernels();
     }
 
-    static inline sacculus_dispatch_table_t& table() noexcept {
+    static inline redjet_dispatch_table_t& table() noexcept {
         return g_hs_dispatch_table;
     }
 
-    static inline sacculus_instance_pool_t& pool() noexcept {
+    static inline redjet_instance_pool_t& pool() noexcept {
         return g_hs_instance_pool;
     }
 
     static inline bool execute(uint32_t fn_id, const HS_hotspot_tensor_t* in, int nin,
                                HS_hotspot_tensor_t* out, int nout) noexcept {
-        sacculus_kernel_fn_t fn = g_hs_dispatch_table.read_fn_seqlock(fn_id);
+        redjet_kernel_fn_t fn = g_hs_dispatch_table.read_fn_seqlock(fn_id);
         if (!fn) return false;
         fn(in, nin, out, nout);
         return true;

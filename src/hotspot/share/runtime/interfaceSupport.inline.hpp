@@ -35,6 +35,7 @@
 #include "runtime/mutexLocker.hpp"
 #include "runtime/orderAccess.hpp"
 #include "runtime/os.hpp"
+#include "runtime/pointCoordinator.hpp"
 #include "runtime/safepointMechanism.inline.hpp"
 #include "runtime/safepointVerifiers.hpp"
 #include "runtime/threadWXSetters.inline.hpp"
@@ -87,6 +88,11 @@ class ThreadStateTransition : public StackObj {
   static inline void transition_from_java(JavaThread *thread, JavaThreadState to) {
     assert(thread->thread_state() == _thread_in_Java, "coming from wrong thread state");
     assert(to == _thread_in_vm || to == _thread_in_native, "invalid transition");
+#if INCLUDE_REDJETGC
+    if (UseRedjetGC && to == _thread_in_native) {
+      PointCoordinator::on_jni_park_enter(thread);
+    }
+#endif
     thread->set_thread_state(to);
   }
 
@@ -104,6 +110,11 @@ class ThreadStateTransition : public StackObj {
       thread->set_thread_state(_thread_in_vm);
     }
     SafepointMechanism::process_if_requested_with_exit_check(thread, to != _thread_in_Java ? false : check_asyncs);
+#if INCLUDE_REDJETGC
+    if (UseRedjetGC) {
+      PointCoordinator::on_jni_park_exit(thread);
+    }
+#endif
     thread->set_thread_state(to);
   }
 
@@ -114,6 +125,11 @@ class ThreadStateTransition : public StackObj {
       thread->set_thread_state(to);
     } else {
       assert(to == _thread_in_native || to == _thread_blocked, "invalid transition");
+#if INCLUDE_REDJETGC
+      if (UseRedjetGC && to == _thread_in_native) {
+        PointCoordinator::on_jni_park_enter(thread);
+      }
+#endif
       // Check NoSafepointVerifier. This also clears unhandled oops if CheckUnhandledOops is used.
       thread->check_possible_safepoint();
 

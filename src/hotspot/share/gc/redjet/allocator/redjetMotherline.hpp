@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -45,71 +45,176 @@ void  hs_os_decommit_memory(void* addr, size_t bytes);
 void  hs_os_release_memory(void* addr, size_t bytes);
 
 template<typename Entry, uint32_t Capacity>
-struct sacculus_ring_t;
+struct redjet_ring_t;
+template<typename Entry, uint32_t Capacity>
+using sacculus_ring_t = redjet_ring_t<Entry, Capacity>;
+template<typename Entry, uint32_t Capacity>
+using rj_ring_t = redjet_ring_t<Entry, Capacity>;
+
 struct HS_hotspot_hotlog_entry_t;
+
+#ifndef RJ_HOTLOG_SIZE
+#define RJ_HOTLOG_SIZE 65536u
+#endif
+#ifndef REDJET_HOTLOG_SIZE
+#define REDJET_HOTLOG_SIZE RJ_HOTLOG_SIZE
+#endif
 #ifndef SACFOR_HOTLOG_SIZE
-#define SACFOR_HOTLOG_SIZE 65536u
+#define SACFOR_HOTLOG_SIZE RJ_HOTLOG_SIZE
 #endif
-using sacculus_hotlog_t = sacculus_ring_t<HS_hotspot_hotlog_entry_t, SACFOR_HOTLOG_SIZE>;
 
+using redjet_hotlog_t   = redjet_ring_t<HS_hotspot_hotlog_entry_t, RJ_HOTLOG_SIZE>;
+using rj_hotlog_t       = redjet_hotlog_t;
+using sacculus_hotlog_t = redjet_hotlog_t;
+
+#ifndef RJ_CACHE_LINE
+#define RJ_CACHE_LINE 64
+#endif
+#ifndef REDJET_CACHE_LINE
+#define REDJET_CACHE_LINE RJ_CACHE_LINE
+#endif
 #ifndef SACFOR_CACHE_LINE
-#define SACFOR_CACHE_LINE 64
+#define SACFOR_CACHE_LINE RJ_CACHE_LINE
 #endif
 
+#ifndef RJ_MAX_CORES
+#define RJ_MAX_CORES 256
+#endif
+#ifndef REDJET_MAX_CORES
+#define REDJET_MAX_CORES RJ_MAX_CORES
+#endif
 #ifndef SACFOR_MAX_CORES
-#define SACFOR_MAX_CORES 256
+#define SACFOR_MAX_CORES RJ_MAX_CORES
 #endif
 
+#ifndef RJ_CORE_WORDS
+#define RJ_CORE_WORDS 4
+#endif
+#ifndef REDJET_CORE_WORDS
+#define REDJET_CORE_WORDS RJ_CORE_WORDS
+#endif
 #ifndef SACFOR_CORE_WORDS
-#define SACFOR_CORE_WORDS 4
+#define SACFOR_CORE_WORDS RJ_CORE_WORDS
 #endif
 
+#ifndef RJ_MAX_INSTANCES
+#define RJ_MAX_INSTANCES 65535
+#endif
+#ifndef REDJET_MAX_INSTANCES
+#define REDJET_MAX_INSTANCES RJ_MAX_INSTANCES
+#endif
 #ifndef SACFOR_MAX_INSTANCES
-#define SACFOR_MAX_INSTANCES 65535
+#define SACFOR_MAX_INSTANCES RJ_MAX_INSTANCES
 #endif
 
+#ifndef RJ_LANDFILL_SCALE
+#define RJ_LANDFILL_SCALE 2
+#endif
+#ifndef REDJET_LANDFILL_SCALE
+#define REDJET_LANDFILL_SCALE RJ_LANDFILL_SCALE
+#endif
 #ifndef SACFOR_LANDFILL_SCALE
-#define SACFOR_LANDFILL_SCALE 2
+#define SACFOR_LANDFILL_SCALE RJ_LANDFILL_SCALE
 #endif
 
+#ifndef RJ_LANDFILL_INIT
+#define RJ_LANDFILL_INIT (32 * 1024 * 1024)
+#endif
+#ifndef REDJET_LANDFILL_INIT
+#define REDJET_LANDFILL_INIT RJ_LANDFILL_INIT
+#endif
 #ifndef SACFOR_LANDFILL_INIT
-#define SACFOR_LANDFILL_INIT (32 * 1024 * 1024)
+#define SACFOR_LANDFILL_INIT RJ_LANDFILL_INIT
 #endif
 
+#ifndef RJ_LANDFILL_CRIT
+#define RJ_LANDFILL_CRIT 0.85f
+#endif
+#ifndef REDJET_LANDFILL_CRIT
+#define REDJET_LANDFILL_CRIT RJ_LANDFILL_CRIT
+#endif
 #ifndef SACFOR_LANDFILL_CRIT
-#define SACFOR_LANDFILL_CRIT 0.85f
+#define SACFOR_LANDFILL_CRIT RJ_LANDFILL_CRIT
 #endif
 
+#ifndef RJ_HEAT_GAIN
+#define RJ_HEAT_GAIN 1.0f
+#endif
+#ifndef REDJET_HEAT_GAIN
+#define REDJET_HEAT_GAIN RJ_HEAT_GAIN
+#endif
 #ifndef SACFOR_HEAT_GAIN
-#define SACFOR_HEAT_GAIN 1.0f
+#define SACFOR_HEAT_GAIN RJ_HEAT_GAIN
 #endif
 
+#ifndef RJ_HEAT_DECAY
+#define RJ_HEAT_DECAY 0.95f
+#endif
+#ifndef REDJET_HEAT_DECAY
+#define REDJET_HEAT_DECAY RJ_HEAT_DECAY
+#endif
 #ifndef SACFOR_HEAT_DECAY
-#define SACFOR_HEAT_DECAY 0.95f
+#define SACFOR_HEAT_DECAY RJ_HEAT_DECAY
 #endif
 
+#ifndef RJ_HEAT_HOT
+#define RJ_HEAT_HOT 5.0f
+#endif
+#ifndef REDJET_HEAT_HOT
+#define REDJET_HEAT_HOT RJ_HEAT_HOT
+#endif
 #ifndef SACFOR_HEAT_HOT
-#define SACFOR_HEAT_HOT 5.0f
+#define SACFOR_HEAT_HOT RJ_HEAT_HOT
 #endif
 
+#ifndef RJ_OVERHEAD_MIDDLE
+#define RJ_OVERHEAD_MIDDLE 500
+#endif
+#ifndef REDJET_OVERHEAD_MIDDLE
+#define REDJET_OVERHEAD_MIDDLE RJ_OVERHEAD_MIDDLE
+#endif
 #ifndef SACFOR_OVERHEAD_MIDDLE
-#define SACFOR_OVERHEAD_MIDDLE 500
+#define SACFOR_OVERHEAD_MIDDLE RJ_OVERHEAD_MIDDLE
 #endif
 
+#ifndef RJ_OVERHEAD_DEMAND
+#define RJ_OVERHEAD_DEMAND 100
+#endif
+#ifndef REDJET_OVERHEAD_DEMAND
+#define REDJET_OVERHEAD_DEMAND RJ_OVERHEAD_DEMAND
+#endif
 #ifndef SACFOR_OVERHEAD_DEMAND
-#define SACFOR_OVERHEAD_DEMAND 100
+#define SACFOR_OVERHEAD_DEMAND RJ_OVERHEAD_DEMAND
 #endif
 
+#ifndef RJ_IDLE_YOUNG_NS
+#define RJ_IDLE_YOUNG_NS 100000000ULL
+#endif
+#ifndef REDJET_IDLE_YOUNG_NS
+#define REDJET_IDLE_YOUNG_NS RJ_IDLE_YOUNG_NS
+#endif
 #ifndef SACFOR_IDLE_YOUNG_NS
-#define SACFOR_IDLE_YOUNG_NS 100000000ULL
+#define SACFOR_IDLE_YOUNG_NS RJ_IDLE_YOUNG_NS
 #endif
 
+#ifndef RJ_IDLE_ADOL_NS
+#define RJ_IDLE_ADOL_NS 500000000ULL
+#endif
+#ifndef REDJET_IDLE_ADOL_NS
+#define REDJET_IDLE_ADOL_NS RJ_IDLE_ADOL_NS
+#endif
 #ifndef SACFOR_IDLE_ADOL_NS
-#define SACFOR_IDLE_ADOL_NS 500000000ULL
+#define SACFOR_IDLE_ADOL_NS RJ_IDLE_ADOL_NS
 #endif
 
+#ifndef RJ_IDLE_SENIOR_NS
+#define RJ_IDLE_SENIOR_NS 2000000000ULL
+#endif
+#ifndef REDJET_IDLE_SENIOR_NS
+#define REDJET_IDLE_SENIOR_NS RJ_IDLE_SENIOR_NS
+#endif
 #ifndef SACFOR_IDLE_SENIOR_NS
-#define SACFOR_IDLE_SENIOR_NS 2000000000ULL
+#define SACFOR_IDLE_SENIOR_NS RJ_IDLE_SENIOR_NS
 #endif
 
 #ifndef HS_PRETOUCH_MEMORY_DEFINED
@@ -128,43 +233,57 @@ static inline void hs_pretouch_memory(void* base, size_t size, size_t page_strid
 /* 1. CORE BITMAP UTILITIES                                                  */
 /* ========================================================================= */
 
-static inline void sacculus_core_bitmap_set(std::atomic<uint64_t> bm[SACFOR_CORE_WORDS], uint16_t core) {
-    if (core >= SACFOR_MAX_CORES) return;
+static inline void rj_core_bitmap_set(std::atomic<uint64_t> bm[RJ_CORE_WORDS], uint16_t core) {
+    if (core >= RJ_MAX_CORES) return;
     bm[core / 64].fetch_or(1ULL << (core % 64), std::memory_order_relaxed);
 }
 
-static inline void sacculus_core_bitmap_set(uint64_t bm[SACFOR_CORE_WORDS], uint16_t core) {
-    if (core >= SACFOR_MAX_CORES) return;
+static inline void rj_core_bitmap_set(uint64_t bm[RJ_CORE_WORDS], uint16_t core) {
+    if (core >= RJ_MAX_CORES) return;
     bm[core / 64] |= (1ULL << (core % 64));
 }
 
-static inline int sacculus_core_bitmap_test(const std::atomic<uint64_t> bm[SACFOR_CORE_WORDS], uint16_t core) {
-    if (core >= SACFOR_MAX_CORES) return 0;
+static inline int rj_core_bitmap_test(const std::atomic<uint64_t> bm[RJ_CORE_WORDS], uint16_t core) {
+    if (core >= RJ_MAX_CORES) return 0;
     return (int)((bm[core / 64].load(std::memory_order_relaxed) >> (core % 64)) & 1u);
 }
 
-static inline int sacculus_core_bitmap_test(const uint64_t bm[SACFOR_CORE_WORDS], uint16_t core) {
-    if (core >= SACFOR_MAX_CORES) return 0;
+static inline int rj_core_bitmap_test(const uint64_t bm[RJ_CORE_WORDS], uint16_t core) {
+    if (core >= RJ_MAX_CORES) return 0;
     return (int)((bm[core / 64] >> (core % 64)) & 1u);
 }
 
-static inline uint32_t sacculus_core_bitmap_count(const std::atomic<uint64_t> bm[SACFOR_CORE_WORDS]) {
+static inline uint32_t rj_core_bitmap_count(const std::atomic<uint64_t> bm[RJ_CORE_WORDS]) {
     uint32_t n = 0;
-    for (uint32_t i = 0; i < SACFOR_CORE_WORDS; ++i) {
+    for (uint32_t i = 0; i < RJ_CORE_WORDS; ++i) {
         uint64_t w = bm[i].load(std::memory_order_relaxed);
         while (w) { n++; w &= w - 1; }
     }
     return n;
 }
 
-static inline uint32_t sacculus_core_bitmap_count(const uint64_t bm[SACFOR_CORE_WORDS]) {
+static inline uint32_t rj_core_bitmap_count(const uint64_t bm[RJ_CORE_WORDS]) {
     uint32_t n = 0;
-    for (uint32_t i = 0; i < SACFOR_CORE_WORDS; ++i) {
+    for (uint32_t i = 0; i < RJ_CORE_WORDS; ++i) {
         uint64_t x = bm[i];
         while (x) { n++; x &= x - 1; }
     }
     return n;
 }
+
+static inline void redjet_core_bitmap_set(std::atomic<uint64_t> bm[RJ_CORE_WORDS], uint16_t core) { rj_core_bitmap_set(bm, core); }
+static inline void redjet_core_bitmap_set(uint64_t bm[RJ_CORE_WORDS], uint16_t core) { rj_core_bitmap_set(bm, core); }
+static inline int redjet_core_bitmap_test(const std::atomic<uint64_t> bm[RJ_CORE_WORDS], uint16_t core) { return rj_core_bitmap_test(bm, core); }
+static inline int redjet_core_bitmap_test(const uint64_t bm[RJ_CORE_WORDS], uint16_t core) { return rj_core_bitmap_test(bm, core); }
+static inline uint32_t redjet_core_bitmap_count(const std::atomic<uint64_t> bm[RJ_CORE_WORDS]) { return rj_core_bitmap_count(bm); }
+static inline uint32_t redjet_core_bitmap_count(const uint64_t bm[RJ_CORE_WORDS]) { return rj_core_bitmap_count(bm); }
+
+static inline void sacculus_core_bitmap_set(std::atomic<uint64_t> bm[RJ_CORE_WORDS], uint16_t core) { rj_core_bitmap_set(bm, core); }
+static inline void sacculus_core_bitmap_set(uint64_t bm[RJ_CORE_WORDS], uint16_t core) { rj_core_bitmap_set(bm, core); }
+static inline int sacculus_core_bitmap_test(const std::atomic<uint64_t> bm[RJ_CORE_WORDS], uint16_t core) { return rj_core_bitmap_test(bm, core); }
+static inline int sacculus_core_bitmap_test(const uint64_t bm[RJ_CORE_WORDS], uint16_t core) { return rj_core_bitmap_test(bm, core); }
+static inline uint32_t sacculus_core_bitmap_count(const std::atomic<uint64_t> bm[RJ_CORE_WORDS]) { return rj_core_bitmap_count(bm); }
+static inline uint32_t sacculus_core_bitmap_count(const uint64_t bm[RJ_CORE_WORDS]) { return rj_core_bitmap_count(bm); }
 
 /* ========================================================================= */
 /* 2. ENUMS & MAGIC DEFINITIONS                                              */
@@ -247,7 +366,9 @@ struct hs_live_cold_metadata_t {
 };
 
 struct HS_hotspot_live_header_t;
-using hsLiveHeader = HS_hotspot_live_header_t;
+using hsLiveHeader         = HS_hotspot_live_header_t;
+using redjet_live_header_t = hsLiveHeader;
+using rj_live_header_t     = hsLiveHeader;
 using sacculus_live_header_t = hsLiveHeader;
 
 static inline hs_live_cold_metadata_t* get_cold(HS_hotspot_live_header_t* hdr);
@@ -272,8 +393,10 @@ struct sacculus_pin_guard_t {
     sacculus_pin_guard_t& operator=(sacculus_pin_guard_t&& other) noexcept;
 };
 
-using hsPinGuard = sacculus_pin_guard_t;
-using hs_pin_guard_t = sacculus_pin_guard_t;
+using redjet_pin_guard_t   = sacculus_pin_guard_t;
+using rj_pin_guard_t       = sacculus_pin_guard_t;
+using hsPinGuard           = sacculus_pin_guard_t;
+using hs_pin_guard_t       = sacculus_pin_guard_t;
 
 /* ========================================================================= */
 /* 5. LIVE HEADER (HS_hotspot_live_header_t)                             */
@@ -631,7 +754,7 @@ struct hs_trash_pit_t {
     hs_arena_storage_t matured_arena;
     hs_arena_storage_t rehab_arena;
 
-    bool init(size_t initial_bytes = SACFOR_LANDFILL_INIT, bool Advance_Payment = false);
+    bool init(size_t initial_bytes = RJ_LANDFILL_INIT, bool Advance_Payment = false);
     void* store_matured(const void* body, size_t size);
     void* store_rehab(const void* body, size_t size);
     void* store_rehab_with_offset(const void* body, size_t size, size_t* out_offset);
@@ -643,8 +766,10 @@ struct hs_trash_pit_t {
 
 using hsTrashPit = hs_trash_pit_t;
 using sacculus_trash_pit_t = hs_trash_pit_t;
+using rj_trash_pit_t       = hs_trash_pit_t;
+using redjet_trash_pit_t   = hs_trash_pit_t;
 
-struct sacculus_header_pane_t {
+struct redjet_header_pane_t {
     static constexpr uint32_t PANE_CAP = 65536;
 
     std::unique_ptr<HS_hotspot_landfill_header_t[]> entries_ptr;
@@ -657,34 +782,10 @@ struct sacculus_header_pane_t {
     void flush();
 };
 
-using hsHeaderPane = sacculus_header_pane_t;
+using rj_header_pane_t       = redjet_header_pane_t;
+using sacculus_header_pane_t = redjet_header_pane_t;
+using hsHeaderPane           = redjet_header_pane_t;
 
-class RedjetLandfill {
-private:
-    hs_trash_pit_t         _pit;
-    sacculus_header_pane_t _pane;
-
-public:
-    RedjetLandfill();
-    ~RedjetLandfill();
-
-    bool init(size_t initial = SACFOR_LANDFILL_INIT, bool advance_payment = false);
-    bool accept(HS_hotspot_live_header_t* live,
-                hs_death_reason_e reason,
-                sacculus_hotlog_t* hotlog = nullptr,
-                uint64_t sweep_no = 0,
-                uint64_t evac_duration_ns = 0);
-    bool is_critical(float critical_ratio = SACFOR_LANDFILL_CRIT) const;
-    void evacuate(sacculus_hotlog_t* hotlog = nullptr, uint64_t sweep_no = 0);
-    void destroy();
-
-    hs_trash_pit_t& pit() noexcept { return _pit; }
-    const hs_trash_pit_t& pit() const noexcept { return _pit; }
-    sacculus_header_pane_t& pane() noexcept { return _pane; }
-    const sacculus_header_pane_t& pane() const noexcept { return _pane; }
-};
-
-using hsLandfill = RedjetLandfill;
-using sacculus_landfill_t = RedjetLandfill;
+#include "gc/redjet/allocator/redjetLandfill.hpp"
 
 #endif // SHARE_GC_REDJET_REDJETMOTHERLINE_HPP

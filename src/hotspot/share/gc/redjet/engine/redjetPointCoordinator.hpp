@@ -192,6 +192,13 @@ public:
 
   // Unified 2-Point Telemetry Snapshot
   static void snapshot_telemetry(RedjetTwoPointTelemetry* out);
+
+  // 6. Direct Tier 1 PointCoordinator Static Inline Coupling (Zero Vtable)
+  static void on_jni_park_enter(JavaThread* thread);
+  static void on_jni_park_exit(JavaThread* thread);
+  static void on_park_point_hit(JavaThread* thread, int reason = 0);
+  static void on_dock_point_hit(JavaThread* thread, int reason = 0);
+  static bool coordinate_slot16_hotswap(void* slot16_addr, void* new_target_slot);
 };
 
 extern "C" {

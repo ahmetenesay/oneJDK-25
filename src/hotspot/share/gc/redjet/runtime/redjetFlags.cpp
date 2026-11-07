@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -86,7 +86,15 @@ static const char* const REDJET_KNOWN_FLAGS[] = {
   "Parkpoint_Spin_Count", "ParkpointSpinCount", "RedjetParkpointSpinCount",
   "Pausepoint_Spin_Count", "PausepointSpinCount", "RedjetPausepointSpinCount",
   "Dockpoint_Pacing", "DockpointPacing", "RedjetDockpointPacing",
-  "Controlpoint_Pacing", "ControlpointPacing", "RedjetControlpointPacing"
+  "Controlpoint_Pacing", "ControlpointPacing", "RedjetControlpointPacing",
+  "RedjetGCScheduler", "GCScheduler", "Scheduler",
+  "RedjetGCAutoScalarOnSIMDContention", "RedjetDynamicSIMDFallback", "AutoScalarOnSIMDContention",
+  "RedjetGCCriticalSIMDOnly", "RedjetCriticalSIMDOnly",
+  "RedjetGCGlobalVolatility", "RedjetGCExecutionFocus",
+  "RedjetGCAllowOperationDispatchings", "RedjetGCUseMLTCSolver",
+  "RedjetGCPuzzlerMorph", "RedjetGCProfile", "RedjetGCSCMode",
+  "RedjetGCForbidDynamicGrowth", "RedjetGCUpclockerQoS",
+  "RedjetGCStrictVFS", "RedjetGCRMRP", "RedjetGCRMRPMethod"
 };
 
 struct RedjetCLIIntentEntry {
@@ -181,7 +189,13 @@ static const RedjetCLIIntentEntry REDJET_INTENT_REGISTRY[] = {
   {"ssiolsc",          "Profile", "SC",      "Safety-critical isolated hard real-time deterministic profile"},
   {"sc",               "Profile", "SC",      "Safety-critical isolated hard real-time deterministic profile"},
   {"safety_critical",  "Profile", "SC",      "Mission-critical hard real-time bounded latency mode"},
-  {"zero_jitter",      "Profile", "SC",      "Zero-jitter deterministic execution envelope"}
+  {"zero_jitter",      "Profile", "SC",      "Zero-jitter deterministic execution envelope"},
+
+  // 11. Scheduler: Domestic vs TBB Mutual Exclusion
+  {"domestic",         "RedjetGCScheduler", "Domestic", "Domestic deterministic in-order silicon pipeline scheduler"},
+  {"domestic_sched",   "RedjetGCScheduler", "Domestic", "Domestic deterministic in-order silicon pipeline scheduler"},
+  {"tbb",              "RedjetGCScheduler", "TBB",      "Intel oneTBB task arena work-stealing scheduler"},
+  {"tbb_sched",        "RedjetGCScheduler", "TBB",      "Intel oneTBB task arena work-stealing scheduler"}
 };
 
 static inline bool parse_bool_token(const char* val) {
@@ -279,9 +293,17 @@ void RedjetFlags::strip_prefix_and_split(const char* raw_token, const char* raw_
   const char* p = raw_token;
   while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
 
-  // Strip JVM / HSVM CLI prefixes (+#HS|, -XX:Redjet, -XX:+, -XX:-, --, ++, etc.)
+  // Strip JVM / HSVM CLI prefixes (+#HS|, -XX:RedjetGC, -XX:Redjet, -XX:+, -XX:-, --sf:, etc.)
   if (strncasecmp(p, "+#HS|", 5) == 0 || strncasecmp(p, "-#HS|", 5) == 0) {
     p += 5;
+  } else if (strncasecmp(p, "--sf|", 5) == 0 || strncasecmp(p, "++sf|", 5) == 0 ||
+             strncasecmp(p, "--sf:", 5) == 0 || strncasecmp(p, "++sf:", 5) == 0 ||
+             strncasecmp(p, "--sf-", 5) == 0 || strncasecmp(p, "++sf-", 5) == 0) {
+    p += 5;
+  } else if (strncasecmp(p, "-sf|", 4) == 0 || strncasecmp(p, "+sf|", 4) == 0 ||
+             strncasecmp(p, "-sf:", 4) == 0 || strncasecmp(p, "+sf:", 4) == 0 ||
+             strncasecmp(p, "-sf-", 4) == 0 || strncasecmp(p, "+sf-", 4) == 0) {
+    p += 4;
   } else if (strncasecmp(p, "-XX:Redjet", 10) == 0) {
     p += 10;
   } else if (strncasecmp(p, "+XX:Redjet", 10) == 0) {
@@ -772,6 +794,47 @@ bool RedjetFlags::parse_single_flag_internal(RedjetConfig& cfg, const char* key,
       cfg.strings.no_sfgc_overwrite_mode = false;
       cfg.strings.gc_heuristic = RedjetGCHeuristic::BUREAUCRATIC;
     }
+  } else if (strcasecmp(key, "RedjetGCScheduler") == 0 ||
+             strcasecmp(key, "GCScheduler") == 0 ||
+             strcasecmp(key, "Scheduler") == 0) {
+    strncpy(cfg.strings.scheduler_raw, val, sizeof(cfg.strings.scheduler_raw) - 1);
+    if (strcasecmp(val, "TBB") == 0) {
+      cfg.strings.scheduler_type = RedjetGCSchedulerType::TBB;
+    } else {
+      cfg.strings.scheduler_type = RedjetGCSchedulerType::DOMESTIC;
+    }
+  } else if (strcasecmp(key, "RedjetGCAutoScalarOnSIMDContention") == 0 ||
+             strcasecmp(key, "RedjetDynamicSIMDFallback") == 0 ||
+             strcasecmp(key, "AutoScalarOnSIMDContention") == 0) {
+    cfg.strings.auto_scalar_on_simd_contention = parse_bool_token(val);
+  } else if (strcasecmp(key, "RedjetGCCriticalSIMDOnly") == 0 ||
+             strcasecmp(key, "RedjetCriticalSIMDOnly") == 0) {
+    cfg.strings.critical_simd_explicit = true;
+    cfg.strings.critical_simd_mode = parse_bool_token(val) ? RedjetCriticalSIMD::ALLOW : RedjetCriticalSIMD::AUTO;
+  } else if (strcasecmp(key, "RedjetGCGlobalVolatility") == 0) {
+    return parse_single_flag_internal(cfg, "Global_Volatility_Method", val);
+  } else if (strcasecmp(key, "RedjetGCExecutionFocus") == 0) {
+    return parse_single_flag_internal(cfg, "Execution_Focus", val);
+  } else if (strcasecmp(key, "RedjetGCAllowOperationDispatchings") == 0) {
+    return parse_single_flag_internal(cfg, "Allow_Operation_Dispatchings", val);
+  } else if (strcasecmp(key, "RedjetGCUseMLTCSolver") == 0) {
+    return parse_single_flag_internal(cfg, "UseMLTCSolver", val);
+  } else if (strcasecmp(key, "RedjetGCPuzzlerMorph") == 0) {
+    return parse_single_flag_internal(cfg, "puzzler_Morph_Method", val);
+  } else if (strcasecmp(key, "RedjetGCProfile") == 0) {
+    return parse_single_flag_internal(cfg, "Profile", val);
+  } else if (strcasecmp(key, "RedjetGCSCMode") == 0) {
+    return parse_single_flag_internal(cfg, "RedjetSCMode", val);
+  } else if (strcasecmp(key, "RedjetGCForbidDynamicGrowth") == 0) {
+    return parse_single_flag_internal(cfg, "Forbid_Dynamic_Growth", val);
+  } else if (strcasecmp(key, "RedjetGCUpclockerQoS") == 0) {
+    return parse_single_flag_internal(cfg, "Upclocker", val);
+  } else if (strcasecmp(key, "RedjetGCStrictVFS") == 0) {
+    return parse_single_flag_internal(cfg, "Strict_VFS_Branch_Validation", val);
+  } else if (strcasecmp(key, "RedjetGCRMRP") == 0) {
+    return parse_single_flag_internal(cfg, "RMRP", val);
+  } else if (strcasecmp(key, "RedjetGCRMRPMethod") == 0) {
+    return parse_single_flag_internal(cfg, "RMRP_Method", val);
   } else {
     return false;
   }

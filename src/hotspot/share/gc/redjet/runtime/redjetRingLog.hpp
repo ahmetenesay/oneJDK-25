@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -37,12 +37,24 @@
 #include <immintrin.h>
 #endif
 
+#ifndef RJ_HOTLOG_SIZE
+#define RJ_HOTLOG_SIZE  65536u
+#endif
+#ifndef REDJET_HOTLOG_SIZE
+#define REDJET_HOTLOG_SIZE RJ_HOTLOG_SIZE
+#endif
 #ifndef SACFOR_HOTLOG_SIZE
-#define SACFOR_HOTLOG_SIZE  65536u
+#define SACFOR_HOTLOG_SIZE RJ_HOTLOG_SIZE
 #endif
 
+#ifndef RJ_COLDLOG_SIZE
+#define RJ_COLDLOG_SIZE 16384u
+#endif
+#ifndef REDJET_COLDLOG_SIZE
+#define REDJET_COLDLOG_SIZE RJ_COLDLOG_SIZE
+#endif
 #ifndef SACFOR_COLDLOG_SIZE
-#define SACFOR_COLDLOG_SIZE 16384u
+#define SACFOR_COLDLOG_SIZE RJ_COLDLOG_SIZE
 #endif
 
 /* ========================================================================= */
@@ -63,7 +75,7 @@ static inline void hs_ring_cpu_pause() noexcept {
 #endif
 }
 
-struct SACFOR_ALIGN_CL hs_ticket_lock_t {
+struct RJ_ALIGN_CL hs_ticket_lock_t {
     alignas(64) std::atomic<uint32_t> next_ticket{ 0 };
     alignas(64) std::atomic<uint32_t> now_serving{ 0 };
 
@@ -87,15 +99,15 @@ struct hs_ticket_guard_t {
 #endif
 
 /* ========================================================================= */
-/* 2. LOCK-FREE MPMC VYUKOV SEQUENCE RING BUFFER (sacculus_ring_t)           */
+/* 2. LOCK-FREE MPMC VYUKOV SEQUENCE RING BUFFER (redjet_ring_t)             */
 /* ========================================================================= */
 
 template<typename Entry, uint32_t Capacity>
-struct sacculus_ring_t {
-    SACFOR_ALIGN_CL std::atomic<uint64_t> write_head{ 0 };
-    SACFOR_ALIGN_CL std::atomic<uint64_t> read_head{ 0 };
-    SACFOR_ALIGN_CL hs_ticket_lock_t      drain_lock;
-    SACFOR_ALIGN_CL hs_ticket_lock_t      write_lock;
+struct redjet_ring_t {
+    RJ_ALIGN_CL std::atomic<uint64_t> write_head{ 0 };
+    RJ_ALIGN_CL std::atomic<uint64_t> read_head{ 0 };
+    RJ_ALIGN_CL hs_ticket_lock_t      drain_lock;
+    RJ_ALIGN_CL hs_ticket_lock_t      write_lock;
     Entry*                                ring{ nullptr };
     uint8_t*                              ready_flags{ nullptr };
 
@@ -120,7 +132,7 @@ struct sacculus_ring_t {
 #endif
     }
 
-    sacculus_ring_t() {
+    redjet_ring_t() {
         size_t entry_bytes = static_cast<size_t>(Capacity) * sizeof(Entry);
         size_t flag_bytes  = (static_cast<size_t>(Capacity) + 63ULL) & ~63ULL;
         size_t total_bytes = entry_bytes + flag_bytes;
@@ -134,7 +146,7 @@ struct sacculus_ring_t {
         }
     }
 
-    ~sacculus_ring_t() {
+    ~redjet_ring_t() {
         if (ring) {
             size_t entry_bytes = static_cast<size_t>(Capacity) * sizeof(Entry);
             size_t flag_bytes  = (static_cast<size_t>(Capacity) + 63ULL) & ~63ULL;
@@ -144,8 +156,8 @@ struct sacculus_ring_t {
         }
     }
 
-    sacculus_ring_t(const sacculus_ring_t&) = delete;
-    sacculus_ring_t& operator=(const sacculus_ring_t&) = delete;
+    redjet_ring_t(const redjet_ring_t&) = delete;
+    redjet_ring_t& operator=(const redjet_ring_t&) = delete;
 
     inline uint64_t map_index(uint64_t seq) const noexcept {
         if constexpr ((Capacity & (Capacity - 1)) == 0) {
@@ -246,12 +258,23 @@ struct sacculus_ring_t {
 };
 
 template<typename Entry, uint32_t Capacity>
-using hsRing = sacculus_ring_t<Entry, Capacity>;
+using sacculus_ring_t = redjet_ring_t<Entry, Capacity>;
 
-using sacculus_hotlog_t  = sacculus_ring_t<HS_hotspot_hotlog_entry_t, SACFOR_HOTLOG_SIZE>;
-using sacculus_coldlog_t = sacculus_ring_t<HS_hotspot_coldlog_entry_t, SACFOR_COLDLOG_SIZE>;
-using hsHotlog           = sacculus_hotlog_t;
-using hsColdlog          = sacculus_coldlog_t;
+template<typename Entry, uint32_t Capacity>
+using rj_ring_t = redjet_ring_t<Entry, Capacity>;
+
+template<typename Entry, uint32_t Capacity>
+using hsRing = redjet_ring_t<Entry, Capacity>;
+
+using redjet_hotlog_t  = redjet_ring_t<HS_hotspot_hotlog_entry_t, RJ_HOTLOG_SIZE>;
+using rj_hotlog_t      = redjet_hotlog_t;
+using sacculus_hotlog_t = redjet_hotlog_t;
+using hsHotlog         = redjet_hotlog_t;
+
+using redjet_coldlog_t = redjet_ring_t<HS_hotspot_coldlog_entry_t, RJ_COLDLOG_SIZE>;
+using rj_coldlog_t     = redjet_coldlog_t;
+using sacculus_coldlog_t = redjet_coldlog_t;
+using hsColdlog        = redjet_coldlog_t;
 
 /* ========================================================================= */
 /* 3. EXTENDED STRING STORE, PRE-BOOT CAPTURE & HOT->COLD DRAIN ENGINE       */
@@ -264,11 +287,11 @@ typedef void (*hs_coldlog_drain_cb_t)(const HS_hotspot_coldlog_entry_t* entry, v
 uint16_t    hs_ring_store_ext_string(const char* full_text) noexcept;
 const char* hs_ring_lookup_ext_string(uint16_t slot) noexcept;
 
-void   hs_ring_bind_active_logs(sacculus_hotlog_t* hl, sacculus_coldlog_t* cl);
-sacculus_hotlog_t*  hs_ring_get_active_hotlog() noexcept;
-sacculus_coldlog_t* hs_ring_get_active_coldlog() noexcept;
+void   hs_ring_bind_active_logs(redjet_hotlog_t* hl, redjet_coldlog_t* cl);
+redjet_hotlog_t*  hs_ring_get_active_hotlog() noexcept;
+redjet_coldlog_t* hs_ring_get_active_coldlog() noexcept;
 
-void   hs_ring_hotlog_write(sacculus_hotlog_t* log,
+void   hs_ring_hotlog_write(redjet_hotlog_t* log,
                             HS_hotspot_event_category_e ev,
                             HS_hotspot_severity_e sev,
                             uint32_t fn_id, uint16_t slot, uint8_t gen, uint8_t reg,
@@ -276,7 +299,7 @@ void   hs_ring_hotlog_write(sacculus_hotlog_t* log,
                             const char* msg,
                             bool broadcast_raw = false);
 
-void   hs_ring_coldlog_write(sacculus_coldlog_t* log,
+void   hs_ring_coldlog_write(redjet_coldlog_t* log,
                              HS_hotspot_event_category_e ev,
                              HS_hotspot_severity_e sev,
                              uint32_t fn_id,
@@ -290,16 +313,16 @@ void   hs_ring_unified_emit(HS_hotspot_event_category_e ev,
                             const char* full_text,
                             bool broadcast_raw = false);
 
-size_t hs_flush_preboot_hotlog(sacculus_hotlog_t* hl, sacculus_coldlog_t* cl);
-size_t drain_hotlog_to_coldlog(sacculus_hotlog_t* hl, sacculus_coldlog_t* cl);
+size_t hs_flush_preboot_hotlog(redjet_hotlog_t* hl, redjet_coldlog_t* cl);
+size_t drain_hotlog_to_coldlog(redjet_hotlog_t* hl, redjet_coldlog_t* cl);
 
-static inline void sacculus_hotlog_write(sacculus_hotlog_t* log,
-                                         uint8_t ev, uint8_t sev,
-                                         uint32_t fid, uint16_t slot,
-                                         uint8_t gen, uint8_t reg,
-                                         uint16_t core, uint64_t sweep,
-                                         uint32_t val, const char* msg,
-                                         bool force_flush = false) {
+static inline void redjet_hotlog_write(redjet_hotlog_t* log,
+                                       uint8_t ev, uint8_t sev,
+                                       uint32_t fid, uint16_t slot,
+                                       uint8_t gen, uint8_t reg,
+                                       uint16_t core, uint64_t sweep,
+                                       uint32_t val, const char* msg,
+                                       bool force_flush = false) {
     if (log) {
         hs_ring_hotlog_write(log, static_cast<HS_hotspot_event_category_e>(ev),
                              static_cast<HS_hotspot_severity_e>(sev),
@@ -311,7 +334,53 @@ static inline void sacculus_hotlog_write(sacculus_hotlog_t* log,
     }
 }
 
-static inline void sacculus_hotlog_write(sacculus_hotlog_t* log,
+static inline void redjet_hotlog_write(redjet_hotlog_t* log,
+                                       HS_hotspot_event_category_e ev,
+                                       HS_hotspot_severity_e sev,
+                                       uint32_t fid, uint16_t slot,
+                                       uint8_t gen, uint8_t reg,
+                                       uint16_t core, uint64_t sweep,
+                                       uint32_t val, const char* msg,
+                                       bool force_flush = false) {
+    if (log) {
+        hs_ring_hotlog_write(log, ev, sev, fid, slot, gen, reg, core, sweep, val, msg, force_flush);
+    } else {
+        hs_hotlog_emit(ev, sev, fid, slot, gen, reg, core, sweep, val, msg);
+    }
+}
+
+static inline void rj_hotlog_write(redjet_hotlog_t* log,
+                                   uint8_t ev, uint8_t sev,
+                                   uint32_t fid, uint16_t slot,
+                                   uint8_t gen, uint8_t reg,
+                                   uint16_t core, uint64_t sweep,
+                                   uint32_t val, const char* msg,
+                                   bool force_flush = false) {
+    redjet_hotlog_write(log, ev, sev, fid, slot, gen, reg, core, sweep, val, msg, force_flush);
+}
+
+static inline void rj_hotlog_write(redjet_hotlog_t* log,
+                                   HS_hotspot_event_category_e ev,
+                                   HS_hotspot_severity_e sev,
+                                   uint32_t fid, uint16_t slot,
+                                   uint8_t gen, uint8_t reg,
+                                   uint16_t core, uint64_t sweep,
+                                   uint32_t val, const char* msg,
+                                   bool force_flush = false) {
+    redjet_hotlog_write(log, ev, sev, fid, slot, gen, reg, core, sweep, val, msg, force_flush);
+}
+
+static inline void sacculus_hotlog_write(redjet_hotlog_t* log,
+                                         uint8_t ev, uint8_t sev,
+                                         uint32_t fid, uint16_t slot,
+                                         uint8_t gen, uint8_t reg,
+                                         uint16_t core, uint64_t sweep,
+                                         uint32_t val, const char* msg,
+                                         bool force_flush = false) {
+    redjet_hotlog_write(log, ev, sev, fid, slot, gen, reg, core, sweep, val, msg, force_flush);
+}
+
+static inline void sacculus_hotlog_write(redjet_hotlog_t* log,
                                          HS_hotspot_event_category_e ev,
                                          HS_hotspot_severity_e sev,
                                          uint32_t fid, uint16_t slot,
@@ -319,11 +388,7 @@ static inline void sacculus_hotlog_write(sacculus_hotlog_t* log,
                                          uint16_t core, uint64_t sweep,
                                          uint32_t val, const char* msg,
                                          bool force_flush = false) {
-    if (log) {
-        hs_ring_hotlog_write(log, ev, sev, fid, slot, gen, reg, core, sweep, val, msg, force_flush);
-    } else {
-        hs_hotlog_emit(ev, sev, fid, slot, gen, reg, core, sweep, val, msg);
-    }
+    redjet_hotlog_write(log, ev, sev, fid, slot, gen, reg, core, sweep, val, msg, force_flush);
 }
 
 

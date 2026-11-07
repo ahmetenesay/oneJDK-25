@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -306,7 +306,14 @@ class SerializeClosure;
   template(jdk_internal_vm_annotation_JvmtiHideEvents_signature,       "Ljdk/internal/vm/annotation/JvmtiHideEvents;")  \
   template(jdk_internal_vm_annotation_JvmtiMountTransition_signature,  "Ljdk/internal/vm/annotation/JvmtiMountTransition;")  \
                                                                                                    \
-  /* Redjet SFVM Heritage Execution & Pinning Annotations */                                       \
+  /* Redjet Annotations */                                                                         \
+  template(jdk_gc_redjet_RedjetBatchExec_signature,                    "Ljdk/gc/redjet/RedjetBatchExec;")             \
+  template(jdk_gc_redjet_RedjetNestedExec_signature,                   "Ljdk/gc/redjet/RedjetNestedExec;")            \
+  template(jdk_gc_redjet_RedjetBypassWarmup_signature,                 "Ljdk/gc/redjet/RedjetBypassWarmup;")          \
+  template(jdk_gc_redjet_RedjetExemptPin_signature,                    "Ljdk/gc/redjet/RedjetExemptPin;")             \
+  template(jdk_gc_redjet_RJGC_signature,                               "Ljdk/gc/redjet/RJGC;")                         \
+  template(jdk_gc_redjet_PrecisionTarget_signature,                    "Ljdk/gc/redjet/PrecisionTarget;")              \
+  /* Legacy aliases for backward compatibility */                                                  \
   template(org_wlft_hsvm_annotation_RedjetBatchExec_signature,         "Lorg/wlft/hsvm/annotation/RedjetBatchExec;")    \
   template(org_wlft_hsvm_annotation_RedjetNestedExec_signature,        "Lorg/wlft/hsvm/annotation/RedjetNestedExec;")   \
   template(org_wlft_hsvm_annotation_RedjetBypassWarmup_signature,      "Lorg/wlft/hsvm/annotation/RedjetBypassWarmup;") \

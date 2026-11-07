@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -1803,12 +1803,38 @@ RJ_API void msimd_numa_free(void* ptr, size_t size) {
     HS_hotspot_numa_free(ptr, size, 0);
 }
 
+RJ_API void* rj_numa_alloc(size_t size, uint32_t numa_node) {
+    return HS_hotspot_numa_alloc(size, (uint8_t)numa_node);
+}
+
+RJ_API void rj_numa_free(void* ptr, size_t size) {
+    HS_hotspot_numa_free(ptr, size, 0);
+}
+
+RJ_API void* rj_simd_numa_alloc(size_t size, uint32_t numa_node) {
+    return HS_hotspot_numa_alloc(size, (uint8_t)numa_node);
+}
+
+RJ_API void rj_simd_numa_free(void* ptr, size_t size) {
+    HS_hotspot_numa_free(ptr, size, 0);
+}
+
 RJ_API int hs_thread_pin_to_numa_node(uint32_t numa_node) {
     (void)numa_node;
     return 0;
 }
 
 RJ_API int msimd_thread_pin_to_numa_node(uint32_t numa_node) {
+    (void)numa_node;
+    return 0;
+}
+
+RJ_API int rj_thread_pin_to_numa_node(uint32_t numa_node) {
+    (void)numa_node;
+    return 0;
+}
+
+RJ_API int rj_simd_thread_pin_to_numa_node(uint32_t numa_node) {
     (void)numa_node;
     return 0;
 }

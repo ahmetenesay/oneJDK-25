@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -310,6 +310,24 @@ RJ_API void sacculus_coldlog_write(void* log,
     (void)log;
     (void)broadcast_raw;
     hs_unified_log_emit(ev, sev, fn_id, nullptr, msg);
+}
+
+RJ_API void rj_coldlog_write(void* log,
+                                HS_hotspot_event_category_e ev,
+                                HS_hotspot_severity_e sev,
+                                uint32_t fn_id,
+                                const char* msg,
+                                bool broadcast_raw) {
+    sacculus_coldlog_write(log, ev, sev, fn_id, msg, broadcast_raw);
+}
+
+RJ_API void redjet_coldlog_write(void* log,
+                                    HS_hotspot_event_category_e ev,
+                                    HS_hotspot_severity_e sev,
+                                    uint32_t fn_id,
+                                    const char* msg,
+                                    bool broadcast_raw) {
+    sacculus_coldlog_write(log, ev, sev, fn_id, msg, broadcast_raw);
 }
 
 RJ_API size_t HS_hotspot_hotlog_format_cli(const HS_hotspot_hotlog_entry_t* entry,

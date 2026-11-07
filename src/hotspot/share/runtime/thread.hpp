@@ -633,6 +633,12 @@ protected:
     return cur != nullptr && cur->in_asgct();
   }
 
+  // PointCoordinator 2-Point Poll Support (PLAN.md Section 8.2)
+  virtual uint8_t park_flag() const { return 0; }
+  virtual void set_park_flag(uint8_t val) { (void)val; }
+  virtual uint8_t dock_flag() const { return 0; }
+  virtual void set_dock_flag(uint8_t val) { (void)val; }
+
  private:
   VMErrorCallback* _vm_error_callbacks;
 };

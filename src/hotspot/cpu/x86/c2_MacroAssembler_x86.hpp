@@ -360,6 +360,11 @@ public:
 
   void vector_castD2X_avx10(BasicType to_elem_bt, XMMRegister dst, Address src, int vec_enc);
 
+  // AVX10.1 & AVX10.2 / APX hardware intrinsics
+  void vector_minmax_fp_avx10(int opc, BasicType elem_bt, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vec_enc);
+  void vector_cast_sat_avx10(BasicType from_bt, BasicType to_bt, XMMRegister dst, XMMRegister src, int vec_enc);
+  void apx_ndd_binary_op(int opcode, Register dst, Register src1, Register src2);
+
   void vector_cast_double_to_int_special_cases_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
                                                    XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5, Register rscratch,
                                                    AddressLiteral float_sign_flip, int vec_enc);

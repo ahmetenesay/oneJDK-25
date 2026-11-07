@@ -73,17 +73,26 @@
 #endif
 #endif
 
-#ifndef SACCULUS_NOW_NS_DEFINED
-#define SACCULUS_NOW_NS_DEFINED
-static inline uint64_t sacculus_now_ns() noexcept {
+#ifndef RJ_NOW_NS_DEFINED
+#define RJ_NOW_NS_DEFINED
+static inline uint64_t rj_now_ns() noexcept {
     return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 }
+static inline uint64_t redjet_now_ns() noexcept {
+    return rj_now_ns();
+}
+#ifndef SACCULUS_NOW_NS_DEFINED
+#define SACCULUS_NOW_NS_DEFINED
+static inline uint64_t sacculus_now_ns() noexcept {
+    return rj_now_ns();
+}
+#endif
 #endif
 
-#ifndef SACCULUS_RDTSC_DEFINED
-#define SACCULUS_RDTSC_DEFINED
-static inline uint64_t sacculus_rdtsc() noexcept {
+#ifndef RJ_RDTSC_DEFINED
+#define RJ_RDTSC_DEFINED
+static inline uint64_t rj_rdtsc() noexcept {
 #if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
 #if defined(_MSC_VER)
     return __rdtsc();
@@ -101,9 +110,18 @@ static inline uint64_t sacculus_rdtsc() noexcept {
 #endif
     return val;
 #else
-    return sacculus_now_ns();
+    return rj_now_ns();
 #endif
 }
+static inline uint64_t redjet_rdtsc() noexcept {
+    return rj_rdtsc();
+}
+#ifndef SACCULUS_RDTSC_DEFINED
+#define SACCULUS_RDTSC_DEFINED
+static inline uint64_t sacculus_rdtsc() noexcept {
+    return rj_rdtsc();
+}
+#endif
 #endif
 
 #ifndef RJ_API
@@ -114,8 +132,14 @@ static inline uint64_t sacculus_rdtsc() noexcept {
 #endif
 #endif
 
+#ifndef RJ_ALIGN_CL
+#define RJ_ALIGN_CL alignas(64)
+#endif
+#ifndef REDJET_ALIGN_CL
+#define REDJET_ALIGN_CL RJ_ALIGN_CL
+#endif
 #ifndef SACFOR_ALIGN_CL
-#define SACFOR_ALIGN_CL alignas(64)
+#define SACFOR_ALIGN_CL RJ_ALIGN_CL
 #endif
 
 #ifndef HS_TICKET_LOCK_T_DEFINED
@@ -132,7 +156,7 @@ static inline void hs_ring_cpu_pause() noexcept {
 #endif
 }
 
-struct SACFOR_ALIGN_CL hs_ticket_lock_t {
+struct RJ_ALIGN_CL hs_ticket_lock_t {
     alignas(64) std::atomic<uint32_t> next_ticket{ 0 };
     alignas(64) std::atomic<uint32_t> now_serving{ 0 };
 
@@ -298,7 +322,12 @@ typedef enum HS_hotspot_severity_e {
 /* 4. ROOMS & REGIONS CONSTANTS                                              */
 /* ========================================================================= */
 
+#define RJ_ROOM_COUNT       4
+#define REDJET_ROOM_COUNT   4
 #define SACFOR_ROOM_COUNT   4
+
+#define RJ_REGION_COUNT     8
+#define REDJET_REGION_COUNT 8
 #define SACFOR_REGION_COUNT 8
 
 typedef enum hs_room_id_t {
@@ -313,7 +342,7 @@ typedef enum hs_room_id_t {
 /* ========================================================================= */
 
 #pragma pack(push, 1)
-typedef struct SACFOR_ALIGN_CL HS_hotspot_hotlog_entry_t {
+typedef struct RJ_ALIGN_CL HS_hotspot_hotlog_entry_t {
     uint64_t ts_ns;
     uint64_t tsc;
     uint64_t gc_sweep_no;
@@ -334,7 +363,7 @@ static_assert(sizeof(HS_hotspot_hotlog_entry_t) == 64,
     "HS_hotspot_hotlog_entry_t must be exactly 64 bytes");
 
 #pragma pack(push, 1)
-typedef struct SACFOR_ALIGN_CL HS_hotspot_coldlog_entry_t {
+typedef struct RJ_ALIGN_CL HS_hotspot_coldlog_entry_t {
     uint64_t ts_ns;
     uint32_t fn_id;
     uint8_t  event;     // HS_Ebin0_*
@@ -387,6 +416,20 @@ RJ_API void sacculus_coldlog_write(void* log,
                                       const char* msg,
                                       bool broadcast_raw = true);
 
+RJ_API void rj_coldlog_write(void* log,
+                                HS_hotspot_event_category_e ev,
+                                HS_hotspot_severity_e sev,
+                                uint32_t fn_id,
+                                const char* msg,
+                                bool broadcast_raw = true);
+
+RJ_API void redjet_coldlog_write(void* log,
+                                    HS_hotspot_event_category_e ev,
+                                    HS_hotspot_severity_e sev,
+                                    uint32_t fn_id,
+                                    const char* msg,
+                                    bool broadcast_raw = true);
+
 RJ_API size_t HS_hotspot_hotlog_format_cli(const HS_hotspot_hotlog_entry_t* entry,
                                                   char* buffer, size_t buffer_size);
 RJ_API size_t HS_hotspot_hotlog_format_json(const HS_hotspot_hotlog_entry_t* entry,
@@ -425,7 +468,7 @@ typedef struct HS_hotspot_point_telemetry_t {
     uint64_t pausepoint_preemptions;
 } HS_hotspot_point_telemetry_t;
 
-struct SACFOR_ALIGN_CL hs_point_coordinator_t {
+struct RJ_ALIGN_CL hs_point_coordinator_t {
     // 1. Safepoint: In-flight cooperative kernel rendezvous ticket
     alignas(64) std::atomic<uint64_t> safepoint_polls{ 0 };
     alignas(64) std::atomic<uint64_t> safepoint_rendezvous_stalls{ 0 };

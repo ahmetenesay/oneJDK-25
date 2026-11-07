@@ -32,6 +32,7 @@
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetAssembler.hpp"
 #include "gc/shared/collectedHeap.inline.hpp"
+#include "gc/shared/gc_globals.hpp"
 #include "gc/shared/tlab_globals.hpp"
 #include "interpreter/bytecodeHistogram.hpp"
 #include "interpreter/interpreter.hpp"
@@ -2467,6 +2468,14 @@ void MacroAssembler::round_to(Register reg, int modulus) {
 }
 
 void MacroAssembler::safepoint_poll(Label& slow_path, bool at_return, bool in_nmethod) {
+#if INCLUDE_REDJETGC
+  if (UseRedjetGC) {
+    // 0.5 cycle L1-D cache test on JavaThread park flag (PLAN.md Sec 8.2)
+    testb(Address(r15_thread, JavaThread::park_flag_offset()), 1);
+    jcc(Assembler::notZero, slow_path);
+    return;
+  }
+#endif
   if (at_return) {
     // Note that when in_nmethod is set, the stack pointer is incremented before the poll. Therefore,
     // we may safely use rsp instead to perform the stack watermark check.
@@ -9791,3 +9800,80 @@ void MacroAssembler::setcc(Assembler::Condition comparison, Register dst) {
     movzbl(dst, dst);
   }
 }
+
+void MacroAssembler::addq_ndd(Register dst, Register src1, Register src2) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  addq(dst, src2);
+}
+
+void MacroAssembler::addq_ndd(Register dst, Register src1, Address src2) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  addq(dst, src2);
+}
+
+void MacroAssembler::addq_ndd(Register dst, Register src1, int32_t imm32) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  addq(dst, imm32);
+}
+
+void MacroAssembler::subq_ndd(Register dst, Register src1, Register src2) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  subq(dst, src2);
+}
+
+void MacroAssembler::subq_ndd(Register dst, Register src1, Address src2) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  subq(dst, src2);
+}
+
+void MacroAssembler::andq_ndd(Register dst, Register src1, Register src2) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  andq(dst, src2);
+}
+
+void MacroAssembler::orq_ndd(Register dst, Register src1, Register src2) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  orq(dst, src2);
+}
+
+void MacroAssembler::xorq_ndd(Register dst, Register src1, Register src2) {
+  if (dst != src1) {
+    movq(dst, src1);
+  }
+  xorq(dst, src2);
+}
+
+void MacroAssembler::addq_nf(Register dst, Register src) {
+  addq(dst, src);
+}
+
+void MacroAssembler::subq_nf(Register dst, Register src) {
+  subq(dst, src);
+}
+
+void MacroAssembler::andq_nf(Register dst, Register src) {
+  andq(dst, src);
+}
+
+void MacroAssembler::orq_nf(Register dst, Register src) {
+  orq(dst, src);
+}
+
+void MacroAssembler::xorq_nf(Register dst, Register src) {
+  xorq(dst, src);
+}
+

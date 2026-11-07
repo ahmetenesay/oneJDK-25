@@ -56,6 +56,10 @@
 #include "gc/redjet/runtime/redjet_globals.hpp"
 #include "gc/redjet/puzzler/redjetCoach.hpp"
 #include "gc/redjet/puzzler/redjetSelfAdvanceHooks.hpp"
+#include "gc/redjet/vfs/redjetVFSTree.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_ParkArena.hpp"
+#include "gc/redjet/allocator/redjet_mltc.hpp"
+#include "gc/redjet/api/redjetTailTraces.hpp"
 #include "logging/log.hpp"
 #include "memory/universe.hpp"
 #include "runtime/globals.hpp"
@@ -593,6 +597,103 @@ bool RedjetPointCoordinator::verify_dockpoint_canary(void* obj_ptr) {
   if (!obj_ptr) return false;
   g_coord.dockpoint_canary_checks.fetch_add(1, std::memory_order_relaxed);
   return inspect_and_verify_object(obj_ptr);
+}
+
+/* ========================================================================= */
+/* 6. TIER 1 DIRECT STATIC COUPLING & HOT-SWAP COORDINATION                   */
+/* ========================================================================= */
+
+void RedjetPointCoordinator::on_jni_park_enter(JavaThread* thread) {
+  if (thread == nullptr) return;
+  thread->set_park_flag(1);
+  g_coord.parkpoint_polls.fetch_add(1, std::memory_order_relaxed);
+
+  RedjetHeap* heap = RedjetHeap::heap();
+  if (heap != nullptr && heap->vfs_tree() != nullptr) {
+    RedjetVFSNode_ParkArena* park_arena = static_cast<RedjetVFSNode_ParkArena*>(heap->vfs_tree()->find_node("/heap/on_heap/park_arena"));
+    if (park_arena != nullptr) {
+      park_arena->pin_native_buffer(thread, sizeof(JavaThread), static_cast<uint32_t>(os::current_thread_id()));
+    }
+  }
+  OrderAccess::storestore();
+}
+
+void RedjetPointCoordinator::on_jni_park_exit(JavaThread* thread) {
+  if (thread == nullptr) return;
+  RedjetHeap* heap = RedjetHeap::heap();
+  if (heap != nullptr && heap->vfs_tree() != nullptr) {
+    RedjetVFSNode_ParkArena* park_arena = static_cast<RedjetVFSNode_ParkArena*>(heap->vfs_tree()->find_node("/heap/on_heap/park_arena"));
+    if (park_arena != nullptr) {
+      park_arena->unpin_native_buffer(thread);
+    }
+  }
+  thread->set_park_flag(0);
+  OrderAccess::fence();
+}
+
+void RedjetPointCoordinator::on_park_point_hit(JavaThread* thread, int reason) {
+  if (thread == nullptr) return;
+  g_coord.parkpoint_polls.fetch_add(1, std::memory_order_relaxed);
+
+  if (g_coord.park_active_refcount.load(std::memory_order_acquire) > 0) {
+    parkpoint_poll(thread, nullptr);
+  }
+
+  if (g_redjet_parkpoint_active_flag == 0) {
+    thread->set_park_flag(0);
+  }
+  OrderAccess::fence();
+}
+
+void RedjetPointCoordinator::on_dock_point_hit(JavaThread* thread, int reason) {
+  if (thread == nullptr) return;
+  g_coord.dockpoint_triggers.fetch_add(1, std::memory_order_relaxed);
+
+  switch (reason) {
+    case 0: // DOCK_REASON_METHOD_ENTRY
+      if (thread->has_last_Java_frame()) {
+        verify_dockpoint_canary(thread);
+      }
+      break;
+    case 1: // DOCK_REASON_ALLOC_TLAB
+    case 2: // DOCK_REASON_ALLOC_SLOW
+      g_hs_mltc_solver.pace_mutator_allocation(64 * 1024, static_cast<uint32_t>(os::current_thread_id()));
+      break;
+    case 3: // DOCK_REASON_METHOD_EXIT
+    case 4: // DOCK_REASON_TAILTRACES
+      g_coord.dockpoint_falline_drains.fetch_add(1, std::memory_order_relaxed);
+      break;
+    default:
+      break;
+  }
+
+  if (g_redjet_dockpoint_pressure_level == 0) {
+    thread->set_dock_flag(0);
+  }
+  OrderAccess::fence();
+}
+
+bool RedjetPointCoordinator::coordinate_slot16_hotswap(void* slot16_addr, void* new_target_slot) {
+  if (slot16_addr == nullptr || new_target_slot == nullptr) return false;
+
+  int32_t rel_offset = static_cast<int32_t>(
+      reinterpret_cast<intptr_t>(new_target_slot) - (reinterpret_cast<intptr_t>(slot16_addr) + 5));
+
+  uint64_t patch = 0;
+  uint8_t* p = reinterpret_cast<uint8_t*>(&patch);
+  p[0] = 0xE9; // JMP rel32 opcode
+  std::memcpy(&p[1], &rel_offset, 4);
+  p[5] = 0x90; // NOP
+  p[6] = 0x90; // NOP
+  p[7] = 0x90; // NOP
+
+  Atomic::store(reinterpret_cast<volatile uint64_t*>(slot16_addr), patch);
+
+  flush_icache(reinterpret_cast<address>(slot16_addr), 8);
+  sync_point();
+
+  g_coord.c1_heat_reports.fetch_add(1, std::memory_order_relaxed);
+  return true;
 }
 
 /* ========================================================================= */

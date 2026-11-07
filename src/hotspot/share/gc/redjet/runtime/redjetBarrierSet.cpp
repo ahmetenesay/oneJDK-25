@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -34,6 +34,7 @@
 #ifdef COMPILER2
 #include "gc/redjet/runtime/redjetBarrierSetC2.hpp"
 #endif
+#include "gc/redjet/runtime/redjetBarrierSetNMethod.hpp"
 
 class RedjetBarrierSetC1;
 class RedjetBarrierSetC2;
@@ -42,7 +43,7 @@ RedjetBarrierSet::RedjetBarrierSet() : BarrierSet(
           make_barrier_set_assembler<RedjetBarrierSetAssembler>(),
           make_barrier_set_c1<RedjetBarrierSetC1>(),
           make_barrier_set_c2<RedjetBarrierSetC2>(),
-          nullptr /* barrier_set_nmethod */,
+          make_barrier_set_nmethod<RedjetBarrierSetNMethod>(),
           nullptr /* barrier_set_stack_chunk */,
           BarrierSet::FakeRtti(BarrierSet::RedjetBarrierSet)) {}
 

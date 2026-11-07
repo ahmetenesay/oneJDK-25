@@ -29,6 +29,21 @@
 #include "gc/redjet/vfs/redjetVFSNode_RPSS.hpp"
 #include "gc/redjet/vfs/redjetVFSNode_CodeBoot.hpp"
 #include "gc/redjet/vfs/redjetVFSNode_Pitstop.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_RunwayEgg.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_RunwayFledgling.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_Falline.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_PuzzleArena.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_Landfill.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_LogBoot.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_ReservedBoot.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_Hotfield.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_ParkArena.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_CCDRunway.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_StripedRunway.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_HeaderPane.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_RawCodeCell.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_VacCodeChunk.hpp"
+#include "gc/redjet/vfs/redjetVFSNode_MircCodePage.hpp"
 #ifdef REDJET_STANDALONE_BUILD
 #include "gc/redjet/runtime/redjetFlags.hpp"
 static const bool RedjetVFSStrict = true;
@@ -54,11 +69,26 @@ void RedjetVFSTree::init() {
   _root = new RedjetVFSNode("/", "/");
   unlock();
 
+  RedjetVFSNode* on_heap = mkdir_p("/heap/on_heap");
+  RedjetVFSNode* runway = mkdir_p("/heap/on_heap/runway");
+  RedjetVFSNode* motherline = mkdir_p("/heap/on_heap/runway/motherline");
+
   // 1. Motherline Egg (Newborn unoptimized generation)
+  if (motherline != nullptr) {
+    _egg_controller = new RedjetVFSNode_RunwayEgg("egg", "/heap/on_heap/runway/motherline/egg", motherline);
+    motherline->_children.append(_egg_controller);
+  }
   mkdir_p("/heap/on_heap/runway/motherline/egg/young/tank");
   mkdir_p("/heap/on_heap/runway/motherline/egg/young/demand");
   mkdir_p("/heap/on_heap/runway/motherline/egg/young/middle");
-  mkdir_p("/heap/on_heap/runway/motherline/egg/young/hotfield");
+
+  // Wire Hotfield Size-Segregated Allocator into young/hotfield
+  RedjetVFSNode* egg_young = mkdir_p("/heap/on_heap/runway/motherline/egg/young");
+  if (egg_young != nullptr) {
+    _hotfield_controller = new RedjetVFSNode_Hotfield("hotfield", "/heap/on_heap/runway/motherline/egg/young/hotfield", egg_young);
+    egg_young->_children.append(_hotfield_controller);
+  }
+
   mkdir_p("/heap/on_heap/runway/motherline/egg/adolescent/tank");
   mkdir_p("/heap/on_heap/runway/motherline/egg/adolescent/demand");
   mkdir_p("/heap/on_heap/runway/motherline/egg/adolescent/middle");
@@ -69,6 +99,10 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/runway/motherline/egg/senior/hotfield");
 
   // 2. Motherline Fledgling (Optimized generation)
+  if (motherline != nullptr) {
+    _fledgling_controller = new RedjetVFSNode_RunwayFledgling("fledgling", "/heap/on_heap/runway/motherline/fledgling", motherline);
+    motherline->_children.append(_fledgling_controller);
+  }
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/young/tank");
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/young/demand");
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/young/middle");
@@ -83,47 +117,82 @@ void RedjetVFSTree::init() {
   mkdir_p("/heap/on_heap/runway/motherline/fledgling/senior/hotfield");
 
   // 3. Optimization Lobby (Pitstop Memory Controller)
-  RedjetVFSNode* runway = mkdir_p("/heap/on_heap/runway");
   if (runway != nullptr) {
     _pitstop_controller = new RedjetVFSNode_Pitstop("pitstop", "/heap/on_heap/runway/pitstop", runway);
     runway->_children.append(_pitstop_controller);
+
+    _ccd_runway_controller = new RedjetVFSNode_CCDRunway("ccd_runways", "/heap/on_heap/runway/ccd_runways", runway);
+    runway->_children.append(_ccd_runway_controller);
+
+    _striped_runway_controller = new RedjetVFSNode_StripedRunway("striped", "/heap/on_heap/runway/striped", runway);
+    runway->_children.append(_striped_runway_controller);
   }
-  mkdir_p("/heap/on_heap/runway/ccd_runways");
-  mkdir_p("/heap/on_heap/runway/striped");
 
-  // 4. Pretrashing Coffin
-  mkdir_p("/heap/on_heap/runway/falline");
+  // 4. Pretrashing Coffin (Falline Controller)
+  if (runway != nullptr) {
+    _falline_controller = new RedjetVFSNode_Falline("falline", "/heap/on_heap/runway/falline", runway);
+    runway->_children.append(_falline_controller);
+  }
 
-  // 5. Puzzle(Coach) Arena - Optimization Race(measuring)
+  // 5. Puzzle(Coach) Arena - Optimization Race (measuring)
+  if (on_heap != nullptr) {
+    _puzzle_arena_controller = new RedjetVFSNode_PuzzleArena("puzzle_arena", "/heap/on_heap/puzzle_arena", on_heap);
+    on_heap->_children.append(_puzzle_arena_controller);
+  }
   mkdir_p("/heap/on_heap/puzzle_arena/stagnant");
   mkdir_p("/heap/on_heap/puzzle_arena/eval");
 
   // 6. Park Arena (Branch 40) - Java <-> Native Pinned Buffer Transitions (is_pinned = 1)
-  mkdir_p("/heap/on_heap/park_arena");
+  if (on_heap != nullptr) {
+    _park_arena_controller = new RedjetVFSNode_ParkArena("park_arena", "/heap/on_heap/park_arena", on_heap);
+    on_heap->_children.append(_park_arena_controller);
+  }
 
   // 7. Landfill (Matured, Rehabilitation & Meta Storage)
+  if (on_heap != nullptr) {
+    _landfill_controller = new RedjetVFSNode_Landfill("landfill", "/heap/on_heap/landfill", on_heap);
+    on_heap->_children.append(_landfill_controller);
+
+    _header_pane_controller = new RedjetVFSNode_HeaderPane("header_pane", "/heap/on_heap/landfill/header_pane", _landfill_controller);
+    _landfill_controller->_children.append(_header_pane_controller);
+  }
   mkdir_p("/heap/on_heap/landfill/trash_pit/matured");
   mkdir_p("/heap/on_heap/landfill/trash_pit/rehab");
-  mkdir_p("/heap/on_heap/landfill/header_pane");
 
-  // 8. Reference Harbingers(TailTraces Signals) Storage - Reference Predicting Signal Storage
-  RedjetVFSNode* on_heap = mkdir_p("/heap/on_heap");
+  // 8. Reference Harbingers (TailTraces Signals) Storage - Reference Predicting Signal Storage
   if (on_heap != nullptr) {
     _rpss_controller = new RedjetVFSNode_RPSS("rpss", "/heap/on_heap/rpss", on_heap);
     on_heap->_children.append(_rpss_controller);
   }
 
-  // 9. Off-Heap Pieces (CodeBoot W^X Controller)
+  // 9. Off-Heap Pieces (CodeBoot W^X Controller, LogBoot, ReservedBoot)
   RedjetVFSNode* off_heap = mkdir_p("/heap/off_heap");
   if (off_heap != nullptr) {
     _codeboot_controller = new RedjetVFSNode_CodeBoot("code_boot", "/heap/off_heap/code_boot", off_heap);
     off_heap->_children.append(_codeboot_controller);
+
+    _rawcode_cell_controller = new RedjetVFSNode_RawCodeCell("rawcode_cell", "/heap/off_heap/code_boot/rawcode_cell", _codeboot_controller);
+    _codeboot_controller->_children.append(_rawcode_cell_controller);
+
+    _vac_chunk_controller = new RedjetVFSNode_VacCodeChunk("vac_processed_code_chunk", "/heap/off_heap/code_boot/vac_processed_code_chunk", _codeboot_controller);
+    _codeboot_controller->_children.append(_vac_chunk_controller);
+
+    _mirc_codepage_controller = new RedjetVFSNode_MircCodePage("mirc_execution_ready_page", "/heap/off_heap/code_boot/mirc_execution_ready_page", _codeboot_controller);
+    _codeboot_controller->_children.append(_mirc_codepage_controller);
+
+    mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl1");
+    mkdir_p("/heap/off_heap/code_boot/mirc_execution_ready_page/lvl2");
+
+    _logboot_controller = new RedjetVFSNode_LogBoot("log_boot", "/heap/off_heap/log_boot", off_heap);
+    off_heap->_children.append(_logboot_controller);
+
+    _reserved_boot_controller = new RedjetVFSNode_ReservedBoot("reserved_boot", "/heap/off_heap/reserved_boot", off_heap);
+    off_heap->_children.append(_reserved_boot_controller);
   }
   mkdir_p("/heap/off_heap/log_boot/hotlog");
   mkdir_p("/heap/off_heap/log_boot/coldlog");
-  mkdir_p("/heap/off_heap/reserved_boot");
 
-  log_info(gc, init)("Redjet VFS Memory Tree: Initialized hierarchical heap branches with dedicated node controllers");
+  log_info(gc, init)("Redjet VFS Memory Tree: Initialized all 40 hierarchical heap branches with dedicated node controllers");
 }
 
 void RedjetVFSTree::destroy() {
@@ -131,6 +200,21 @@ void RedjetVFSTree::destroy() {
   _rpss_controller = nullptr;
   _codeboot_controller = nullptr;
   _pitstop_controller = nullptr;
+  _egg_controller = nullptr;
+  _fledgling_controller = nullptr;
+  _falline_controller = nullptr;
+  _puzzle_arena_controller = nullptr;
+  _landfill_controller = nullptr;
+  _logboot_controller = nullptr;
+  _reserved_boot_controller = nullptr;
+  _hotfield_controller = nullptr;
+  _park_arena_controller = nullptr;
+  _ccd_runway_controller = nullptr;
+  _striped_runway_controller = nullptr;
+  _header_pane_controller = nullptr;
+  _rawcode_cell_controller = nullptr;
+  _vac_chunk_controller = nullptr;
+  _mirc_codepage_controller = nullptr;
   if (_root != nullptr) {
     delete _root;
     _root = nullptr;
@@ -268,6 +352,78 @@ RedjetVFSNode* RedjetVFSTree::find_node(const char* path) {
 size_t RedjetVFSTree::get_used_bytes(const char* path) {
   RedjetVFSNode* n = find_node(path);
   return n != nullptr ? n->used() : 0;
+}
+
+void RedjetVFSTree::record_domain_alloc(RedjetMemoryDomain domain, bool on_heap, size_t bytes) noexcept {
+  if (bytes == 0) return;
+  if (domain == RedjetMemoryDomain::JAVA_MEMORY) {
+    if (on_heap) _java_on_heap_bytes.fetch_add(bytes, std::memory_order_relaxed);
+    else         _java_off_heap_bytes.fetch_add(bytes, std::memory_order_relaxed);
+  } else {
+    if (on_heap) _hotspot_on_heap_bytes.fetch_add(bytes, std::memory_order_relaxed);
+    else         _hotspot_off_heap_bytes.fetch_add(bytes, std::memory_order_relaxed);
+  }
+}
+
+void RedjetVFSTree::record_domain_free(RedjetMemoryDomain domain, bool on_heap, size_t bytes) noexcept {
+  if (bytes == 0) return;
+  std::atomic<size_t>& target =
+      (domain == RedjetMemoryDomain::JAVA_MEMORY)
+          ? (on_heap ? _java_on_heap_bytes : _java_off_heap_bytes)
+          : (on_heap ? _hotspot_on_heap_bytes : _hotspot_off_heap_bytes);
+  size_t cur = target.load(std::memory_order_relaxed);
+  while (cur > 0) {
+    size_t next = (cur >= bytes) ? (cur - bytes) : 0;
+    if (target.compare_exchange_weak(cur, next, std::memory_order_relaxed)) {
+      break;
+    }
+  }
+}
+
+void RedjetVFSTree::record_path_alloc(const char* path, size_t bytes) noexcept {
+  if (path == nullptr || bytes == 0) return;
+  RedjetVFSNode* n = find_node(path);
+  if (n != nullptr) {
+    n->add_used(bytes);
+    record_domain_alloc(n->_domain, n->_is_on_heap, bytes);
+  } else {
+    record_domain_alloc(RedjetVFSNode::classify_domain_for_path(path),
+                        RedjetVFSNode::classify_on_heap_for_path(path),
+                        bytes);
+  }
+}
+
+void RedjetVFSTree::record_path_free(const char* path, size_t bytes) noexcept {
+  if (path == nullptr || bytes == 0) return;
+  RedjetVFSNode* n = find_node(path);
+  if (n != nullptr) {
+    if (n->used() >= bytes) n->sub_used(bytes);
+    record_domain_free(n->_domain, n->_is_on_heap, bytes);
+  } else {
+    record_domain_free(RedjetVFSNode::classify_domain_for_path(path),
+                       RedjetVFSNode::classify_on_heap_for_path(path),
+                       bytes);
+  }
+}
+
+size_t RedjetVFSTree::domain_used_bytes(RedjetMemoryDomain domain, bool on_heap) const noexcept {
+  if (domain == RedjetMemoryDomain::JAVA_MEMORY) {
+    return on_heap ? _java_on_heap_bytes.load(std::memory_order_relaxed)
+                   : _java_off_heap_bytes.load(std::memory_order_relaxed);
+  }
+  return on_heap ? _hotspot_on_heap_bytes.load(std::memory_order_relaxed)
+                 : _hotspot_off_heap_bytes.load(std::memory_order_relaxed);
+}
+
+void RedjetVFSTree::print_domain_summary_on(outputStream* st) const {
+  if (st == nullptr) return;
+  st->print_cr("Redjet VFS Logical Domain Partition:");
+  st->print_cr("  java_memory    -> on_heap: %zu KB | off_heap (FFM/reserved_boot): %zu KB",
+               domain_used_bytes(RedjetMemoryDomain::JAVA_MEMORY, true) / 1024,
+               domain_used_bytes(RedjetMemoryDomain::JAVA_MEMORY, false) / 1024);
+  st->print_cr("  hotspot_memory -> on_heap (header_pane/rpss/puzzle): %zu KB | off_heap (code_boot/log_boot): %zu KB",
+               domain_used_bytes(RedjetMemoryDomain::HOTSPOT_MEMORY, true) / 1024,
+               domain_used_bytes(RedjetMemoryDomain::HOTSPOT_MEMORY, false) / 1024);
 }
 
 void RedjetVFSTree::print_node_recursive(outputStream* st, RedjetVFSNode* node, int indent) const {

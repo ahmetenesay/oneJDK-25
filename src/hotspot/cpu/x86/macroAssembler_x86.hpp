@@ -2065,6 +2065,22 @@ public:
   void save_legacy_gprs();
   void restore_legacy_gprs();
   void setcc(Assembler::Condition comparison, Register dst);
+
+  // APX NDD (Non-Destructive Destination) and NF (No-Flags) hardware intrinsics
+  void addq_ndd(Register dst, Register src1, Register src2);
+  void addq_ndd(Register dst, Register src1, Address src2);
+  void addq_ndd(Register dst, Register src1, int32_t imm32);
+  void subq_ndd(Register dst, Register src1, Register src2);
+  void subq_ndd(Register dst, Register src1, Address src2);
+  void andq_ndd(Register dst, Register src1, Register src2);
+  void orq_ndd(Register dst, Register src1, Register src2);
+  void xorq_ndd(Register dst, Register src1, Register src2);
+
+  void addq_nf(Register dst, Register src);
+  void subq_nf(Register dst, Register src);
+  void andq_nf(Register dst, Register src);
+  void orq_nf(Register dst, Register src);
+  void xorq_nf(Register dst, Register src);
 };
 
 #endif // CPU_X86_MACROASSEMBLER_X86_HPP

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -31,6 +31,7 @@
 #include <atomic>
 #include "gc/redjet/runtime/redjetGearkit.hpp"
 #include "gc/redjet/puzzler/redjetPuzzleArena.hpp"
+#include "jni.h"
 
 #ifndef RJ_API
 #if defined(_WIN32)
@@ -147,6 +148,10 @@ public:
                                 float requested_epsilon,
                                 char* out_error_buf = nullptr,
                                 size_t error_buf_sz = 0);
+
+    // PLAN.md Section 7.6: Bad Coder Safety Lock for BigDecimal/Currency/Finance APIs
+    static bool is_critical_financial_api(const char* class_name, const char* method_name) noexcept;
+    static float apply_bad_coder_safety_lock(const char* class_name, const char* method_name, float requested_epsilon) noexcept;
 };
 
 /* ========================================================================= */
@@ -168,6 +173,9 @@ RJ_API uint64_t SF_precision_guard_get_violations(void);
 RJ_API int      SF_precision_verifier_verify_descriptor(const char* desc, float eps, char* reason, size_t sz);
 RJ_API int      SF_precision_verifier_validate_method(const char* cls, const char* method, const char* desc,
                                                          float eps, char* err_buf, size_t sz);
+
+JNIEXPORT jfloat JNICALL Java_jdk_gc_redjet_PrecisionScope_enterPrecision0(JNIEnv* env, jclass clazz, jfloat epsilon);
+JNIEXPORT void   JNICALL Java_jdk_gc_redjet_PrecisionScope_exitPrecision0(JNIEnv* env, jclass clazz, jfloat prev_epsilon);
 
 #ifdef __cplusplus
 }

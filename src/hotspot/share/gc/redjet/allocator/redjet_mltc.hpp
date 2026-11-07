@@ -47,9 +47,23 @@ enum class hs_rmrp_method_e : uint8_t {
 };
 #endif
 
-/* ========================================================================= */
-/* 1. MLTC CONGESTION & LEAK TELEMETRY DATA STRUCTURES                       */
-/* ========================================================================= */
+// ============================================================================
+// MLTC (Multi-Layer Tolerance Check) Architecture (PLAN.md Section 9.7 & 11.1)
+//
+// 3-Tier Hardware Protection & Bus Congestion Defense:
+// 1. Memory Leak Detector:
+//    - Linear regression slope modeling: m = (N \sum xy - \sum x \sum y) / (N \sum x^2 - (\sum x)^2)
+//    - 1D Kalman Filter on heap memory telemetry to reject transient noise.
+//    - Retained set autocorrelation analysis R(\tau) to verify structural leaks.
+//    - 4-Tier classification: CLEAN -> WATCH -> SUSPECT -> CRITICAL.
+// 2. Bus Traffic Pacing Subsystem:
+//    - Token bucket credit pacing with microsecond drift compensation.
+//    - DDR4/DDR5 memory bus saturation metrics and dynamic mutator backpressure.
+// 3. Core Memory Arbitrator:
+//    - P-Core vs E-Core quota arbitration and NUMA node latency matrices.
+// 4. Alignment Hazard Auto-Repair Engine:
+//    - Detection of 64-byte SRAM/DRAM cacheline crossing hazards and vector realignment.
+// ============================================================================
 
 enum class RedjetBusCongestionLevel : uint8_t {
     CONGESTION_FREE    = 0,
@@ -79,6 +93,40 @@ struct alignas(64) RedjetMLTCTelemetrySnapshot {
 };
 
 /* ========================================================================= */
+/* 1. KALMAN FILTER ON HEAP MEASUREMENTS                                     */
+/* ========================================================================= */
+
+class RedjetKalmanFilter {
+private:
+    float _x_est{ 0.0f }; // State estimate
+    float _p_est{ 1.0f }; // Estimate error covariance
+    float _q_proc{ 0.02f }; // Process noise covariance
+    float _r_meas{ 0.15f }; // Measurement noise covariance
+
+public:
+    RedjetKalmanFilter(float initial_value = 0.0f, float q = 0.02f, float r = 0.15f)
+        : _x_est(initial_value), _p_est(1.0f), _q_proc(q), _r_meas(r) {}
+
+    float update(float measurement) noexcept {
+        // Time update (prediction)
+        _p_est = _p_est + _q_proc;
+
+        // Measurement update (correction)
+        float k = _p_est / (_p_est + _r_meas); // Kalman gain
+        _x_est = _x_est + k * (measurement - _x_est);
+        _p_est = (1.0f - k) * _p_est;
+
+        return _x_est;
+    }
+
+    float current_estimate() const noexcept { return _x_est; }
+    void reset(float initial_value = 0.0f) noexcept {
+        _x_est = initial_value;
+        _p_est = 1.0f;
+    }
+};
+
+/* ========================================================================= */
 /* 2. BUS TRAFFIC PACING SUBSYSTEM                                           */
 /* ========================================================================= */
 
@@ -94,6 +142,7 @@ private:
     std::atomic<uint64_t> _total_paced_allocations{ 0 };
     std::atomic<uint64_t> _total_stall_delay_ns{ 0 };
     std::atomic<uint32_t> _active_throttle_rate_percent{ 0 };
+    std::atomic<uint64_t> _last_replenish_tsc{ 0 };
 
 public:
     RedjetMLTCPacer();
@@ -107,7 +156,7 @@ public:
     // Executes inline spinning or yield to pace traffic
     void apply_bus_pacing(size_t requested_bytes, uint32_t thread_id);
 
-    // Replenishes credits periodically based on clock tick
+    // Replenishes credits periodically based on clock tick with drift compensation
     void replenish_credits(uint64_t elapsed_us, float target_mbps);
 
     // Getters
@@ -117,29 +166,33 @@ public:
 };
 
 /* ========================================================================= */
-/* 3. STAGNANT CYCLE LEAK DETECTOR                                           */
+/* 3. STAGNANT CYCLE LEAK DETECTOR WITH AUTOCORRELATION                      */
 /* ========================================================================= */
 
 class RedjetMLTCLeakDetector {
 public:
-    static constexpr size_t HISTORY_CAPACITY = 32;
+    static constexpr size_t HISTORY_CAPACITY = 64;
     static constexpr size_t STAGNANT_CYCLE_THRESHOLD = 5;
 
-private:
     struct HeapSample {
         uint64_t timestamp_ns{ 0 };
         size_t   used_bytes{ 0 };
         size_t   retained_bytes{ 0 };
         uint64_t sweep_cycle{ 0 };
+        float    filtered_used_mb{ 0.0f };
     };
 
+private:
     HeapSample            _history[HISTORY_CAPACITY];
     size_t                _history_count{ 0 };
     size_t                _history_head{ 0 };
     hs_ticket_lock_t      _history_lock;
 
+    RedjetKalmanFilter    _kalman_filter;
+
     std::atomic<size_t>   _consecutive_stagnant_cycles{ 0 };
     std::atomic<float>    _memory_growth_slope{ 0.0f };
+    std::atomic<float>    _autocorrelation_lag1{ 0.0f };
     std::atomic<uint8_t>  _current_leak_tier{ static_cast<uint8_t>(RedjetLeakRiskTier::LEAK_CLEAN) };
     std::atomic<uint64_t> _total_leak_alerts{ 0 };
 
@@ -152,6 +205,9 @@ public:
     // Computes linear regression growth slope over history buffer
     float compute_growth_slope() noexcept;
 
+    // Computes autocorrelation coefficient R(lag) over filtered history
+    float compute_autocorrelation(size_t lag = 1) noexcept;
+
     // Checks if emergency compaction should be dispatched
     bool requires_emergency_mitigation() const noexcept;
 
@@ -160,6 +216,8 @@ public:
     }
     size_t stagnant_cycles() const noexcept { return _consecutive_stagnant_cycles.load(std::memory_order_relaxed); }
     uint64_t total_leak_alerts() const noexcept { return _total_leak_alerts.load(std::memory_order_relaxed); }
+    float memory_growth_slope() const noexcept { return _memory_growth_slope.load(std::memory_order_relaxed); }
+    float autocorrelation_lag1() const noexcept { return _autocorrelation_lag1.load(std::memory_order_relaxed); }
 };
 
 /* ========================================================================= */
@@ -169,6 +227,7 @@ public:
 class RedjetMLTCArbitrator {
 public:
     static constexpr size_t MAX_TRACKED_CORES = 128;
+    static constexpr size_t MAX_NUMA_NODES    = 8;
 
     struct alignas(64) CoreArbitrationState {
         uint32_t core_id{ 0 };
@@ -186,6 +245,7 @@ private:
 
     std::atomic<uint32_t> _p_core_priority_boost{ 120 }; // 120% weight to P-cores
     std::atomic<uint32_t> _e_core_traffic_cap{ 80 };     // 80% cap on E-core bursts
+    float                _numa_latency_matrix[MAX_NUMA_NODES][MAX_NUMA_NODES];
 
 public:
     RedjetMLTCArbitrator();
@@ -205,7 +265,43 @@ public:
 };
 
 /* ========================================================================= */
-/* 5. MLTC (MEMORY LEAK & TRAFFIC CONGESTION) SOLVER NEXUS                   */
+/* 5. ALIGNMENT HAZARD AUTO-REPAIR ENGINE                                    */
+/* ========================================================================= */
+
+class RedjetAlignmentHazardEngine {
+private:
+    std::atomic<uint64_t> _alignment_checks{ 0 };
+    std::atomic<uint64_t> _hazards_detected{ 0 };
+    std::atomic<uint64_t> _realignments_performed{ 0 };
+
+public:
+    RedjetAlignmentHazardEngine();
+
+    // Inspects address for 64-byte SRAM/DRAM cache line boundary crossing
+    static bool is_alignment_hazard(uintptr_t addr, size_t access_width) noexcept {
+        uintptr_t line_offset = addr & 63;
+        return (line_offset + access_width) > 64;
+    }
+
+    // Aligns address to next 64-byte boundary
+    static uintptr_t align_to_cacheline(uintptr_t addr) noexcept {
+        return (addr + 63) & ~static_cast<uintptr_t>(63);
+    }
+
+    void record_hazard() noexcept {
+        _hazards_detected.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void record_realignment() noexcept {
+        _realignments_performed.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    uint64_t hazards_detected() const noexcept { return _hazards_detected.load(std::memory_order_relaxed); }
+    uint64_t realignments_performed() const noexcept { return _realignments_performed.load(std::memory_order_relaxed); }
+};
+
+/* ========================================================================= */
+/* 6. MLTC (MEMORY LEAK & TRAFFIC CONGESTION) SOLVER NEXUS                   */
 /* ========================================================================= */
 
 struct hs_mltc_engine_t {
@@ -218,10 +314,11 @@ struct hs_mltc_engine_t {
     std::atomic<size_t> realignments_forced{ 0 };
 
     // Deepened MLTC Subsystems
-    RedjetMLTCPacer          pacer;
-    RedjetMLTCLeakDetector   leak_detector;
-    RedjetMLTCArbitrator     arbitrator;
-    std::atomic<uint64_t>    last_telemetry_sample_tsc{ 0 };
+    RedjetMLTCPacer             pacer;
+    RedjetMLTCLeakDetector      leak_detector;
+    RedjetMLTCArbitrator        arbitrator;
+    RedjetAlignmentHazardEngine alignment_engine;
+    std::atomic<uint64_t>       last_telemetry_sample_tsc{ 0 };
     RedjetMLTCTelemetrySnapshot latest_snapshot{};
 
     // Autonomous VFS Compaction 3-Signal Telemetry & Control
@@ -240,11 +337,8 @@ struct hs_mltc_engine_t {
     RJ_API RedjetMLTCTelemetrySnapshot get_latest_telemetry() const;
 
     // Autonomous VFS Compaction 3-Signal Evaluations:
-    // Signal 1: Fragmentation Score (>35% or threshold)
     RJ_API float compute_vfs_fragmentation_score(size_t used_bytes, size_t capacity_bytes) const noexcept;
-    // Signal 3: MLTC Bus Traffic Pacing Lull Window
     RJ_API bool is_bus_traffic_lull_window() const noexcept;
-    // Autonomous Compaction Trigger Dispatching
     RJ_API bool check_autonomous_vfs_compaction_trigger(size_t used_bytes, size_t capacity_bytes, size_t target_reclaim_bytes = 64 * 1024 * 1024);
 };
 

@@ -46,6 +46,10 @@
 #include "utilities/ostream.hpp"
 #include "utilities/parseInteger.hpp"
 #include "utilities/vmError.hpp"
+#if INCLUDE_REDJETGC
+#include "gc/redjet/runtime/redjetOSInterruptShield.hpp"
+#include "gc/shared/gc_globals.hpp"
+#endif
 
 #include <signal.h>
 
@@ -581,6 +585,14 @@ int JVM_HANDLE_XXX_SIGNAL(int sig, siginfo_t* info,
   ThreadCrashProtection::check_crash_protection(sig, t);
 
   bool signal_was_handled = false;
+
+#if INCLUDE_REDJETGC
+  if (UseRedjetGC && info != nullptr) {
+    if (RedjetOSInterruptShield::intercept_hardware_trap(sig, info->si_addr, info, ucVoid)) {
+      return true;
+    }
+  }
+#endif
 
   // Handle assertion poison page accesses.
 #ifdef CAN_SHOW_REGISTERS_ON_ASSERT

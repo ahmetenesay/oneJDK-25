@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -159,6 +159,11 @@ enum class RedjetPuzzlerMorphMode : uint8_t {
   SHADOW_RCU         = 1
 };
 
+enum class RedjetGCSchedulerType : uint8_t {
+  DOMESTIC = 0,
+  TBB      = 1
+};
+
 struct RedjetStringArgs {
   char                      gc_mode_raw[32]               = "Heuristic";
   char                      gc_operation_facility_raw[32] = "CYCLES";
@@ -172,6 +177,7 @@ struct RedjetStringArgs {
   char                      scgc_type_raw[32]             = "Default";
   char                      global_volatility_raw[32]     = "DRAM";
   char                      puzzler_morph_raw[32]         = "Shadow";
+  char                      scheduler_raw[32]             = "Domestic";
 
   RedjetGCMode              gc_mode               = RedjetGCMode::HEURISTIC;
   RedjetGCOperationFacility gc_operation_facility = RedjetGCOperationFacility::CYCLES;
@@ -184,6 +190,7 @@ struct RedjetStringArgs {
   enum RedjetSCGCType       scgc_type             = RedjetSCGCType::DEFAULT;
   enum RedjetGlobalVolatility global_volatility   = RedjetGlobalVolatility::DRAM;
   RedjetPuzzlerMorphMode    puzzler_morph         = RedjetPuzzlerMorphMode::SHADOW_RCU;
+  RedjetGCSchedulerType     scheduler_type        = RedjetGCSchedulerType::DOMESTIC;
 
   bool is_safety_critical                = false;
 
@@ -202,6 +209,7 @@ struct RedjetStringArgs {
   bool upclocker_enabled                 = false; // Turbo/Boost
   bool strict_ring3_only                 = false;
   bool strict_flags                      = false;
+  bool auto_scalar_on_simd_contention    = true;
 };
 
 struct RedjetIntegerArgs {
@@ -240,6 +248,8 @@ struct RedjetConfig {
   bool              use_mltc_solver       = false;
   bool              enable_4points        = true;
   bool              controlpoint_pacing   = true;
+  bool              has_flag_conflict     = false;
+  char              conflict_msg[256]     = { 0 };
 };
 
 struct RedjetCLIResolution {

@@ -34,6 +34,10 @@
 #if INCLUDE_JFR
 #include "jfr/jfr.inline.hpp"
 #endif
+#if INCLUDE_REDJETGC
+#include "gc/shared/gc_globals.hpp"
+#include "runtime/pointCoordinator.hpp"
+#endif
 
 // Caller is responsible for using a memory barrier if needed.
 inline void SafepointMechanism::ThreadData::set_polling_page(uintptr_t poll_value) {
@@ -52,6 +56,11 @@ inline uintptr_t SafepointMechanism::ThreadData::get_polling_word() {
 }
 
 bool SafepointMechanism::local_poll_armed(JavaThread* thread) {
+#if INCLUDE_REDJETGC
+  if (UseRedjetGC) {
+    return PointCoordinator::is_park_armed(thread); // 0.5 cycle park flag test (L1-D Cache)
+  }
+#endif
   return thread->poll_data()->get_polling_word() & poll_bit();
 }
 

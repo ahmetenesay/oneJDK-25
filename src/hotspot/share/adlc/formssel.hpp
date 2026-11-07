@@ -196,7 +196,7 @@ public:
 
   enum memory_operand_type {
     NO_MEMORY_OPERAND = -1,
-    MANY_MEMORY_OPERANDS = 999999
+    MANY_MEMORY_OPERANDS = 999999999
   };
 
 

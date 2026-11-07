@@ -193,4 +193,12 @@
 
   void reconstruct_frame_pointer(Register rtmp);
 
+  // SVE2 hardware intrinsics
+  void sve2_histcnt(FloatRegister dst, FloatRegister src1, FloatRegister src2, PRegister pgtmp, SIMD_RegVariant T);
+  void sve2_match(PRegister dst, FloatRegister src1, FloatRegister src2, PRegister pgtmp, SIMD_RegVariant T);
+  void sve2_nmatch(PRegister dst, FloatRegister src1, FloatRegister src2, PRegister pgtmp, SIMD_RegVariant T);
+  void sve2_bdep(FloatRegister dst, FloatRegister src1, FloatRegister src2, SIMD_RegVariant T);
+  void sve2_bext(FloatRegister dst, FloatRegister src1, FloatRegister src2, SIMD_RegVariant T);
+  void sve2_clear_cacheline_64(Register aligned64_addr);
+
 #endif // CPU_AARCH64_C2_MACROASSEMBLER_AARCH64_HPP

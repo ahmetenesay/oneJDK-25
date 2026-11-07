@@ -42,9 +42,15 @@
           "Direct Redjet flag sequence or intent keywords "                  \
           "(e.g. 'turbo,trim,strict_vfs,vector').")                          \
                                                                              \
+  product(ccstr, RedjetGCOptions, "", EXPERIMENTAL,                          \
+          "Canonical RedjetGC flag sequence or intent keywords.")            \
+                                                                             \
   product(bool, RedjetVFSStrict, true, EXPERIMENTAL,                         \
           "Enforce strict VFS branch validation and fail-fast protection "   \
           "against missing VFS branches.")                                   \
+                                                                             \
+  product(bool, RedjetGCStrictVFS, true, EXPERIMENTAL,                       \
+          "Canonical flag: Enforce strict VFS branch validation.")           \
                                                                              \
   product(bool, RedjetVFSPanicDialog, false, EXPERIMENTAL,                   \
           "Enable modal alert dialog popup on fatal VFS panics.")            \
@@ -52,8 +58,14 @@
   product(bool, RedjetRMRP, true, EXPERIMENTAL,                              \
           "Enable Reduce Memory Resident Set Reclamation (RMRP).")           \
                                                                              \
+  product(bool, RedjetGCRMRP, true, EXPERIMENTAL,                            \
+          "Canonical flag: Enable Reduce Memory Resident Set Reclamation.")  \
+                                                                             \
   product(ccstr, RedjetRMRPMethod, "Plump", EXPERIMENTAL,                    \
           "RMRP memory reclamation method: Plump or Sequential.")            \
+                                                                             \
+  product(ccstr, RedjetGCRMRPMethod, "Plump", EXPERIMENTAL,                  \
+          "Canonical flag: RMRP memory reclamation method: Plump or Sequential.") \
                                                                              \
   product(double, RedjetFallineCompactRatio, 0.30, EXPERIMENTAL,             \
           "Falline compaction threshold ratio (0.05 to 0.95).")              \
@@ -66,10 +78,22 @@
           "Restrict SIMD vector acceleration strictly to latency-critical "  \
           "GC operations and use scalar mode elsewhere.")                    \
                                                                              \
+  product(bool, RedjetGCCriticalSIMDOnly, false, EXPERIMENTAL,               \
+          "Canonical flag: Restrict SIMD vector acceleration strictly to "   \
+          "latency-critical RedjetGC operations.")                           \
+                                                                             \
   product(bool, RedjetDynamicSIMDFallback, true, EXPERIMENTAL,               \
           "Automatically throttle vector SIMD execution to scalar loops "    \
           "when ALU pipelines are congested by mutator workloads.")          \
-
+                                                                             \
+  product(bool, RedjetGCAutoScalarOnSIMDContention, true, EXPERIMENTAL,      \
+          "Canonical flag: Automatically switch RedjetGC SIMD operations "   \
+          "to scalar/APX GPR mode when mutator workloads saturate SIMD ALUs.") \
+                                                                             \
+  product(ccstr, RedjetGCScheduler, "Domestic", EXPERIMENTAL,                \
+          "Redjet GC thread scheduler backend: Domestic (deterministic in-order " \
+          "silicon pipeline) or TBB (Intel oneTBB task arena work-stealing). " \
+          "Strict mutual exclusion enforced.")                               \
                                                                              \
   product(bool, RedjetHeteroArenas, true, EXPERIMENTAL,                      \
           "Enable P-Core and E-Core heterogeneous task arenas via oneTBB.")  \
@@ -81,11 +105,19 @@
           "Max TLAB size to use with RedjetGC.")                             \
           range(1, max_intx)                                                 \
                                                                              \
+  product(size_t, RedjetGCMaxTLABSize, 4 * M, EXPERIMENTAL,                  \
+          "Canonical flag: Max TLAB size to use with RedjetGC.")             \
+          range(1, max_intx)                                                 \
+                                                                             \
   product(bool, RedjetElasticTLAB, true, EXPERIMENTAL,                       \
           "Use elastic policy to manage TLAB sizes.")                        \
                                                                              \
   product(size_t, RedjetMinHeapExpand, 128 * M, EXPERIMENTAL,                \
           "Min expansion step for heap.")                                    \
+          range(1, max_intx)                                                 \
+                                                                             \
+  product(size_t, RedjetGCMinHeapExpand, 128 * M, EXPERIMENTAL,              \
+          "Canonical flag: Min expansion step for heap.")                    \
           range(1, max_intx)                                                 \
                                                                              \
   product(ccstr, RedjetProfile, "NORMAX", EXPERIMENTAL,                      \
@@ -154,7 +186,34 @@
           "Enable compiler-assisted explicit clean hints for System.gc().")  \
                                                                              \
   product(bool, RedjetGCUseDeadReferenceSignals, true, EXPERIMENTAL,         \
-          "Enable TailTraces dead reference clasp signals to RPSS.")
+          "Enable TailTraces dead reference clasp signals to RPSS.")         \
+                                                                             \
+  product(ccstr, RedjetGCGlobalVolatility, "DRAM", EXPERIMENTAL,             \
+          "Canonical flag: Global volatile memory regime (DRAM or SRAM).")   \
+                                                                             \
+  product(ccstr, RedjetGCExecutionFocus, "Auto", EXPERIMENTAL,               \
+          "Canonical flag: Core performance execution focus (Auto/SCP/MCP/Dual).") \
+                                                                             \
+  product(bool, RedjetGCAllowOperationDispatchings, false, EXPERIMENTAL,     \
+          "Canonical flag: Allow ALU work-stealing dispatch for group ops.") \
+                                                                             \
+  product(bool, RedjetGCUseMLTCSolver, true, EXPERIMENTAL,                   \
+          "Canonical flag: Enable MLTC software ECC & upward trend solver.") \
+                                                                             \
+  product(ccstr, RedjetGCPuzzlerMorph, "Shadow", EXPERIMENTAL,               \
+          "Canonical flag: Puzzler Pitstop morph mode (Shadow or Excision).")\
+                                                                             \
+  product(ccstr, RedjetGCProfile, "NORMAX", EXPERIMENTAL,                    \
+          "Canonical flag: Execution profile (NORMAX or SSIOLSC).")          \
+                                                                             \
+  product(bool, RedjetGCSCMode, false, EXPERIMENTAL,                         \
+          "Canonical flag: Enable SSIOLSC Safety-Critical deterministic GC.")\
+                                                                             \
+  product(bool, RedjetGCForbidDynamicGrowth, false, EXPERIMENTAL,            \
+          "Canonical flag: Lock committed heap upfront with zero growth.")   \
+                                                                             \
+  product(bool, RedjetGCUpclockerQoS, true, EXPERIMENTAL,                    \
+          "Canonical flag: Pure Ring-3 OS HighQoS & P-Core warmup pacing.")
 
 // end of GC_REDJET_FLAGS
 

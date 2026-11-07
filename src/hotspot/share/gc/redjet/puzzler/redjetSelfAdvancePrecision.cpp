@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -59,6 +59,24 @@ RedjetPrecisionScope::~RedjetPrecisionScope() {
 float RedjetPrecisionScope::active_epsilon() const noexcept {
     return tl_active_precision_target;
 }
+
+extern "C" {
+
+JNIEXPORT jfloat JNICALL Java_jdk_gc_redjet_PrecisionScope_enterPrecision0(JNIEnv* env, jclass clazz, jfloat epsilon) {
+    (void)env;
+    (void)clazz;
+    float prev = tl_active_precision_target;
+    tl_active_precision_target = epsilon;
+    return prev;
+}
+
+JNIEXPORT void JNICALL Java_jdk_gc_redjet_PrecisionScope_exitPrecision0(JNIEnv* env, jclass clazz, jfloat prev_epsilon) {
+    (void)env;
+    (void)clazz;
+    tl_active_precision_target = prev_epsilon;
+}
+
+} // extern "C"
 
 /* ========================================================================= */
 /* 2. RedjetPrecisionGuardEngine                                             */
@@ -313,6 +331,42 @@ RedjetGuardStatus RedjetPrecisionVerifier::verify_method_signature(const char* m
     return RedjetGuardStatus::GUARD_OK;
 }
 
+bool RedjetPrecisionVerifier::is_critical_financial_api(const char* class_name, const char* method_name) noexcept {
+    if (!class_name) return false;
+    // Check known financial, currency, or high-precision math classes
+    if (strstr(class_name, "BigDecimal") != nullptr ||
+        strstr(class_name, "BigInteger") != nullptr ||
+        strstr(class_name, "Currency") != nullptr ||
+        strstr(class_name, "Money") != nullptr ||
+        strstr(class_name, "DecimalFormat") != nullptr) {
+        return true;
+    }
+    if (method_name) {
+        if (strstr(method_name, "price") != nullptr ||
+            strstr(method_name, "cents") != nullptr ||
+            strstr(method_name, "balance") != nullptr ||
+            strstr(method_name, "tax") != nullptr ||
+            strstr(method_name, "interest") != nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+float RedjetPrecisionVerifier::apply_bad_coder_safety_lock(const char* class_name, const char* method_name, float requested_epsilon) noexcept {
+    // Bad Coder Safety Lock: If developer specified FAST_RELAXED / non-zero epsilon,
+    // but code touches critical financial APIs, force safe IEEE_EXACT (0.0f)
+    if (requested_epsilon > 0.0f && is_critical_financial_api(class_name, method_name)) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "[Bad Coder Safety Lock] Overriding loose epsilon %e to 0.0 (IEEE_EXACT) for financial API: %s.%s",
+                 requested_epsilon, class_name ? class_name : "<unknown>", method_name ? method_name : "<unknown>");
+        hs_unified_log_emit(HS_Ebin0_HOOK, HS_Ebin1_WARN, 0, "bad_coder_lock", msg);
+        return 0.0f;
+    }
+    return requested_epsilon;
+}
+
 bool RedjetPrecisionVerifier::validate_method(const char* class_name,
                                               const char* method_name,
                                               const char* descriptor,
@@ -320,7 +374,9 @@ bool RedjetPrecisionVerifier::validate_method(const char* class_name,
                                               char* out_error_buf,
                                               size_t error_buf_sz) {
     char reason[256]{ 0 };
-    auto status = verify_method_signature(descriptor, requested_epsilon, reason, sizeof(reason));
+    // Apply Bad Coder safety lock before signature validation
+    float effective_epsilon = apply_bad_coder_safety_lock(class_name, method_name, requested_epsilon);
+    auto status = verify_method_signature(descriptor, effective_epsilon, reason, sizeof(reason));
 
     if (status != RedjetGuardStatus::GUARD_OK) {
         if (out_error_buf && error_buf_sz > 0) {
@@ -336,7 +392,7 @@ bool RedjetPrecisionVerifier::validate_method(const char* class_name,
                  class_name ? class_name : "", method_name ? method_name : "",
                  descriptor ? descriptor : "", reason);
         hs_unified_log_emit(HS_Ebin0_ERROR, HS_Ebin1_WARN, static_cast<uint32_t>(status),
-                            "precision_guard_reject", log_msg);
+                             "precision_guard_reject", log_msg);
         return false;
     }
 

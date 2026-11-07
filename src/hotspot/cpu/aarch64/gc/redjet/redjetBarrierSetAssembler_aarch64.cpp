@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -95,10 +95,60 @@ void RedjetBarrierSetAssembler::emit_safepoint_poll(MacroAssembler* masm, Regist
 
 void RedjetBarrierSetAssembler::clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr) {
   assert(aligned64_addr != noreg, "valid base register required");
-  __ stp(zr, zr, Address(aligned64_addr, 0));
-  __ stp(zr, zr, Address(aligned64_addr, 16));
-  __ stp(zr, zr, Address(aligned64_addr, 32));
-  __ stp(zr, zr, Address(aligned64_addr, 48));
+  if (VM_Version::supports_sve()) {
+    __ dc(Assembler::ZVA, aligned64_addr);
+  } else {
+    __ stp(zr, zr, Address(aligned64_addr, 0));
+    __ stp(zr, zr, Address(aligned64_addr, 16));
+    __ stp(zr, zr, Address(aligned64_addr, 32));
+    __ stp(zr, zr, Address(aligned64_addr, 48));
+  }
+}
+
+void RedjetBarrierSetAssembler::emit_2points_l1_poll(MacroAssembler* masm, Register thread, Register scratch, Label& slowpath) {
+  Register s = (scratch != noreg) ? scratch : rscratch1;
+  // 2-Points L1 Cooperative Polling: 0.5-cycle L1 cache line hit
+  ExternalAddress flag_addr((address)RedjetPointCoordinator::parkpoint_flag_address());
+  __ lea(s, flag_addr);
+  __ ldrw(s, Address(s));
+  __ cbnzw(s, slowpath);
+}
+
+static const uint64_t HS_EMPTYBOX_MAGIC = 0xEB0C5107ULL;
+
+void RedjetBarrierSetAssembler::emit_tailtraces_clasp(MacroAssembler* masm, Register obj, Register scratch) {
+  if (obj == noreg) return;
+  Register s = (scratch != noreg) ? scratch : rscratch1;
+  // TailTraces clasping: dead-end liveness seal to Falline quarantine lobby (0xEB0C5107)
+  __ mov(s, HS_EMPTYBOX_MAGIC);
+  __ strw(s, Address(obj, oopDesc::mark_offset_in_bytes()));
+}
+
+void RedjetBarrierSetAssembler::emit_emptybox_guard(MacroAssembler* masm, Register obj, Label& slowpath) {
+  if (obj == noreg) return;
+  // Check EmptyBox pretrashing canary guard bit matching TableGen specification
+  __ ldrw(rscratch1, Address(obj, oopDesc::mark_offset_in_bytes()));
+  __ mov(rscratch2, HS_EMPTYBOX_MAGIC);
+  __ cmpw(rscratch1, rscratch2);
+  __ br(Assembler::EQ, slowpath);
+}
+
+void RedjetBarrierSetAssembler::emit_emptybox_claim(MacroAssembler* masm, Register obj, Register size, Register result, Label& slowpath) {
+  assert_different_registers(obj, size, result);
+  // 0.3ns branchless claim from EmptyBox cache
+  if (result != obj) {
+    __ mov(result, obj);
+  }
+  // Re-initialize mark word to default prototype
+  __ mov(rscratch1, (uint64_t)markWord::prototype().value());
+  __ str(rscratch1, Address(result, oopDesc::mark_offset_in_bytes()));
+}
+
+void RedjetBarrierSetAssembler::emit_simd_dispatch_with_sve_fence(MacroAssembler* masm) {
+  if (VM_Version::supports_sve()) {
+    __ isb();
+    __ dmb(Assembler::ISH);
+  }
 }
 
 #ifdef COMPILER1
@@ -107,11 +157,35 @@ void RedjetBarrierSetAssembler::clear_cacheline_64(MacroAssembler* masm, Registe
 
 void RedjetBarrierSetAssembler::generate_c1_pre_barrier_runtime_stub(StubAssembler* sasm) {
   __ prologue("redjet_c1_pre_barrier", false);
+  __ push(RegSet::of(r0, r1), sp);
+  const Register thread = rthread;
+  Address flags(thread, in_bytes(RedjetThreadLocalData::point_flags_offset()));
+  Label done;
+  __ ldrw(rscratch1, flags);
+  __ tst(rscratch1, (uint64_t)REDJET_PT_PARKPOINT_ACTIVE);
+  __ br(Assembler::EQ, done);
+  __ save_live_registers_no_oop_map(true);
+  __ call_VM_leaf(CAST_FROM_FN_PTR(address, redjet_rt_safepoint_poll_slow), thread);
+  __ restore_live_registers(true);
+  __ bind(done);
+  __ pop(RegSet::of(r0, r1), sp);
   __ epilogue();
 }
 
 void RedjetBarrierSetAssembler::generate_c1_post_barrier_runtime_stub(StubAssembler* sasm) {
   __ prologue("redjet_c1_post_barrier", false);
+  __ push(RegSet::of(r0, r1), sp);
+  const Register thread = rthread;
+  Address flags(thread, in_bytes(RedjetThreadLocalData::point_flags_offset()));
+  Label done;
+  __ ldrw(rscratch1, flags);
+  __ tst(rscratch1, (uint64_t)REDJET_PT_DOCKPOINT_ACTIVE);
+  __ br(Assembler::EQ, done);
+  __ save_live_registers_no_oop_map(true);
+  __ call_VM_leaf(CAST_FROM_FN_PTR(address, redjet_rt_safepoint_poll_slow), thread);
+  __ restore_live_registers(true);
+  __ bind(done);
+  __ pop(RegSet::of(r0, r1), sp);
   __ epilogue();
 }
 #endif

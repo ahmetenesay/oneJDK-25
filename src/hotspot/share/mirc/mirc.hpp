@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -34,5 +34,9 @@
 #include "mirc/mirc_Lvl1.hpp"
 #include "mirc/mirc_Lvl2.hpp"
 #include "mirc/mirc_Patcher.hpp"
+#include "mirc/mirc_BREE.hpp"
+#include "mirc/mirc_GroupCompute.hpp"
+#include "mirc/mirc_PuzzlerBridge.hpp"
+#include "mirc/mirc_ExecutableSerializer.hpp"
 
 #endif // SHARE_MIRC_MIRC_HPP

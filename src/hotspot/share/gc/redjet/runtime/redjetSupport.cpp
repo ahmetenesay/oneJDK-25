@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -121,7 +121,9 @@ bool RedjetSupport::is_redjet_accelerated_method(ciMethod* method) {
   return method->redjet_batch_exec() ||
          method->redjet_nested_exec() ||
          method->redjet_bypass_warmup() ||
-         method->redjet_exempt_pin();
+         method->redjet_exempt_pin() ||
+         method->redjet_rjgc() ||
+         method->redjet_precision_target();
 #else
   (void)method;
   return false;

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,6 +23,7 @@
  */
 
 #include "gc/redjet/allocator/redjetMotherline.hpp"
+#include "gc/redjet/allocator/redjetLandfill.hpp"
 #include "gc/redjet/runtime/redjetRingLog.hpp"
 #include "gc/redjet/allocator/redjetPagefile.hpp"
 #include <new>
@@ -1214,86 +1215,4 @@ int32_t sacculus_header_pane_t::push(const HS_hotspot_landfill_header_t& h) {
 void sacculus_header_pane_t::flush() {
     hs_ticket_guard_t g(lock);
     count.store(0, std::memory_order_release);
-}
-
-/* ========================================================================= */
-/* 12. REDJET LANDFILL IMPLEMENTATION                                        */
-/* ========================================================================= */
-
-RedjetLandfill::RedjetLandfill() {
-    init();
-}
-
-RedjetLandfill::~RedjetLandfill() {
-    destroy();
-}
-
-bool RedjetLandfill::init(size_t initial, bool advance_payment) {
-    return _pit.init(initial, advance_payment) && _pane.init();
-}
-
-bool RedjetLandfill::accept(HS_hotspot_live_header_t* live,
-                            hs_death_reason_e reason,
-                            sacculus_hotlog_t* hotlog,
-                            uint64_t sweep_no,
-                            uint64_t evac_duration_ns) {
-    if (!live) return false;
-    HS_hotspot_landfill_header_t lh{};
-    lh.populate_from_live(live, reason, evac_duration_ns);
-
-    void* pit_addr = nullptr;
-    size_t pit_offset = 0;
-    bool is_rehab = (reason == HS_DEATH_REHABILITATE || live->needs_rehabilitation);
-    if (is_rehab) {
-        size_t fp = (size_t)live->memory_footprint.load(std::memory_order_relaxed);
-        size_t cell_sz = live->total_cell_bytes > 0 ? live->total_cell_bytes : HS_hotspot_live_header_t::total_cell_size(fp);
-        pit_addr = _pit.store_rehab_with_offset(live, cell_sz, &pit_offset);
-        if (pit_addr) {
-            reinterpret_cast<HS_hotspot_live_header_t*>(pit_addr)->cold_meta.store(nullptr, std::memory_order_relaxed);
-        }
-        lh.pit_stored_size = cell_sz;
-        lh.rehab_offset = pit_offset;
-        lh.rehab_payload_ptr = pit_addr;
-    } else {
-        pit_addr = _pit.store_matured(live, sizeof(HS_hotspot_live_header_t));
-        if (pit_addr) {
-            reinterpret_cast<HS_hotspot_live_header_t*>(pit_addr)->cold_meta.store(nullptr, std::memory_order_relaxed);
-        }
-        lh.pit_stored_size = sizeof(HS_hotspot_live_header_t);
-    }
-
-    _pane.init();
-    int32_t pane_idx = _pane.push(lh);
-
-    if (hotlog) {
-        sacculus_hotlog_write(hotlog, HS_Ebin0_TO_LANDFILL,
-                              HS_Ebin1_INFO, live->function_id,
-                              (uint16_t)(pane_idx >= 0 ? (pane_idx & 0xFFFF) : 0),
-                              live->generation, live->region,
-                              live->current_core.load(std::memory_order_relaxed), sweep_no,
-                              (uint32_t)(_pit.total_used() / 1024),
-                              is_rehab ? "rehab_accept" : "matured_accept");
-    }
-    return pit_addr != nullptr;
-}
-
-bool RedjetLandfill::is_critical(float critical_ratio) const {
-    float crit = (critical_ratio > 0.0f) ? critical_ratio : SACFOR_LANDFILL_CRIT;
-    return _pit.max_fill_ratio() > crit ||
-           _pane.count.load(std::memory_order_relaxed) > sacculus_header_pane_t::PANE_CAP * 9 / 10;
-}
-
-void RedjetLandfill::evacuate(sacculus_hotlog_t* hotlog, uint64_t sweep_no) {
-    if (hotlog) {
-        sacculus_hotlog_write(hotlog, HS_Ebin0_LANDFILL_EVAC,
-                              HS_Ebin1_WARN, 0, 0, 0, 0, 0, sweep_no,
-                              (uint32_t)(_pit.total_used() / 1024), "sync_evac");
-    }
-    _pit.flush();
-    _pane.flush();
-}
-
-void RedjetLandfill::destroy() {
-    _pit.destroy();
-    _pane.flush();
 }

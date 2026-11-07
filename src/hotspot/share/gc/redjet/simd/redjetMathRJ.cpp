@@ -1100,4 +1100,56 @@ RJ_API void HS_primitiva_zero(void* sector_ptr, size_t bytes) {
 }
 HS_DISABLE_OPT_END
 
+/* ========================================================================= */
+/* 7. CANONICAL RJ_SIMD_* IMPLEMENTATIONS                                    */
+/* ========================================================================= */
+
+RJ_API void* rj_simd_aligned_alloc_cl(size_t size, size_t alignment) { return hs_aligned_alloc_cl(size, alignment); }
+RJ_API void  rj_simd_aligned_free_cl(void* ptr)                     { hs_aligned_free_cl(ptr); }
+RJ_API void* rj_simd_alloc_aligned(size_t size, size_t alignment)   { return hs_alloc_aligned(size, alignment); }
+RJ_API void  rj_simd_free_aligned(void* ptr)                        { hs_free_aligned(ptr); }
+
+RJ_API void rj_simd_prefetch_t0(const void* addr)                              { hs_prefetch_t0(addr); }
+RJ_API void rj_simd_prefetch_t1(const void* addr)                              { hs_prefetch_t1(addr); }
+RJ_API void rj_simd_prefetch_t2(const void* addr)                              { hs_prefetch_t2(addr); }
+RJ_API void rj_simd_prefetch_nta(const void* addr)                             { hs_prefetch_nta(addr); }
+RJ_API void rj_simd_prefetch_stream(const void* base, size_t count, size_t str) { hs_prefetch_stream(base, count, str); }
+RJ_API void rj_simd_stream_store_f32(float* dst, const float* src, size_t count) { hs_stream_store_f32(dst, src, count); }
+RJ_API void rj_simd_stream_store_f64(double* dst, const double* src, size_t count) { hs_stream_store_f64(dst, src, count); }
+RJ_API void rj_simd_hw_fence_full(void)                                        { hs_hw_fence_full(); }
+RJ_API void rj_simd_hw_fence_store(void)                                       { hs_hw_fence_store(); }
+RJ_API void rj_simd_hw_fence_load(void)                                        { hs_hw_fence_load(); }
+RJ_API void rj_simd_memcpy_nt(void* dst, const void* src, size_t size)         { hs_memcpy_nt(dst, src, size); }
+RJ_API void rj_simd_memzero_nt(void* dst, size_t size)                         { hs_memzero_nt(dst, size); }
+
+RJ_API rj_simd_status_t       rj_simd_init_with_config(rj_simd_context* out_ctx, rj_simd_isa_t isa, rj_simd_backend_t backend, const rj_simd_config_t* config) { return hs_init_with_config(out_ctx, isa, backend, config); }
+RJ_API rj_simd_status_t       rj_simd_init(rj_simd_context* out_ctx, rj_simd_isa_t isa, rj_simd_backend_t backend)                                        { return hs_init(out_ctx, isa, backend); }
+RJ_API rj_profile_mode_t      rj_simd_get_active_profile(rj_simd_context ctx)                                                                               { return hs_get_active_profile(ctx); }
+RJ_API const rj_simd_config_t* rj_simd_get_config(rj_simd_context ctx)                                                                                      { return hs_get_config(ctx); }
+RJ_API void                   rj_simd_destroy(rj_simd_context ctx)                                                                                          { hs_destroy(ctx); }
+RJ_API rj_simd_status_t       rj_simd_get_cpu_info(rj_simd_context ctx, rj_simd_cpu_info_t* out_info)                                                         { return hs_get_cpu_info(ctx, out_info); }
+RJ_API rj_simd_status_t       rj_simd_calibrate_pipeline(rj_simd_context ctx, int* out_best_level, double* out_gflops)                                     { return hs_calibrate_pipeline(ctx, out_best_level, out_gflops); }
+RJ_API void                   rj_simd_parallel_for(rj_simd_context ctx, size_t total, rj_simd_parallel_for_fn fn, void* user_data)                        { hs_parallel_for(ctx, total, fn, user_data); }
+
+RJ_API rj_simd_status_t rj_simd_lattice_create(rj_simd_context ctx, rj_simd_lattice* out_lattice, int dim, size_t nx, size_t ny, size_t nz, rj_simd_precision_t precision) { return hs_lattice_create(ctx, out_lattice, dim, nx, ny, nz, precision); }
+RJ_API void             rj_simd_lattice_destroy(rj_simd_lattice lat) { hs_lattice_destroy(lat); }
+RJ_API void*            rj_simd_lattice_get_curr(rj_simd_lattice lat) { return hs_lattice_get_curr(lat); }
+RJ_API void*            rj_simd_lattice_get_prev(rj_simd_lattice lat) { return hs_lattice_get_prev(lat); }
+RJ_API void*            rj_simd_lattice_get_next(rj_simd_lattice lat) { return hs_lattice_get_next(lat); }
+RJ_API void             rj_simd_lattice_swap(rj_simd_lattice lat)    { hs_lattice_swap(lat); }
+
+RJ_API void   rj_simd_cordic_sin_cos_q31(int32_t theta_q31, int32_t* out_sin, int32_t* out_cos, const rj_simd_tensor_t* precision_target) { hs_cordic_sin_cos_q31(theta_q31, out_sin, out_cos, precision_target); }
+RJ_API void   rj_simd_cordic_atan2_q31(int32_t y_q31, int32_t x_q31, int32_t* out_theta, uint32_t* out_mod, const rj_simd_tensor_t* precision_target) { hs_cordic_atan2_q31(y_q31, x_q31, out_theta, out_mod, precision_target); }
+RJ_API void   rj_simd_fmac_fir_q31(const int32_t* x, const int32_t* coeffs, size_t n, size_t num_taps, int32_t* y, const rj_simd_tensor_t* precision_target) { hs_fmac_fir_q31(x, coeffs, n, num_taps, y, precision_target); }
+RJ_API float  rj_simd_tmu_sin_f32(float rad, const rj_simd_tensor_t* precision_target) { return hs_tmu_sin_f32(rad, precision_target); }
+RJ_API float  rj_simd_tmu_cos_f32(float rad, const rj_simd_tensor_t* precision_target) { return hs_tmu_cos_f32(rad, precision_target); }
+RJ_API float  rj_simd_softfloat_add_f32(float a, float b, const rj_simd_tensor_t* precision_target) { return hs_softfloat_add_f32(a, b, precision_target); }
+RJ_API float  rj_simd_softfloat_mul_f32(float a, float b, const rj_simd_tensor_t* precision_target) { return hs_softfloat_mul_f32(a, b, precision_target); }
+RJ_API float  rj_simd_softfloat_div_f32(float a, float b, const rj_simd_tensor_t* precision_target) { return hs_softfloat_div_f32(a, b, precision_target); }
+RJ_API double rj_simd_softfloat_add_f64(double a, double b, const rj_simd_tensor_t* precision_target) { return hs_softfloat_add_f64(a, b, precision_target); }
+RJ_API double rj_simd_softfloat_mul_f64(double a, double b, const rj_simd_tensor_t* precision_target) { return hs_softfloat_mul_f64(a, b, precision_target); }
+RJ_API double rj_simd_softfloat_div_f64(double a, double b, const rj_simd_tensor_t* precision_target) { return hs_softfloat_div_f64(a, b, precision_target); }
+RJ_API int    rj_simd_xip_verify_flash(void) { return hs_xip_verify_flash(); }
+RJ_API size_t rj_simd_decompress_block_to_itcm(const void* src, size_t src_size, void* dest, size_t max_dest) { return hs_decompress_block_to_itcm(src, src_size, dest, max_dest); }
+
 } // extern "C"

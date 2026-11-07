@@ -27,20 +27,49 @@
 #if defined(__linux__)
 #include <sys/auxv.h>
 #include <asm/hwcap.h>
+#include <sys/prctl.h>
 #elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #endif
 
-uint64_t isMacrowebHolder::_isa_features = 0;
-bool     isMacrowebHolder::_initialized  = false;
+uint64_t isMacrowebHolder::_isa_features     = 0;
+uint32_t isMacrowebHolder::_sve_vector_bytes = 16;
+bool     isMacrowebHolder::_initialized      = false;
+
+uint64_t isMacrowebHolder::query_midr_el1() {
+#if defined(__linux__) && defined(__aarch64__)
+#ifdef HWCAP_CPUID
+  if (getauxval(AT_HWCAP) & HWCAP_CPUID) {
+    uint64_t midr = 0;
+    __asm__ __volatile__("mrs %0, midr_el1" : "=r"(midr));
+    return midr;
+  }
+#endif
+#endif
+  return 0;
+}
+
+uint32_t isMacrowebHolder::query_sve_vector_length_bytes() {
+#if defined(__linux__) && defined(__aarch64__) && defined(PR_SVE_GET_VL)
+  long vl = prctl(PR_SVE_GET_VL);
+  if (vl > 0) {
+    return static_cast<uint32_t>(vl & 0xFFFF);
+  }
+#endif
+  return 16;
+}
 
 void isMacrowebHolder::initialize() {
   if (_initialized) return;
 
   uint64_t f = 0;
+  uint32_t vec_bytes = 16;
 
 #if defined(__linux__) && defined(__aarch64__)
-  unsigned long hwcap = getauxval(AT_HWCAP);
+  unsigned long hwcap  = getauxval(AT_HWCAP);
   unsigned long hwcap2 = getauxval(AT_HWCAP2);
 
 #ifdef HWCAP_FP
@@ -58,11 +87,23 @@ void isMacrowebHolder::initialize() {
 #ifdef HWCAP_SHA2
   if (hwcap & HWCAP_SHA2) f |= FEATURE_SHA2;
 #endif
+#ifdef HWCAP_SHA3
+  if (hwcap & HWCAP_SHA3) f |= FEATURE_SHA3;
+#endif
+#ifdef HWCAP_SHA512
+  if (hwcap & HWCAP_SHA512) f |= FEATURE_SHA512;
+#endif
 #ifdef HWCAP_ATOMICS
   if (hwcap & HWCAP_ATOMICS) f |= FEATURE_ATOMICS_LSE;
 #endif
+#ifdef HWCAP_ASIMDDP
+  if (hwcap & HWCAP_ASIMDDP) f |= FEATURE_DOTPROD;
+#endif
 #ifdef HWCAP_SVE
-  if (hwcap & HWCAP_SVE) f |= FEATURE_SVE;
+  if (hwcap & HWCAP_SVE) {
+    f |= FEATURE_SVE;
+    vec_bytes = query_sve_vector_length_bytes();
+  }
 #endif
 #ifdef HWCAP2_SVE2
   if (hwcap2 & HWCAP2_SVE2) f |= FEATURE_SVE2;
@@ -70,9 +111,29 @@ void isMacrowebHolder::initialize() {
 #ifdef HWCAP2_SVE2_BITPERM
   if (hwcap2 & HWCAP2_SVE2_BITPERM) f |= FEATURE_SVE2_BITPERM;
 #endif
+#ifdef HWCAP2_BF16
+  if (hwcap2 & HWCAP2_BF16) f |= FEATURE_BF16;
+#endif
+#ifdef HWCAP2_I8MM
+  if (hwcap2 & HWCAP2_I8MM) f |= FEATURE_I8MM;
+#endif
+#ifdef HWCAP2_SME
+  if (hwcap2 & HWCAP2_SME) f |= FEATURE_SME;
+#endif
+#ifdef HWCAP2_SME2
+  if (hwcap2 & HWCAP2_SME2) f |= FEATURE_SME2;
+#endif
+#ifdef HWCAP2_MOPS
+  if (hwcap2 & HWCAP2_MOPS) f |= FEATURE_MOPS;
+#endif
+#ifdef HWCAP2_CSSC
+  if (hwcap2 & HWCAP2_CSSC) f |= FEATURE_CSSC;
+#endif
+#ifdef HWCAP2_WFXT
+  if (hwcap2 & HWCAP2_WFXT) f |= FEATURE_WFXT;
+#endif
 
 #elif defined(_WIN32) && (defined(_M_ARM64) || defined(__aarch64__))
-  // Windows on ARM64 query
   if (IsProcessorFeaturePresent(PF_ARM_V8_INSTRUCTIONS_AVAILABLE)) {
     f |= FEATURE_FP | FEATURE_NEON;
   }
@@ -82,11 +143,33 @@ void isMacrowebHolder::initialize() {
   if (IsProcessorFeaturePresent(PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE)) {
     f |= FEATURE_CRC32;
   }
+#ifdef PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE
+  if (IsProcessorFeaturePresent(PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE)) {
+    f |= FEATURE_ATOMICS_LSE;
+  }
+#endif
+#ifdef PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE
+  if (IsProcessorFeaturePresent(PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE)) {
+    f |= FEATURE_DOTPROD;
+  }
+#endif
+#ifdef PF_ARM_SVE_INSTRUCTIONS_AVAILABLE
+  if (IsProcessorFeaturePresent(PF_ARM_SVE_INSTRUCTIONS_AVAILABLE)) {
+    f |= FEATURE_SVE;
+    vec_bytes = 32;
+  }
+#endif
+#ifdef PF_ARM_SVE2_INSTRUCTIONS_AVAILABLE
+  if (IsProcessorFeaturePresent(PF_ARM_SVE2_INSTRUCTIONS_AVAILABLE)) {
+    f |= FEATURE_SVE2;
+    vec_bytes = 32;
+  }
+#endif
 #else
-  // Conservative fallback baseline for 64-bit ARM
   f |= FEATURE_FP | FEATURE_NEON;
 #endif
 
-  _isa_features = f;
-  _initialized  = true;
+  _sve_vector_bytes = vec_bytes;
+  _isa_features     = f;
+  _initialized      = true;
 }

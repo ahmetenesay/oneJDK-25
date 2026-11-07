@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -5346,6 +5346,60 @@ void C2_MacroAssembler::vector_castD2X_avx10(BasicType to_elem_bt, XMMRegister d
     default: assert(false, "Unexpected basic type for target of vector castD2X AVX10 (mem src): %s", type2name(to_elem_bt));
   }
 }
+
+void C2_MacroAssembler::vector_minmax_fp_avx10(int opc, BasicType elem_bt, XMMRegister dst,
+                                              XMMRegister src1, XMMRegister src2, int vec_enc) {
+  int imm8 = (opc == Op_MinV || opc == Op_MinReductionV) ? AVX10_MINMAX_MIN_COMPARE_SIGN
+                                                         : AVX10_MINMAX_MAX_COMPARE_SIGN;
+  if (elem_bt == T_FLOAT) {
+    evminmaxps(dst, k0, src1, src2, false, imm8, vec_enc);
+  } else if (elem_bt == T_DOUBLE) {
+    evminmaxpd(dst, k0, src1, src2, false, imm8, vec_enc);
+  } else if (elem_bt == T_SHORT) {
+    evminmaxph(dst, k0, src1, src2, false, imm8, vec_enc);
+  } else {
+    assert(false, "Unsupported element type for vector_minmax_fp_avx10: %s", type2name(elem_bt));
+  }
+}
+
+void C2_MacroAssembler::vector_cast_sat_avx10(BasicType from_bt, BasicType to_bt,
+                                             XMMRegister dst, XMMRegister src, int vec_enc) {
+  if (from_bt == T_FLOAT) {
+    vector_castF2X_avx10(to_bt, dst, src, vec_enc);
+  } else if (from_bt == T_DOUBLE) {
+    vector_castD2X_avx10(to_bt, dst, src, vec_enc);
+  } else {
+    assert(false, "Unsupported from_bt for vector_cast_sat_avx10: %s", type2name(from_bt));
+  }
+}
+
+void C2_MacroAssembler::apx_ndd_binary_op(int opcode, Register dst, Register src1, Register src2) {
+  switch (opcode) {
+    case Op_AddI:
+    case Op_AddL:
+      addq_ndd(dst, src1, src2);
+      break;
+    case Op_SubI:
+    case Op_SubL:
+      subq_ndd(dst, src1, src2);
+      break;
+    case Op_AndI:
+    case Op_AndL:
+      andq_ndd(dst, src1, src2);
+      break;
+    case Op_OrI:
+    case Op_OrL:
+      orq_ndd(dst, src1, src2);
+      break;
+    case Op_XorI:
+    case Op_XorL:
+      xorq_ndd(dst, src1, src2);
+      break;
+    default:
+      assert(false, "Unsupported opcode for apx_ndd_binary_op: %d", opcode);
+  }
+}
+
 
 void C2_MacroAssembler::vector_round_double_evex(XMMRegister dst, XMMRegister src,
                                                  AddressLiteral double_sign_flip, AddressLiteral new_mxcsr, int vec_enc,

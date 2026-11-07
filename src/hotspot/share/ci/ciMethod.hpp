@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1999, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -201,10 +201,12 @@ class ciMethod : public ciMetadata {
   bool is_static_initializer()  const { return get_Method()->is_static_initializer();  }
   bool changes_current_thread() const { return get_Method()->changes_current_thread(); }
   bool deprecated()             const { return is_loaded() && get_Method()->deprecated(); }
-  bool redjet_batch_exec()      const { return is_loaded() && get_Method()->redjet_batch_exec(); }
-  bool redjet_nested_exec()     const { return is_loaded() && get_Method()->redjet_nested_exec(); }
-  bool redjet_bypass_warmup()   const { return is_loaded() && get_Method()->redjet_bypass_warmup(); }
-  bool redjet_exempt_pin()      const { return is_loaded() && get_Method()->redjet_exempt_pin(); }
+  bool redjet_batch_exec()        const { return is_loaded() && get_Method()->redjet_batch_exec(); }
+  bool redjet_nested_exec()       const { return is_loaded() && get_Method()->redjet_nested_exec(); }
+  bool redjet_bypass_warmup()     const { return is_loaded() && get_Method()->redjet_bypass_warmup(); }
+  bool redjet_exempt_pin()        const { return is_loaded() && get_Method()->redjet_exempt_pin(); }
+  bool redjet_rjgc()              const { return is_loaded() && get_Method()->redjet_rjgc(); }
+  bool redjet_precision_target()   const { return is_loaded() && get_Method()->redjet_precision_target(); }
 
   bool check_intrinsic_candidate() const {
     if (intrinsic_id() == vmIntrinsics::_blackhole) {

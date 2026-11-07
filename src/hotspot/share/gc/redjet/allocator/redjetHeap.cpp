@@ -23,15 +23,34 @@
  */
 
 #include "gc/redjet/allocator/redjetHeap.hpp"
+#include "gc/redjet/allocator/redjetCompressedSpaces.hpp"
 #include "gc/redjet/runtime/redjetInitLogger.hpp"
-#include "gc/redjet/allocator/redjetMemoryPool.hpp"
 #include "gc/redjet/runtime/redjetThreadLocalData.hpp"
 #include "gc/redjet/runtime/redjet_globals.hpp"
 #include "gc/redjet/runtime/redjetFlags.hpp"
+#include "gc/redjet/runtime/redjetReferenceProcessor.hpp"
+#include "gc/redjet/runtime/redjetStringDedup.hpp"
+#include "gc/redjet/runtime/redjetStringTableCleaner.hpp"
+#include "gc/redjet/runtime/redjetClassUnloader.hpp"
+#include "gc/redjet/runtime/redjetGCMemoryManager.hpp"
+#include "gc/redjet/runtime/redjetMemoryPool.hpp"
+#include "gc/redjet/runtime/redjetGCPolicyCounters.hpp"
+#include "gc/redjet/runtime/redjetScheduler.hpp"
+#include "gc/redjet/engine/redjetSeasonalCoordinator.hpp"
+#include "gc/redjet/runtime/redjetOSInterruptShield.hpp"
+#include "gc/redjet/runtime/redjetSnatchRebate.hpp"
+#include "gc/redjet/runtime/redjetUpclocker.hpp"
+#include "gc/redjet/runtime/redjetBPUDirector.hpp"
+#include "gc/redjet/runtime/redjetUnifiedLogger.hpp"
+#include "gc/redjet/runtime/redjetHeapVerifier.hpp"
+#include "gc/redjet/simd/redjetSIMDContentionGovernor.hpp"
+#include "gc/redjet/api/redjetFastJNI.hpp"
+#include "gc/redjet/api/redjetFastFFM.hpp"
 #include "gc/shared/gcArguments.hpp"
 #include "gc/shared/locationPrinter.inline.hpp"
 #include "gc/shared/tlab_globals.hpp"
 #include "logging/log.hpp"
+#include "logging/logStream.hpp"
 #include "oops/oop.inline.hpp"
 #include "memory/allocation.hpp"
 #include "memory/allocation.inline.hpp"
@@ -56,6 +75,10 @@ RedjetHeap::RedjetHeap() :
   _monitoring_support(nullptr),
   _pool(nullptr),
   _memory_manager("Redjet Heap"),
+  _gc_memory_manager(nullptr),
+  _ref_processor(nullptr),
+  _class_unloader(nullptr),
+  _policy_counters(nullptr),
   _space(nullptr),
   _max_tlab_size(0),
   _root_scanner(nullptr),
@@ -65,6 +88,22 @@ RedjetHeap::RedjetHeap() :
 
 RedjetHeap::~RedjetHeap() {
   _slab_allocator.destroy();
+  if (_policy_counters != nullptr) {
+    delete _policy_counters;
+    _policy_counters = nullptr;
+  }
+  if (_class_unloader != nullptr) {
+    delete _class_unloader;
+    _class_unloader = nullptr;
+  }
+  if (_ref_processor != nullptr) {
+    delete _ref_processor;
+    _ref_processor = nullptr;
+  }
+  if (_gc_memory_manager != nullptr) {
+    delete _gc_memory_manager;
+    _gc_memory_manager = nullptr;
+  }
   if (_root_scanner != nullptr) {
     delete _root_scanner;
     _root_scanner = nullptr;
@@ -73,6 +112,14 @@ RedjetHeap::~RedjetHeap() {
     hs_destroy(_msimd_ctx);
     _msimd_ctx = nullptr;
   }
+  RedjetFastFFM::shutdown();
+  RedjetFastJNI::shutdown();
+  RedjetSeasonalCoordinator::shutdown();
+  RedjetOSInterruptShield::shutdown();
+  RedjetSnatchRebateEngine::shutdown();
+  RedjetUpclocker::instance().destroy();
+  RedjetCompressedSpaces::instance().shutdown();
+  g_redjet_scheduler.shutdown();
 }
 
 jint RedjetHeap::initialize() {
@@ -109,13 +156,47 @@ jint RedjetHeap::initialize() {
   _mark_bitmap.initialize((HeapWord*)_virtual_space.low(), (HeapWord*)_virtual_space.high());
   _root_scanner = new RedjetRootScanner(this, &_mark_bitmap);
 
+  // Initialize HotSpot Parity Subsystems: Reference Processor, Class Unloader, String Dedup
+  _ref_processor = new RedjetReferenceProcessor(this, &_mark_bitmap);
+  _class_unloader = new RedjetClassUnloader(this);
+  RedjetStringDedup::initialize();
+
+  // Initialize scheduler mode (Domestic vs TBB mutual exclusion - PLAN.md Section 8.8.1)
+  RedjetSchedulerMode sched_mode = RedjetSchedulerMode::DOMESTIC;
+  if (RedjetGCScheduler != nullptr && strcasecmp(RedjetGCScheduler, "TBB") == 0) {
+    sched_mode = RedjetSchedulerMode::TBB;
+  }
+  g_redjet_scheduler.init(os::processor_count(), sched_mode);
+
   // Initialize VFS memory tree & strict branch validation policies
   _vfs_tree.init();
-  HS_hotspot_set_strict_vfs_branch_validation(RedjetVFSStrict ? 1 : 0);
+  HS_hotspot_set_strict_vfs_branch_validation((RedjetVFSStrict || RedjetGCStrictVFS) ? 1 : 0);
   HS_hotspot_vfs_set_panic_dialog_enabled(RedjetVFSPanicDialog ? 1 : 0);
 
-  // Initialize oneTBB heterogeneous task arenas if enabled
-  if (RedjetHeteroArenas) {
+  // Initialize Isolated Redjet Compressed Spaces (narrowKlass in header_pane + isolated code_boot)
+  size_t code_boot_req = RedjetFlags::config().integers.code_arena_bytes > 0
+                             ? RedjetFlags::config().integers.code_arena_bytes
+                             : RedjetCompressedSpaces::DEFAULT_CODE_BOOT_BYTES;
+  RedjetCompressedSpaces::instance().initialize(
+      reinterpret_cast<uintptr_t>(_virtual_space.low()),
+      _virtual_space.reserved_size(),
+      code_boot_req,
+      RedjetCompressedSpaces::DEFAULT_HEADER_PANE_BYTES);
+  _vfs_tree.record_domain_alloc(RedjetMemoryDomain::HOTSPOT_MEMORY, false, code_boot_req);
+
+  // Initialize Dynamic SIMD-to-Scalar Contention Governor, BPU Director, Fast JNI/FFM, and Ring-3 Upclocker
+  RedjetSIMDContentionGovernor::instance().initialize();
+  RedjetBPUDirector::instance().reset();
+  RedjetFastJNI::initialize();
+  RedjetFastFFM::initialize();
+  RedjetUpclocker::instance().init();
+  if (RedjetGCUpclockerQoS || RedjetFlags::config().strings.upclocker_enabled) {
+    RedjetUpclocker::instance().pin_max_frequency_warmup(0, RedjetUpclocker::DEFAULT_WARMUP_BURST_MS);
+  }
+
+  // Initialize oneTBB heterogeneous task arenas only if TBB scheduler is active
+  // (PLAN.md Section 8.8.1: Strict mutual exclusion - TBB is 100% silenced under Domestic scheduler)
+  if (sched_mode == RedjetSchedulerMode::TBB) {
     _tbb_arenas.init();
   }
 
@@ -146,6 +227,12 @@ jint RedjetHeap::initialize() {
     log_warning(gc)("RedjetGC RJ SIMD context initialization fell back to scalar/fallback tier");
   }
 
+  // Initialize Seasonal Transitions Coordinator, OS Interrupt Shield, and Snatch & Rebate
+  RedjetSeasonalCoordinator::initialize();
+  RedjetOSInterruptShield::initialize();
+  RedjetOSInterruptShield::register_falline_morgue_range((uintptr_t)_virtual_space.low(), _virtual_space.size());
+  RedjetSnatchRebateEngine::initialize();
+
   // Install barrier set
   BarrierSet::set_barrier_set(new RedjetBarrierSet());
 
@@ -155,20 +242,44 @@ jint RedjetHeap::initialize() {
 }
 
 void RedjetHeap::initialize_serviceability() {
-  _pool = new RedjetMemoryPool(this);
+  _pool = new RedjetUnifiedHeapPool(this);
   _monitoring_support = new RedjetMonitoringSupport(this);
   _memory_manager.add_pool(_pool);
+
+  // HotSpot Parity: GC Memory Manager and specialized MemoryPools (Unified, Runway, Hotfield, Landfill)
+  _gc_memory_manager = new RedjetGCMemoryManager(this);
+  _gc_memory_manager->initialize_pools();
+
+  // HotSpot Parity: PerfData Policy Counters
+  _policy_counters = new RedjetGCPolicyCounters(this);
 }
 
 GrowableArray<GCMemoryManager*> RedjetHeap::memory_managers() {
-  GrowableArray<GCMemoryManager*> memory_managers(1);
+  GrowableArray<GCMemoryManager*> memory_managers(2);
   memory_managers.append(&_memory_manager);
+  if (_gc_memory_manager != nullptr) {
+    memory_managers.append(_gc_memory_manager);
+  }
   return memory_managers;
 }
 
 GrowableArray<MemoryPool*> RedjetHeap::memory_pools() {
-  GrowableArray<MemoryPool*> memory_pools(1);
+  GrowableArray<MemoryPool*> memory_pools(5);
   memory_pools.append(_pool);
+  if (_gc_memory_manager != nullptr) {
+    if (_gc_memory_manager->pool_unified() != nullptr) {
+      memory_pools.append(_gc_memory_manager->pool_unified());
+    }
+    if (_gc_memory_manager->pool_runway() != nullptr) {
+      memory_pools.append(_gc_memory_manager->pool_runway());
+    }
+    if (_gc_memory_manager->pool_hotfield() != nullptr) {
+      memory_pools.append(_gc_memory_manager->pool_hotfield());
+    }
+    if (_gc_memory_manager->pool_landfill() != nullptr) {
+      memory_pools.append(_gc_memory_manager->pool_landfill());
+    }
+  }
   return memory_pools;
 }
 
@@ -185,6 +296,7 @@ HeapWord* RedjetHeap::allocate_work(size_t size) {
   if (eb != nullptr) {
     HeapWord* res = reinterpret_cast<HeapWord*>(eb);
     _allocated_bytes.fetch_add(size * HeapWordSize, std::memory_order_relaxed);
+    _vfs_tree.record_domain_alloc(RedjetMemoryDomain::JAVA_MEMORY, true, size * HeapWordSize);
     log_trace(gc, alloc)("Allocated %zu bytes via Falline Snatch at " PTR_FORMAT, size * HeapWordSize, p2i(res));
     return res;
   }
@@ -193,6 +305,7 @@ HeapWord* RedjetHeap::allocate_work(size_t size) {
   HeapWord* res = _space->par_allocate(size);
   if (res != nullptr) {
     _allocated_bytes.fetch_add(size * HeapWordSize, std::memory_order_relaxed);
+    _vfs_tree.record_domain_alloc(RedjetMemoryDomain::JAVA_MEMORY, true, size * HeapWordSize);
     return res;
   }
 
@@ -238,6 +351,7 @@ HeapWord* RedjetHeap::mem_allocate(size_t size, bool* gc_overhead_limit_was_exce
     void* p = _slab_allocator.allocate(bytes);
     if (p != nullptr) {
       _allocated_bytes.fetch_add(bytes, std::memory_order_relaxed);
+      _vfs_tree.record_domain_alloc(RedjetMemoryDomain::JAVA_MEMORY, true, bytes);
       log_trace(gc, alloc)("Allocated %zu bytes via SlabAllocator at " PTR_FORMAT, bytes, p2i(p));
       return reinterpret_cast<HeapWord*>(p);
     }
@@ -318,52 +432,156 @@ void RedjetHeap::collect(GCCause::Cause cause) {
     return;
   }
 
-  log_info(gc)("RedjetGC collection triggered: cause '%s'", GCCause::to_string(cause));
-  _current_sweep_no.fetch_add(1, std::memory_order_relaxed);
+  uint64_t cycle_start_ns = sacculus_now_ns();
+  uint64_t sweep_id = _current_sweep_no.fetch_add(1, std::memory_order_relaxed) + 1;
+  size_t used_before = used();
+  size_t cap_before  = capacity();
+  RedjetUnifiedLogger::instance().log_cycle_start(sweep_id, cause, used_before, cap_before);
+
+  if (_gc_memory_manager != nullptr) {
+    _gc_memory_manager->gc_cycle_begin(cause);
+  }
+
   hs_gc_safepoint_rendezvous_wait();
   hs_gc_controlpoint_check(_allocated_bytes.load(std::memory_order_relaxed));
-  g_hs_mltc_solver.check_and_solve(used(), capacity(), 0.0f);
+  g_hs_mltc_solver.check_and_solve(used_before, cap_before, 0.0f);
   hs_gc_hookpoint_trigger(HS_HOOKPOINT_GC_PRE_SWEEP, 0, nullptr, 0);
 
   // 1. HotSpot Root Scan & Live Object Graph Tracing
-  scan_roots_and_trace();
-
-  // 2. Sweep unmarked memory into Falline / Landfill
-  sweep_unmarked();
-
-  // 3. Step Redjet Big GC Engine
-  _gc.step();
-  hs_gc_hookpoint_trigger(HS_HOOKPOINT_GC_POST_SWEEP, 0, nullptr, 0);
-
-  if (RedjetRMRP) {
-    execute_rmrp();
+  {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Concurrent Root Scan & Mark");
+    if (_ref_processor != nullptr) {
+      _ref_processor->enable_discovery();
+    }
+    size_t traced = scan_roots_and_trace();
+    phase_log.set_items(traced);
   }
 
-  // 4. Reset mark bitmap for next collection cycle
+  // 2. Reference Processing & Weak Root Cleaning
+  if (_ref_processor != nullptr) {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Reference Processing");
+    _ref_processor->process_discovered_references(false);
+    _ref_processor->disable_discovery();
+  }
+
+  // 3. String Table and Symbol Table cleaning
+  {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "String & Symbol Table Clean");
+    RedjetStringTableCleaner::clean_tables();
+  }
+
+  // 4. Dynamic Class Unloading & Metaspace purge
+  if (_class_unloader != nullptr) {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Class Unloading & HeaderPane Purge");
+    _class_unloader->do_unloading();
+  }
+
+  // 5. Sweep unmarked memory into Falline / Landfill
+  {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Falline EmptyBox Sweep");
+    size_t swept_bytes = sweep_unmarked();
+    phase_log.set_items(swept_bytes);
+  }
+
+  // 6. Step Redjet Big GC Engine
+  {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Redjet Engine Step & Puzzler Coach");
+    _gc.step();
+    hs_gc_hookpoint_trigger(HS_HOOKPOINT_GC_POST_SWEEP, 0, nullptr, 0);
+  }
+
+  if (RedjetRMRP || RedjetGCRMRP) {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "RMRP Resident Coalesce");
+    size_t rmrp_bytes = execute_rmrp();
+    phase_log.set_items(rmrp_bytes);
+  }
+
+  // 7. Reset mark bitmap for next collection cycle
   _mark_bitmap.clear();
   drain_hotlog_to_coldlog(&_hotlog, &_coldlog);
+
+  // 8. Update telemetry counters and end GC cycle
+  if (_policy_counters != nullptr) {
+    _policy_counters->update_counters();
+  }
+  if (_gc_memory_manager != nullptr) {
+    _gc_memory_manager->gc_cycle_end();
+  }
+
+  RedjetUnifiedLogger::instance().log_vfs_domain_summary(sweep_id, this);
+  RedjetUnifiedLogger::instance().log_cycle_end(
+      sweep_id, cause, used_before, used(), capacity(), sacculus_now_ns() - cycle_start_ns);
 }
 
 void RedjetHeap::do_full_collection(bool clear_all_soft_refs) {
-  log_info(gc)("RedjetGC full collection triggered (clear_all_soft_refs=%s)", clear_all_soft_refs ? "true" : "false");
+  uint64_t cycle_start_ns = sacculus_now_ns();
+  uint64_t sweep_id = _current_sweep_no.fetch_add(1, std::memory_order_relaxed) + 1;
+  size_t used_before = used();
+  RedjetUnifiedLogger::instance().log_cycle_start(sweep_id, GCCause::_full_gc_alot, used_before, capacity());
+
+  if (_gc_memory_manager != nullptr) {
+    _gc_memory_manager->gc_cycle_begin(GCCause::_full_gc_alot);
+  }
   hs_gc_safepoint_rendezvous_wait();
   hs_gc_hookpoint_trigger(HS_HOOKPOINT_GC_PRE_COMPACT, 0, nullptr, 0);
 
   // 1. HotSpot Root Scan & Live Object Graph Tracing
-  scan_roots_and_trace();
-
-  // 2. Full Compaction / Shake Bed
-  _gc.shake_bed();
-  hs_gc_hookpoint_trigger(HS_HOOKPOINT_GC_POST_COMPACT, 0, nullptr, 0);
-  _current_sweep_no.fetch_add(1, std::memory_order_relaxed);
-
-  if (RedjetRMRP) {
-    execute_rmrp();
+  {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Full Root Scan & Mark");
+    if (_ref_processor != nullptr) {
+      _ref_processor->enable_discovery();
+    }
+    size_t traced = scan_roots_and_trace();
+    phase_log.set_items(traced);
   }
 
-  // 3. Reset mark bitmap
+  // 2. Reference Processing with full clear
+  if (_ref_processor != nullptr) {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Full Reference Processing");
+    _ref_processor->process_discovered_references(clear_all_soft_refs);
+    _ref_processor->disable_discovery();
+  }
+
+  // 3. String Table and Symbol Table cleaning
+  {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Full String & Symbol Clean");
+    RedjetStringTableCleaner::clean_tables();
+  }
+
+  // 4. Dynamic Class Unloading & Metaspace purge
+  if (_class_unloader != nullptr) {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Full Class Unloading");
+    _class_unloader->do_unloading();
+  }
+
+  // 5. Full Compaction / Shake Bed
+  {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Full Shake-Bed Compaction");
+    _gc.shake_bed();
+    hs_gc_hookpoint_trigger(HS_HOOKPOINT_GC_POST_COMPACT, 0, nullptr, 0);
+  }
+
+  if (RedjetRMRP || RedjetGCRMRP) {
+    RedjetGCPhaseLogScope phase_log(sweep_id, "Full RMRP Resident Coalesce");
+    size_t rmrp_bytes = execute_rmrp();
+    phase_log.set_items(rmrp_bytes);
+  }
+
+  // 6. Reset mark bitmap
   _mark_bitmap.clear();
   drain_hotlog_to_coldlog(&_hotlog, &_coldlog);
+
+  // 7. Update telemetry counters and end GC cycle
+  if (_policy_counters != nullptr) {
+    _policy_counters->update_counters();
+  }
+  if (_gc_memory_manager != nullptr) {
+    _gc_memory_manager->gc_cycle_end();
+  }
+
+  RedjetUnifiedLogger::instance().log_vfs_domain_summary(sweep_id, this);
+  RedjetUnifiedLogger::instance().log_cycle_end(
+      sweep_id, GCCause::_full_gc_alot, used_before, used(), capacity(), sacculus_now_ns() - cycle_start_ns);
 }
 
 size_t RedjetHeap::scan_roots_and_trace() {
@@ -384,7 +602,10 @@ size_t RedjetHeap::sweep_unmarked() {
       size_t obj_size_bytes = obj_size_words * HeapWordSize;
       if (!_mark_bitmap.is_marked(cur)) {
         if (obj_size_bytes >= sizeof(RedjetEmptyBox)) {
-          _falline.put_emptybox(reinterpret_cast<RedjetEmptyBox*>(cur), _current_sweep_no.load(std::memory_order_relaxed));
+          _falline.register_emptybox(obj_size_bytes,
+                                     reinterpret_cast<RedjetEmptyBox*>(cur),
+                                     _current_sweep_no.load(std::memory_order_relaxed));
+          _vfs_tree.record_domain_free(RedjetMemoryDomain::JAVA_MEMORY, true, obj_size_bytes);
           reclaimed_bytes += obj_size_bytes;
         }
       }
@@ -406,8 +627,12 @@ void RedjetHeap::object_iterate(ObjectClosure* cl) {
   }
 }
 
+void RedjetHeap::verify(VerifyOption option) {
+  (void)RedjetHeapVerifier::verify_heap(this, option);
+}
+
 void RedjetHeap::print_heap_on(outputStream* st) const {
-  st->print_cr("Redjet Heap (%s)", RedjetSCMode ? "SSIOLSC Safety-Critical" : "NORMAX Dynamic SIMD");
+  st->print_cr("Redjet Heap (%s)", (RedjetSCMode || RedjetGCSCMode) ? "SSIOLSC Safety-Critical" : "NORMAX Dynamic SIMD");
   StreamIndentor si(st, 1);
   _virtual_space.print_on(st);
   if (_space != nullptr) {
@@ -416,6 +641,12 @@ void RedjetHeap::print_heap_on(outputStream* st) const {
     _space->print_on(st, "");
   }
   _falline.print_on(st);
+  _vfs_tree.print_domain_summary_on(st);
+  RedjetCompressedSpaces::instance().print_on(st);
+}
+
+void RedjetHeap::print_gc_on(outputStream* st) const {
+  RedjetUnifiedLogger::instance().print_statistics_summary(st, this);
 }
 
 bool RedjetHeap::print_location(outputStream* st, void* addr) const {
@@ -433,6 +664,11 @@ void RedjetHeap::print_tracing_info() const {
                  committed * 100.0 / reserved,
                  byte_size_in_proper_unit(cur_used),  proper_unit_for_byte_size(cur_used),
                  cur_used * 100.0 / reserved);
+  }
+  LogTarget(Info, gc, stats) lt;
+  if (lt.is_enabled()) {
+    LogStream ls(lt);
+    RedjetUnifiedLogger::instance().print_statistics_summary(&ls, this);
   }
 }
 

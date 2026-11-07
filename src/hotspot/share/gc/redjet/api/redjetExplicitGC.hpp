@@ -63,4 +63,16 @@ public:
   RJ_API static uint64_t bytes_reclaimed() { return _bytes_reclaimed_by_hints.load(std::memory_order_relaxed); }
 };
 
+#include "jni.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+JNIEXPORT void JNICALL Java_jdk_gc_redjet_GCHints_notifyHint0(JNIEnv* env, jclass clazz);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif // SHARE_GC_REDJET_API_REDJETEXPLICITGC_HPP

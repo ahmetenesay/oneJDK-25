@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2014, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,7 +25,7 @@
 
 package sun.jvm.hotspot.gc.shared;
 
-//These definitions should be kept in sync with the definitions in the HotSpot code.
+// These definitions are strictly synchronized with src/hotspot/share/gc/shared/gcCause.hpp.
 
 public enum GCCause {
   _java_lang_system_gc ("System.gc()"),
@@ -54,8 +55,9 @@ public enum GCCause {
 
   _dcmd_gc_run ("Diagnostic Command"),
 
-  _shenandoah_allocation_failure_evac ("Allocation Failure During Evacuation"),
   _shenandoah_stop_vm ("Stopping VM"),
+  _shenandoah_allocation_failure_evac ("Allocation Failure During Evacuation"),
+  _shenandoah_humongous_allocation_failure ("Humongous Allocation Failure"),
   _shenandoah_concurrent_gc ("Concurrent GC"),
   _shenandoah_upgrade_to_full_gc ("Upgrade To Full GC"),
 
@@ -66,6 +68,17 @@ public enum GCCause {
   _z_proactive ("Proactive"),
   _z_high_usage ("High Usage"),
 
+  _redjet_stopless_continuous ("Redjet Stopless Continuous Cycle"),
+  _redjet_seasonal_warmup ("Redjet Seasonal Spring Warmup"),
+  _redjet_seasonal_surge ("Redjet Seasonal Summer Surge"),
+  _redjet_seasonal_idle_rebate ("Redjet Seasonal Winter Idle Rebate"),
+  _redjet_tailtraces_flush ("Redjet TailTraces RPSS Flush"),
+  _redjet_explicit_clean_hint ("Redjet Explicit Clean Hint"),
+  _redjet_mltc_remediation ("Redjet MLTC Sanitizer Remediation"),
+  _redjet_rmrp_coalesce ("Redjet RMRP Resident Coalesce"),
+  _redjet_offheap_eviction ("Redjet Smart Off-Heap Eviction"),
+  _redjet_bureaucratic_sc ("Redjet Safety-Critical Deterministic Cycle"),
+
   _last_gc_cause ("ILLEGAL VALUE - last gc cause - ILLEGAL VALUE");
 
   private final String value;
@@ -73,6 +86,7 @@ public enum GCCause {
   GCCause(String val) {
     this.value = val;
   }
+
   public String value() {
     return value;
   }

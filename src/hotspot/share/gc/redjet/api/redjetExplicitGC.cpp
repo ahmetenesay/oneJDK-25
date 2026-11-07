@@ -28,6 +28,8 @@
 #include "gc/redjet/allocator/redjet_mltc.hpp"
 #include "gc/redjet/allocator/redjet_rmrp.hpp"
 #include "gc/redjet/allocator/redjetMotherline.hpp"
+#include "gc/redjet/engine/redjetSeasonalCoordinator.hpp"
+#include "gc/redjet/runtime/redjetUnifiedLogger.hpp"
 #include "gc/redjet/runtime/redjetGearkit.hpp"
 #include "gc/redjet/runtime/redjet_globals.hpp"
 
@@ -37,6 +39,12 @@ std::atomic<uint64_t> RedjetExplicitGC::_bytes_reclaimed_by_hints{0};
 
 void RedjetExplicitGC::preflight_gc_hint(uint32_t method_id, uint32_t bci) {
   _explicit_hints_preflighted.fetch_add(1, std::memory_order_relaxed);
+  if (RedjetGCInvokesExplicitCleanHints) {
+    // Compiler static lookahead pre-warming: advance TailTraces probation epoch & notify Seasonal Coordinator
+    uint64_t next_ep = g_redjet_tail_traces.current_epoch() + 1;
+    (void)g_redjet_tail_traces.advance_epoch_and_process_probation(next_ep);
+    RedjetSeasonalCoordinator::notify_dimension_shift("CompilerLookahead_ExplicitCleanHint");
+  }
   hs_hotlog_emit(HS_Ebin0_HOTSWAP, HS_Ebin1_INFO, method_id, bci, 0, 0, 0, 0, 0, "ExplicitGC:PreflightHint");
 }
 
@@ -77,8 +85,24 @@ void RedjetExplicitGC::invoke_explicit_clean_hint() {
     size_t total_reclaimed = off_heap_reclaimed + rmrp_reclaimed;
     _bytes_reclaimed_by_hints.fetch_add(total_reclaimed, std::memory_order_relaxed);
 
+#ifndef REDJET_STANDALONE_BUILD
+    char detail[128];
+    snprintf(detail, sizeof(detail),
+             "Zero-STW Clean Hint (%s): drained %zu clasps, reclaimed %zu KB",
+             GCCause::to_string(GCCause::_redjet_explicit_clean_hint),
+             dead_drained, total_reclaimed / 1024);
+    RedjetUnifiedLogger::instance().log_ergo_decision(
+        g_redjet_tail_traces.current_epoch(), RedjetLogSubsystem::TAILTRACES, "explicit_clean_hint", detail);
+#endif
+
     hs_hotlog_emit(HS_Ebin0_HOTSWAP, HS_Ebin1_INFO, (uint32_t)dead_drained,
                    (uint32_t)(total_reclaimed / 1024), 0, 0, 0, 0,
                    (uint32_t)total_reclaimed, "ExplicitGC:CleanHintExecuted");
   }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_jdk_gc_redjet_GCHints_notifyHint0(JNIEnv* env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+  RedjetExplicitGC::invoke_explicit_clean_hint();
 }

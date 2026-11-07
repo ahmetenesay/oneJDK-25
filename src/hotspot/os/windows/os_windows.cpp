@@ -78,6 +78,10 @@
 #include "utilities/population_count.hpp"
 #include "utilities/vmError.hpp"
 #include "windbghelp.hpp"
+#if INCLUDE_REDJETGC
+#include "gc/redjet/runtime/redjetOSInterruptShield.hpp"
+#include "gc/shared/gc_globals.hpp"
+#endif
 #if INCLUDE_JFR
 #include "jfr/jfrEvents.hpp"
 #include "jfr/support/jfrNativeLibraryLoadEvent.hpp"
@@ -2626,6 +2630,21 @@ LONG WINAPI topLevelExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo) {
   if (InterceptOSException) return EXCEPTION_CONTINUE_SEARCH;
   PEXCEPTION_RECORD exception_record = exceptionInfo->ExceptionRecord;
   DWORD exception_code = exception_record->ExceptionCode;
+#if INCLUDE_REDJETGC
+  if (UseRedjetGC && exception_record != nullptr) {
+    void* fault_addr = (exception_code == EXCEPTION_ACCESS_VIOLATION &&
+                        exception_record->NumberParameters >= 2)
+                       ? reinterpret_cast<void*>(exception_record->ExceptionInformation[1])
+                       : reinterpret_cast<void*>(exception_record->ExceptionAddress);
+    if (RedjetOSInterruptShield::intercept_hardware_trap(
+            static_cast<int>(exception_code),
+            fault_addr,
+            exception_record,
+            exceptionInfo->ContextRecord)) {
+      return EXCEPTION_CONTINUE_EXECUTION;
+    }
+  }
+#endif
 #if defined(_M_ARM64)
   address pc = (address) exceptionInfo->ContextRecord->Pc;
 

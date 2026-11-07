@@ -58,6 +58,12 @@ public:
 #include <cstring>
 #endif
 
+// Logical memory ownership domain across both on_heap and off_heap VFS subtrees
+enum class RedjetMemoryDomain : uint8_t {
+  JAVA_MEMORY    = 0, // User objects (motherline, hotfield, park_arena, FFM reserved_boot)
+  HOTSPOT_MEMORY = 1  // VM/GC/JIT internals (code_boot, header_pane, log_boot, rpss, puzzle_arena)
+};
+
 // Forward declaration
 class RedjetVFSNode;
 
@@ -67,13 +73,34 @@ public:
   char                   _full_path[192];
   size_t                 _quota_bytes;
   std::atomic<size_t>    _used_bytes;
+  RedjetMemoryDomain     _domain;
+  bool                   _is_on_heap;
 
   RedjetVFSNode*         _parent;
   GrowableArray<RedjetVFSNode*> _children;
 
+  static RedjetMemoryDomain classify_domain_for_path(const char* path) noexcept {
+    if (path == nullptr) return RedjetMemoryDomain::JAVA_MEMORY;
+    if (strstr(path, "code_boot") != nullptr ||
+        strstr(path, "header_pane") != nullptr ||
+        strstr(path, "log_boot") != nullptr ||
+        strstr(path, "rpss") != nullptr ||
+        strstr(path, "puzzle_arena") != nullptr) {
+      return RedjetMemoryDomain::HOTSPOT_MEMORY;
+    }
+    return RedjetMemoryDomain::JAVA_MEMORY;
+  }
+
+  static bool classify_on_heap_for_path(const char* path) noexcept {
+    if (path == nullptr) return true;
+    return strstr(path, "/off_heap") == nullptr;
+  }
+
   RedjetVFSNode(const char* name = "", const char* full_path = "", RedjetVFSNode* parent = nullptr, size_t quota = 0) :
     _quota_bytes(quota),
     _used_bytes(0),
+    _domain(classify_domain_for_path(full_path)),
+    _is_on_heap(classify_on_heap_for_path(full_path)),
     _parent(parent),
     _children(0) {
     strncpy(_name, name, sizeof(_name) - 1);

@@ -293,4 +293,10 @@
   void extract_v(Register dst, VectorRegister src, BasicType bt, int idx, VectorRegister tmp);
   void extract_fp_v(FloatRegister dst, VectorRegister src, BasicType bt, int idx, VectorRegister tmp);
 
+  // RVV 1.0 hardware intrinsics
+  void rvv_reduce_add(FloatRegister dst, VectorRegister src, BasicType bt, int vlen);
+  void rvv_reduce_min(FloatRegister dst, VectorRegister src, BasicType bt, int vlen);
+  void rvv_reduce_max(FloatRegister dst, VectorRegister src, BasicType bt, int vlen);
+  void rvv_clear_cacheline_64(Register aligned64_addr);
+
 #endif // CPU_RISCV_C2_MACROASSEMBLER_RISCV_HPP

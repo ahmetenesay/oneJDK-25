@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1999, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -43,6 +43,9 @@
 #include "runtime/sharedRuntime.hpp"
 #include "utilities/checkedCast.hpp"
 #include "utilities/macros.hpp"
+#if INCLUDE_REDJETGC
+#include "gc/redjet/runtime/redjetBarrierSetC1.hpp"
+#endif
 #if INCLUDE_JFR
 #include "jfr/jfr.hpp"
 #endif
@@ -1274,7 +1277,13 @@ void GraphBuilder::increment() {
 
 
 void GraphBuilder::_goto(int from_bci, int to_bci) {
-  Goto *x = new Goto(block_at(to_bci), to_bci <= from_bci);
+  bool is_safepoint = (to_bci <= from_bci);
+#if INCLUDE_REDJETGC
+  if (is_safepoint && RedjetBarrierSetC1::should_suppress_loop_safepoint(compilation()->method())) {
+    is_safepoint = false;
+  }
+#endif
+  Goto *x = new Goto(block_at(to_bci), is_safepoint);
   if (is_profiling()) {
     compilation()->set_would_profile(true);
     x->set_profiled_bci(bci());

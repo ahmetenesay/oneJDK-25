@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -549,7 +549,7 @@ public:
 
   // Redjet SFVM annotation query helpers (individual getters/setters generated via M_STATUS_DO above)
   bool is_redjet_accelerated() const {
-    return redjet_batch_exec() || redjet_nested_exec() || redjet_bypass_warmup() || redjet_exempt_pin();
+    return redjet_batch_exec() || redjet_nested_exec() || redjet_bypass_warmup() || redjet_exempt_pin() || redjet_rjgc() || redjet_precision_target();
   }
   bool should_redjet_bypass_safepoint() const {
     return redjet_batch_exec() || redjet_nested_exec() || redjet_bypass_warmup();

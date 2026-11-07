@@ -40,10 +40,38 @@
 #endif
 #endif
 
+#ifndef HS_RMRP_METHOD_E_DEFINED
+#define HS_RMRP_METHOD_E_DEFINED
+enum class hs_rmrp_method_e : uint8_t {
+    PLUMP      = 0, // "Prune and coalesce before rebate": merges adjacent free spans into super-blocks before OS decommit
+    SEQUENTIAL = 1  // "Installment / stepwise per block": trims trailing cold pages immediately to shrink RSS
+};
+#endif
+
 // ============================================================================
-// RMRP (Reduce Memory Resident Set Propagation) Subsystem (PLAN.md Section 11.1)
-// Plump & Sequential Modes, Page Propagation Barriers, Zero-Page Deduplication,
-// and Autonomous VFS Compaction Triggers
+// RMRP (Reduce Memory Resident Set Reclamation) Subsystem (PLAN.md Section 9.6 & 11.1)
+//
+// Dual-Method Reclamation:
+// 1. PLUMP Mode (Default):
+//    - Scans sparse, fragmented slabs and idle Runway/Hotfield memory.
+//    - Builds an in-memory Interval-Tree of free holes.
+//    - Coalesces adjacent contiguous free holes into large 64KB/2MB chunks.
+//    - Performs single-shot bulk OS decommit (VirtualFree / madvise) to prevent RAM hole dispersion.
+// 2. SEQUENTIAL Mode (Stepwise installment):
+//    - Micro-installment FIFO queue for cloud/container environments requiring low RSS.
+//    - Progressive page-by-page span trimming with rate-limiting token bucket.
+// 3. Mathematical Foundations:
+//    - Shannon Entropy Fragmentation Index:
+//        H(X) = - \sum_{i=1}^{k} p_i \log_2(p_i)
+//      Measures dispersal of free holes across size classes.
+//    - Buddy Allocator Chunk Coalescing:
+//        Order-0 (4KB) through Order-9 (2MB large pages).
+//    - 512-bit AVX-512 Zero-Page Deduplicator:
+//        Scans physical frames using _mm512_test_epi64_mask with 4x unrolling.
+// 4. Autonomous VFS Compaction 3-Signal Trigger:
+//    - Signal 1: Fragmentation Score (> 35% threshold).
+//    - Signal 2: RMRP Cold-Page Resident Bloat Signal.
+//    - Signal 3: MLTC Bus Traffic Pacing Lull Window.
 // ============================================================================
 
 enum class RedjetPageResidentState : uint8_t {
@@ -85,7 +113,124 @@ struct RedjetVFSCompactionTriggerResult {
 };
 
 /* ========================================================================= */
-/* 1. PAGE RESIDENT PROPAGATION BARRIER                                      */
+/* 1. INTERVAL-TREE FREE SPAN STRUCTURES (PLUMP COALESCING)                  */
+/* ========================================================================= */
+
+struct RedjetFreeSpanNode {
+    uintptr_t           start_addr{ 0 };
+    uintptr_t           end_addr{ 0 };
+    size_t              size_bytes{ 0 };
+    uintptr_t           max_subtree_end{ 0 };
+    RedjetFreeSpanNode* left{ nullptr };
+    RedjetFreeSpanNode* right{ nullptr };
+    int                 height{ 1 };
+};
+
+class RedjetFreeSpanIntervalTree {
+public:
+    static constexpr size_t MAX_TREE_NODES = 2048;
+
+private:
+    RedjetFreeSpanNode _node_pool[MAX_TREE_NODES];
+    size_t             _allocated_nodes{ 0 };
+    RedjetFreeSpanNode* _root{ nullptr };
+    hs_ticket_lock_t   _tree_lock;
+
+    int get_height(RedjetFreeSpanNode* n) const noexcept {
+        return (n != nullptr) ? n->height : 0;
+    }
+
+    uintptr_t get_max(uintptr_t a, uintptr_t b, uintptr_t c) const noexcept {
+        uintptr_t m = (a > b) ? a : b;
+        return (m > c) ? m : c;
+    }
+
+    void update_node(RedjetFreeSpanNode* n) noexcept {
+        if (n == nullptr) return;
+        int hl = get_height(n->left);
+        int hr = get_height(n->right);
+        n->height = 1 + ((hl > hr) ? hl : hr);
+        n->max_subtree_end = get_max(n->end_addr,
+                                     (n->left != nullptr) ? n->left->max_subtree_end : 0,
+                                     (n->right != nullptr) ? n->right->max_subtree_end : 0);
+    }
+
+    int get_balance(RedjetFreeSpanNode* n) const noexcept {
+        return (n != nullptr) ? (get_height(n->left) - get_height(n->right)) : 0;
+    }
+
+    RedjetFreeSpanNode* rotate_right(RedjetFreeSpanNode* y) noexcept;
+    RedjetFreeSpanNode* rotate_left(RedjetFreeSpanNode* x) noexcept;
+    RedjetFreeSpanNode* insert_internal(RedjetFreeSpanNode* node, uintptr_t start, uintptr_t end) noexcept;
+
+public:
+    RedjetFreeSpanIntervalTree();
+
+    void reset();
+    bool insert_span(uintptr_t start, uintptr_t end);
+    size_t coalesce_adjacent_spans(uintptr_t* out_coalesced_starts, size_t* out_coalesced_sizes, size_t max_results);
+    size_t total_free_bytes() const noexcept;
+};
+
+/* ========================================================================= */
+/* 2. BUDDY ALLOCATOR CHUNK COALESCER (Order-0 to Order-9 / 2MB)             */
+/* ========================================================================= */
+
+class RedjetBuddyCoalescer {
+public:
+    static constexpr size_t NUM_BUDDY_ORDERS = 10; // Order 0 = 4KB, Order 9 = 2MB
+    static constexpr size_t BASE_CHUNK_SIZE  = 4096;
+
+    struct BuddyBlock {
+        uintptr_t   address{ 0 };
+        uint8_t     order{ 0 };
+        bool        is_free{ true };
+        BuddyBlock* next{ nullptr };
+        BuddyBlock* prev{ nullptr };
+    };
+
+private:
+    static constexpr size_t MAX_BUDDY_BLOCKS = 1024;
+    BuddyBlock  _block_pool[MAX_BUDDY_BLOCKS];
+    size_t      _pool_cursor{ 0 };
+    BuddyBlock* _free_lists[NUM_BUDDY_ORDERS]{ nullptr };
+    hs_ticket_lock_t _buddy_lock;
+
+public:
+    RedjetBuddyCoalescer();
+
+    void reset();
+    bool register_free_block(uintptr_t addr, size_t size);
+    size_t coalesce_all_orders();
+    size_t extract_super_blocks(uint8_t target_order, uintptr_t* out_addresses, size_t max_count);
+};
+
+/* ========================================================================= */
+/* 3. SHANNON ENTROPY FRAGMENTATION ANALYZER                                  */
+/* ========================================================================= */
+
+class RedjetFragmentationAnalyzer {
+public:
+    static constexpr size_t NUM_SIZE_BINS = 8;
+    // Bins: 16B..64B, 64B..256B, 256B..1KB, 1KB..4KB, 4KB..16KB, 16KB..64KB, 64KB..256KB, >256KB
+
+    struct FragmentationReport {
+        float  shannon_entropy{ 0.0f };       // H(X) in bits (0.0 = uniform/perfect, > 2.5 = high dispersal)
+        float  fragmentation_score{ 0.0f };   // Normalized 0.0 to 1.0 (where > 0.35 triggers compaction)
+        size_t total_free_holes{ 0 };
+        size_t total_free_bytes{ 0 };
+        size_t largest_hole_bytes{ 0 };
+        size_t smallest_hole_bytes{ 0 };
+    };
+
+    static FragmentationReport analyze_fragmentation(const uintptr_t* hole_starts,
+                                                     const size_t* hole_sizes,
+                                                     size_t hole_count,
+                                                     size_t total_arena_capacity) noexcept;
+};
+
+/* ========================================================================= */
+/* 4. PAGE RESIDENT PROPAGATION BARRIER                                      */
 /* ========================================================================= */
 
 class RedjetRMRPBarrier {
@@ -128,7 +273,7 @@ public:
 };
 
 /* ========================================================================= */
-/* 2. ZERO-PAGE DEDUPLICATOR                                                 */
+/* 5. ZERO-PAGE DEDUPLICATOR (AVX-512 / AVX2 / Scalar)                       */
 /* ========================================================================= */
 
 class RedjetRMRPDeduplicator {
@@ -136,11 +281,13 @@ private:
     std::atomic<uint64_t> _total_zero_pages_detected{ 0 };
     std::atomic<uint64_t> _total_zero_bytes_reclaimed{ 0 };
     std::atomic<uint64_t> _scan_operations{ 0 };
+    std::atomic<uint64_t> _simd512_scans{ 0 };
 
 public:
     RedjetRMRPDeduplicator();
 
-    // Inspects page memory for all-zero content using SIMD / quadword verification
+    // Inspects page memory for all-zero content using 512-bit AVX-512 vector comparison
+    // (_mm512_test_epi64_mask), AVX2, and 64-bit scalar loop fallback.
     static bool is_page_all_zero(const void* page_addr, size_t page_sz) noexcept;
 
     // Scans range, decommits any all-zero pages, returns reclaimed byte count
@@ -148,18 +295,22 @@ public:
 
     uint64_t zero_pages_detected() const noexcept { return _total_zero_pages_detected.load(std::memory_order_relaxed); }
     uint64_t zero_bytes_reclaimed() const noexcept { return _total_zero_bytes_reclaimed.load(std::memory_order_relaxed); }
+    uint64_t simd512_scans() const noexcept { return _simd512_scans.load(std::memory_order_relaxed); }
 };
 
 /* ========================================================================= */
-/* 3. PLUMP, SEQUENTIAL & VFS COMPACTOR                                      */
+/* 6. PLUMP, SEQUENTIAL & VFS COMPACTOR                                      */
 /* ========================================================================= */
 
 class RedjetRMRPCompactor {
 private:
-    std::atomic<uint64_t> _plump_cycles{ 0 };
-    std::atomic<uint64_t> _sequential_cycles{ 0 };
-    std::atomic<uint64_t> _vfs_compaction_cycles{ 0 };
-    std::atomic<uint64_t> _coalesced_hole_bytes{ 0 };
+    std::atomic<uint64_t>      _plump_cycles{ 0 };
+    std::atomic<uint64_t>      _sequential_cycles{ 0 };
+    std::atomic<uint64_t>      _vfs_compaction_cycles{ 0 };
+    std::atomic<uint64_t>      _coalesced_hole_bytes{ 0 };
+
+    RedjetFreeSpanIntervalTree _interval_tree;
+    RedjetBuddyCoalescer       _buddy_coalescer;
 
 public:
     RedjetRMRPCompactor();
@@ -180,7 +331,7 @@ public:
 };
 
 /* ========================================================================= */
-/* 4. REDJET RMRP SUBSYSTEM NEXUS                                            */
+/* 7. REDJET RMRP SUBSYSTEM NEXUS                                            */
 /* ========================================================================= */
 
 class RedjetRMRP {

@@ -54,7 +54,8 @@ typedef enum rj_status_t {
     RJ_ERROR_HARDWARE_FAULT       = -6,
     RJ_ERROR_FLAG_CONFLICT        = -7
 } rj_status_t;
-using msimd_status_t = rj_status_t;
+using msimd_status_t   = rj_status_t;
+using rj_simd_status_t = rj_status_t;
 
 typedef enum rj_isa_t {
     RJ_ISA_AUTO    = 0,
@@ -70,14 +71,16 @@ typedef enum rj_isa_t {
     RJ_ISA_RVV     = 10,
     RJ_ISA_LASX    = 11
 } rj_isa_t;
-using msimd_isa_t = rj_isa_t;
+using msimd_isa_t   = rj_isa_t;
+using rj_simd_isa_t = rj_isa_t;
 
 typedef enum rj_backend_t {
     RJ_BACKEND_AUTO     = 0,
     RJ_BACKEND_FALLBACK = 1,
     RJ_BACKEND_TBB      = 2
 } rj_backend_t;
-using msimd_backend_t = rj_backend_t;
+using msimd_backend_t   = rj_backend_t;
+using rj_simd_backend_t = rj_backend_t;
 
 typedef enum rj_hw_tier_t {
     RJ_TIER_0_MATRIX_TILES  = 0,
@@ -87,13 +90,15 @@ typedef enum rj_hw_tier_t {
     RJ_TIER_4_SCALAR_FPU    = 4,
     RJ_TIER_5_SOFTFLOAT_ALU = 5
 } rj_hw_tier_t;
-using msimd_hw_tier_t = rj_hw_tier_t;
+using msimd_hw_tier_t   = rj_hw_tier_t;
+using rj_simd_hw_tier_t = rj_hw_tier_t;
 
 typedef enum rj_precision_t {
     RJ_PRECISION_FP32 = 0,
     RJ_PRECISION_FP64 = 1
 } rj_precision_t;
-using msimd_precision_t = rj_precision_t;
+using msimd_precision_t   = rj_precision_t;
+using rj_simd_precision_t = rj_precision_t;
 
 typedef struct rj_config_t {
     rj_profile_mode_t    profile;
@@ -102,7 +107,8 @@ typedef struct rj_config_t {
     bool                 forbid_runtime_heap;
     void*                user_static_arena_buf;
 } rj_config_t;
-using msimd_config_t = rj_config_t;
+using msimd_config_t   = rj_config_t;
+using rj_simd_config_t = rj_config_t;
 
 typedef struct rj_cpu_info_t {
     char            vendor[16];
@@ -131,7 +137,8 @@ typedef struct rj_cpu_info_t {
     int             has_dsp;
     rj_hw_tier_t    tier;
 } rj_cpu_info_t;
-using msimd_cpu_info_t = rj_cpu_info_t;
+using msimd_cpu_info_t   = rj_cpu_info_t;
+using rj_simd_cpu_info_t = rj_cpu_info_t;
 
 typedef struct rj_context_t {
     rj_cpu_info_t    cpu_info;
@@ -145,9 +152,11 @@ typedef struct rj_context_t {
     size_t           static_arena_offset;
     bool             arena_is_user_provided;
 } rj_context_t;
-using msimd_context_t = rj_context_t;
+using msimd_context_t   = rj_context_t;
+using rj_simd_context_t = rj_context_t;
 typedef rj_context_t* rj_context;
 typedef rj_context_t* msimd_context;
+typedef rj_context_t* rj_simd_context;
 
 typedef struct rj_lattice_t {
     rj_context       ctx;
@@ -163,14 +172,17 @@ typedef struct rj_lattice_t {
     void*            data_next;
     bool             allocated_from_arena;
 } rj_lattice_t;
-using msimd_lattice_t = rj_lattice_t;
+using msimd_lattice_t   = rj_lattice_t;
+using rj_simd_lattice_t = rj_lattice_t;
 typedef rj_lattice_t* rj_lattice;
 typedef rj_lattice_t* msimd_lattice;
+typedef rj_lattice_t* rj_simd_lattice;
 typedef HS_hotspot_tensor_t rj_tensor_t;
-typedef HS_hotspot_tensor_t rj_tensor_t;
-using msimd_tensor_t = rj_tensor_t;
+using msimd_tensor_t   = rj_tensor_t;
+using rj_simd_tensor_t = rj_tensor_t;
 typedef void (*rj_parallel_for_fn)(void* user_data, size_t start, size_t end);
 typedef void (*msimd_parallel_for_fn)(void* user_data, size_t start, size_t end);
+typedef void (*rj_simd_parallel_for_fn)(void* user_data, size_t start, size_t end);
 
 /* ========================================================================= */
 /* 2. C ABI EXPORTS FOR MATHEMATICAL & NUMERICAL EXECUTION                   */
@@ -347,6 +359,55 @@ RJ_API void  HS_primitiva_write(void* sector_ptr, const void* src, size_t bytes)
 RJ_API void  HS_primitiva_read(const void* sector_ptr, void* dst, size_t bytes);
 RJ_API void  HS_primitiva_overwrite(void* sector_ptr, const void* src, size_t bytes);
 RJ_API void  HS_primitiva_zero(void* sector_ptr, size_t bytes);
+
+// 2.7 Canonical rj_simd_* C ABI exports
+RJ_API void* rj_simd_aligned_alloc_cl(size_t size, size_t alignment);
+RJ_API void  rj_simd_aligned_free_cl(void* ptr);
+RJ_API void* rj_simd_alloc_aligned(size_t size, size_t alignment);
+RJ_API void  rj_simd_free_aligned(void* ptr);
+
+RJ_API void rj_simd_prefetch_t0(const void* addr);
+RJ_API void rj_simd_prefetch_t1(const void* addr);
+RJ_API void rj_simd_prefetch_t2(const void* addr);
+RJ_API void rj_simd_prefetch_nta(const void* addr);
+RJ_API void rj_simd_prefetch_stream(const void* base, size_t count, size_t stride);
+RJ_API void rj_simd_stream_store_f32(float* dst, const float* src, size_t count);
+RJ_API void rj_simd_stream_store_f64(double* dst, const double* src, size_t count);
+RJ_API void rj_simd_hw_fence_full(void);
+RJ_API void rj_simd_hw_fence_store(void);
+RJ_API void rj_simd_hw_fence_load(void);
+RJ_API void rj_simd_memcpy_nt(void* dst, const void* src, size_t size);
+RJ_API void rj_simd_memzero_nt(void* dst, size_t size);
+
+RJ_API rj_simd_status_t       rj_simd_init_with_config(rj_simd_context* out_ctx, rj_simd_isa_t isa, rj_simd_backend_t backend, const rj_simd_config_t* config);
+RJ_API rj_simd_status_t       rj_simd_init(rj_simd_context* out_ctx, rj_simd_isa_t isa, rj_simd_backend_t backend);
+RJ_API rj_profile_mode_t      rj_simd_get_active_profile(rj_simd_context ctx);
+RJ_API const rj_simd_config_t* rj_simd_get_config(rj_simd_context ctx);
+RJ_API void                   rj_simd_destroy(rj_simd_context ctx);
+RJ_API rj_simd_status_t       rj_simd_get_cpu_info(rj_simd_context ctx, rj_simd_cpu_info_t* out_info);
+RJ_API rj_simd_status_t       rj_simd_calibrate_pipeline(rj_simd_context ctx, int* out_best_level, double* out_gflops);
+RJ_API void                   rj_simd_parallel_for(rj_simd_context ctx, size_t total, rj_simd_parallel_for_fn fn, void* user_data);
+
+RJ_API rj_simd_status_t rj_simd_lattice_create(rj_simd_context ctx, rj_simd_lattice* out_lattice, int dim, size_t nx, size_t ny, size_t nz, rj_simd_precision_t precision);
+RJ_API void             rj_simd_lattice_destroy(rj_simd_lattice lat);
+RJ_API void*            rj_simd_lattice_get_curr(rj_simd_lattice lat);
+RJ_API void*            rj_simd_lattice_get_prev(rj_simd_lattice lat);
+RJ_API void*            rj_simd_lattice_get_next(rj_simd_lattice lat);
+RJ_API void             rj_simd_lattice_swap(rj_simd_lattice lat);
+
+RJ_API void   rj_simd_cordic_sin_cos_q31(int32_t theta_q31, int32_t* out_sin, int32_t* out_cos, const rj_simd_tensor_t* precision_target);
+RJ_API void   rj_simd_cordic_atan2_q31(int32_t y_q31, int32_t x_q31, int32_t* out_theta, uint32_t* out_mod, const rj_simd_tensor_t* precision_target);
+RJ_API void   rj_simd_fmac_fir_q31(const int32_t* x, const int32_t* coeffs, size_t n, size_t num_taps, int32_t* y, const rj_simd_tensor_t* precision_target);
+RJ_API float  rj_simd_tmu_sin_f32(float rad, const rj_simd_tensor_t* precision_target);
+RJ_API float  rj_simd_tmu_cos_f32(float rad, const rj_simd_tensor_t* precision_target);
+RJ_API float  rj_simd_softfloat_add_f32(float a, float b, const rj_simd_tensor_t* precision_target);
+RJ_API float  rj_simd_softfloat_mul_f32(float a, float b, const rj_simd_tensor_t* precision_target);
+RJ_API float  rj_simd_softfloat_div_f32(float a, float b, const rj_simd_tensor_t* precision_target);
+RJ_API double rj_simd_softfloat_add_f64(double a, double b, const rj_simd_tensor_t* precision_target);
+RJ_API double rj_simd_softfloat_mul_f64(double a, double b, const rj_simd_tensor_t* precision_target);
+RJ_API double rj_simd_softfloat_div_f64(double a, double b, const rj_simd_tensor_t* precision_target);
+RJ_API int    rj_simd_xip_verify_flash(void);
+RJ_API size_t rj_simd_decompress_block_to_itcm(const void* src, size_t src_size, void* dest, size_t max_dest);
 
 #ifdef __cplusplus
 }

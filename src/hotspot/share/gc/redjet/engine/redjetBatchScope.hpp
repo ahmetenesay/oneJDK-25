@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -165,6 +165,8 @@ public:
   uint32_t group_hex_id() const { return static_cast<uint32_t>(_handle & 0xFFFFFFFFULL); }
 };
 
+#include "jni.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -174,6 +176,10 @@ void     redjet_rt_batch_exit(uint64_t handle);
 void     redjet_rt_batch_abort(uint64_t handle);
 uint64_t redjet_rt_group_enter(uint32_t group_hex_id, uint32_t priority, bool bypass_warmup);
 void     redjet_rt_group_exit(uint64_t handle);
+
+JNIEXPORT jlong JNICALL Java_jdk_gc_redjet_BatchScope_enterBatch0(JNIEnv* env, jclass clazz, jint priority, jboolean bypass_warmup);
+JNIEXPORT void  JNICALL Java_jdk_gc_redjet_BatchScope_exitBatch0(JNIEnv* env, jclass clazz, jlong handle);
+JNIEXPORT void  JNICALL Java_jdk_gc_redjet_BatchScope_abortBatch0(JNIEnv* env, jclass clazz, jlong handle);
 
 #ifdef __cplusplus
 }

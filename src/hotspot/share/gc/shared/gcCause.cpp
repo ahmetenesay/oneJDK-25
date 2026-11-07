@@ -119,6 +119,36 @@ const char* GCCause::to_string(GCCause::Cause cause) {
     case _z_high_usage:
       return "High Usage";
 
+    case _redjet_stopless_continuous:
+      return "Redjet Stopless Continuous Cycle";
+
+    case _redjet_seasonal_warmup:
+      return "Redjet Seasonal Spring Warmup";
+
+    case _redjet_seasonal_surge:
+      return "Redjet Seasonal Summer Surge";
+
+    case _redjet_seasonal_idle_rebate:
+      return "Redjet Seasonal Winter Idle Rebate";
+
+    case _redjet_tailtraces_flush:
+      return "Redjet TailTraces RPSS Flush";
+
+    case _redjet_explicit_clean_hint:
+      return "Redjet Explicit Clean Hint";
+
+    case _redjet_mltc_remediation:
+      return "Redjet MLTC Sanitizer Remediation";
+
+    case _redjet_rmrp_coalesce:
+      return "Redjet Reduce Memory Resident Propagation Coalesce";
+
+    case _redjet_offheap_eviction:
+      return "Redjet Smart Off-Heap Eviction";
+
+    case _redjet_bureaucratic_sc:
+      return "Redjet Safety-Critical Deterministic Cycle";
+
     case _last_gc_cause:
       return "ILLEGAL VALUE - last gc cause - ILLEGAL VALUE";
 

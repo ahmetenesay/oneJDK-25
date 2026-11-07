@@ -85,6 +85,17 @@ class GCCause : public AllStatic {
     _z_proactive,
     _z_high_usage,
 
+    _redjet_stopless_continuous,
+    _redjet_seasonal_warmup,
+    _redjet_seasonal_surge,
+    _redjet_seasonal_idle_rebate,
+    _redjet_tailtraces_flush,
+    _redjet_explicit_clean_hint,
+    _redjet_mltc_remediation,
+    _redjet_rmrp_coalesce,
+    _redjet_offheap_eviction,
+    _redjet_bureaucratic_sc,
+
     _last_gc_cause
   };
 

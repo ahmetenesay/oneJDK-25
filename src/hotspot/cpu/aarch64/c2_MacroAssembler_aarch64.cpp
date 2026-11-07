@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -2853,3 +2853,46 @@ void C2_MacroAssembler::reconstruct_frame_pointer(Register rtmp) {
     add(rfp, sp, framesize - 2 * wordSize);
   }
 }
+
+void C2_MacroAssembler::sve2_histcnt(FloatRegister dst, FloatRegister src1, FloatRegister src2, PRegister pgtmp, SIMD_RegVariant T) {
+  assert(VM_Version::supports_sve(), "requires SVE/SVE2");
+  unsigned int size = (T == S) ? 2 : (T == D) ? 3 : 0;
+  emit_int32(0x45408c00 | (size << 22) | (src2->encoding() << 16) | (pgtmp->encoding() << 10) | (src1->encoding() << 5) | dst->encoding());
+}
+
+void C2_MacroAssembler::sve2_match(PRegister dst, FloatRegister src1, FloatRegister src2, PRegister pgtmp, SIMD_RegVariant T) {
+  assert(VM_Version::supports_sve(), "requires SVE/SVE2");
+  unsigned int size = (T == B) ? 0 : (T == H) ? 1 : 0;
+  emit_int32(0x45208000 | (size << 22) | (src2->encoding() << 16) | (pgtmp->encoding() << 10) | (src1->encoding() << 5) | dst->encoding());
+}
+
+void C2_MacroAssembler::sve2_nmatch(PRegister dst, FloatRegister src1, FloatRegister src2, PRegister pgtmp, SIMD_RegVariant T) {
+  assert(VM_Version::supports_sve(), "requires SVE/SVE2");
+  unsigned int size = (T == B) ? 0 : (T == H) ? 1 : 0;
+  emit_int32(0x45208010 | (size << 22) | (src2->encoding() << 16) | (pgtmp->encoding() << 10) | (src1->encoding() << 5) | dst->encoding());
+}
+
+void C2_MacroAssembler::sve2_bdep(FloatRegister dst, FloatRegister src1, FloatRegister src2, SIMD_RegVariant T) {
+  assert(VM_Version::supports_sve(), "requires SVE/SVE2");
+  unsigned int size = (T == B) ? 0 : (T == H) ? 1 : (T == S) ? 2 : 3;
+  emit_int32(0x4500b400 | (size << 22) | (src2->encoding() << 16) | (src1->encoding() << 5) | dst->encoding());
+}
+
+void C2_MacroAssembler::sve2_bext(FloatRegister dst, FloatRegister src1, FloatRegister src2, SIMD_RegVariant T) {
+  assert(VM_Version::supports_sve(), "requires SVE/SVE2");
+  unsigned int size = (T == B) ? 0 : (T == H) ? 1 : (T == S) ? 2 : 3;
+  emit_int32(0x4500b800 | (size << 22) | (src2->encoding() << 16) | (src1->encoding() << 5) | dst->encoding());
+}
+
+void C2_MacroAssembler::sve2_clear_cacheline_64(Register aligned64_addr) {
+  assert(aligned64_addr != noreg, "valid address required");
+  if (VM_Version::supports_sve()) {
+    dc(Assembler::ZVA, aligned64_addr);
+  } else {
+    stp(zr, zr, Address(aligned64_addr, 0));
+    stp(zr, zr, Address(aligned64_addr, 16));
+    stp(zr, zr, Address(aligned64_addr, 32));
+    stp(zr, zr, Address(aligned64_addr, 48));
+  }
+}
+

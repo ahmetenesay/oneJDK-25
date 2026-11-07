@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2020, 2022, Huawei Technologies Co., Ltd. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -3338,3 +3338,35 @@ void C2_MacroAssembler::extract_fp_v(FloatRegister dst, VectorRegister src, Basi
     vfmv_f_s(dst, tmp);
   }
 }
+
+void C2_MacroAssembler::rvv_reduce_add(FloatRegister dst, VectorRegister src, BasicType bt, int vlen) {
+  assert(is_floating_point_type(bt), "floating point type required");
+  vsetvli_helper(bt, vlen);
+  vfmv_s_f(v0, dst);
+  vfredusum_vs(v0, src, v0);
+  vfmv_f_s(dst, v0);
+}
+
+void C2_MacroAssembler::rvv_reduce_min(FloatRegister dst, VectorRegister src, BasicType bt, int vlen) {
+  assert(is_floating_point_type(bt), "floating point type required");
+  vsetvli_helper(bt, vlen);
+  vfmv_s_f(v0, dst);
+  vfredmin_vs(v0, src, v0);
+  vfmv_f_s(dst, v0);
+}
+
+void C2_MacroAssembler::rvv_reduce_max(FloatRegister dst, VectorRegister src, BasicType bt, int vlen) {
+  assert(is_floating_point_type(bt), "floating point type required");
+  vsetvli_helper(bt, vlen);
+  vfmv_s_f(v0, dst);
+  vfredmax_vs(v0, src, v0);
+  vfmv_f_s(dst, v0);
+}
+
+void C2_MacroAssembler::rvv_clear_cacheline_64(Register aligned64_addr) {
+  assert(aligned64_addr != noreg, "valid address required");
+  vsetivli(t0, 8, Assembler::e64, Assembler::m1);
+  vxor_vv(v0, v0, v0);
+  vse64_v(v0, aligned64_addr);
+}
+

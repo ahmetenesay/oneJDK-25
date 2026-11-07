@@ -62,7 +62,7 @@ using hs_object_ready_callback_t = void (*)(void* obj_ptr, void* user_data);
 /* 1. PITSTOP ENTRY (ISA MORPHING, PUZZLER OPTIMIZATION & REPLACEMENT BAY)   */
 /* ========================================================================= */
 
-struct sacculus_pitstop_entry_t {
+struct redjet_pitstop_entry_t {
     alignas(64) HS_hotspot_live_header_t saved_header;
     void*                      slot_addr{ nullptr };
     size_t                     slot_bytes{ 0 };
@@ -81,8 +81,8 @@ struct sacculus_pitstop_entry_t {
     hs_object_ready_callback_t ready_callback{ nullptr };
     void*                      callback_user_data{ nullptr };
 
-    sacculus_pitstop_entry_t* next{ nullptr };
-    sacculus_pitstop_entry_t* prev{ nullptr };
+    redjet_pitstop_entry_t*    next{ nullptr };
+    redjet_pitstop_entry_t*    prev{ nullptr };
 
     void retain() noexcept {
         ref_count.fetch_add(1, std::memory_order_relaxed);
@@ -94,13 +94,16 @@ struct sacculus_pitstop_entry_t {
     }
 };
 
+using sacculus_pitstop_entry_t = redjet_pitstop_entry_t;
+using rj_pitstop_entry_t       = redjet_pitstop_entry_t;
+
 /* ========================================================================= */
-/* 2. REDJET PITSTOP ENGINE (sacculus_pitstop_t)                             */
+/* 2. REDJET PITSTOP ENGINE (redjet_pitstop_t / rj_pitstop_t)               */
 /* ========================================================================= */
 
 class RedjetPitstop {
 private:
-    sacculus_pitstop_entry_t* _head{ nullptr };
+    redjet_pitstop_entry_t*   _head{ nullptr };
     size_t                    _count{ 0 };
     hs_ticket_lock_t          _lock;
     std::atomic<size_t>       _total_morphed{ 0 };
@@ -117,19 +120,19 @@ public:
     RedjetPitstop();
     ~RedjetPitstop();
 
-    sacculus_pitstop_entry_t* admit_excision(hsLiveHeader* obj);
-    sacculus_pitstop_entry_t* admit_shadow(hsLiveHeader* obj);
-    sacculus_pitstop_entry_t* admit(hsLiveHeader* obj);
-    void                      evict(hsLiveHeader* obj);
-    bool restore_return(sacculus_pitstop_entry_t* entry, hsLiveHeader** out_restored = nullptr);
+    redjet_pitstop_entry_t* admit_excision(hsLiveHeader* obj);
+    redjet_pitstop_entry_t* admit_shadow(hsLiveHeader* obj);
+    redjet_pitstop_entry_t* admit(hsLiveHeader* obj);
+    void                    evict(hsLiveHeader* obj);
+    bool restore_return(redjet_pitstop_entry_t* entry, hsLiveHeader** out_restored = nullptr);
     bool morph_isa_to_fledgling(hsLiveHeader* obj, uint16_t target_simd_idx, uint64_t cycles_gained = 0);
-    sacculus_pitstop_entry_t* find_by_slot(void* slot_or_body, bool retain_ref = false);
+    redjet_pitstop_entry_t* find_by_slot(void* slot_or_body, bool retain_ref = false);
     bool is_busy(const void* ptr);
     int await_ready(void* ptr, uint32_t timeout_ms = 0);
     int register_callback(void* ptr, hs_object_ready_callback_t callback, void* user_data);
 
     // Deepened Puzzler Optimization Stop Interfaces
-    RJ_API sacculus_pitstop_entry_t* admit_for_puzzler(hsLiveHeader* obj, uint32_t duel_id);
+    RJ_API redjet_pitstop_entry_t* admit_for_puzzler(hsLiveHeader* obj, uint32_t duel_id);
     RJ_API bool update_puzzler_state(void* slot_addr, hs_pitstop_state_e new_state);
     RJ_API hs_pitstop_state_e get_puzzler_state(const void* slot_addr) const noexcept;
     RJ_API bool record_duel_metrics(void* slot_addr, uint64_t cand_cycles, uint64_t base_cycles, float max_err);
@@ -146,6 +149,8 @@ public:
     uint64_t shadow_reads() const noexcept { return _total_shadow_reads.load(std::memory_order_relaxed); }
 };
 
+using redjet_pitstop_t   = RedjetPitstop;
+using rj_pitstop_t       = RedjetPitstop;
 using sacculus_pitstop_t = RedjetPitstop;
 
 #endif // SHARE_GC_REDJET_REDJETPITSTOP_HPP

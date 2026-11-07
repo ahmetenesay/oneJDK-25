@@ -47,7 +47,11 @@ namespace os {
   }
 }
 struct outputStream {
-  void print_cr(...) {}
+  template<typename... Args>
+  void print_cr(const char* fmt, Args... args) {
+    printf(fmt, args...);
+    printf("\n");
+  }
 };
 #define UINT64_FORMAT "%llu"
 #else

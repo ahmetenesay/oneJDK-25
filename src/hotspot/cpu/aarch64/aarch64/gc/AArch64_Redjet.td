@@ -273,6 +273,29 @@ class AArch64_RedjetEmptyBoxTimeoutCheck : GCBarrier<"mrs\tx16, cntvct_el0\n\tcm
 def AArch64_RedjetEmptyBoxTimeoutCheck_node : AArch64_RedjetEmptyBoxTimeoutCheck;
 
 // ============================================================================
+// Redjet SVE2 Accelerated Barrier Instructions
+// ============================================================================
+
+// Redjet SimdDispatch_SVE2 — SVE2 multi-vector non-widening fused multiply-add dispatch
+class AArch64_RedjetSimdDispatch_SVE2 : GCBarrier<"fmla\t$dst.d, p0/m, $src1.d, $src2.d\t# redjet sve2 simd dispatch", "Redjet SVE2 Full Vector Dispatch (AArch64)", 40, "ialu_reg_mem"> {
+  let BarrierType = 3;
+  let Predicates = [HasSVE2];
+  list<dag> Pattern = [(set GPR64:$dst, (redjet_simd_dispatch GPR64:$dst, GPR64:$src1, GPR64:$src2))];
+}
+
+def AArch64_RedjetSimdDispatch_SVE2_node : AArch64_RedjetSimdDispatch_SVE2;
+
+// Redjet ClearCacheline_SVE2 — 64-byte zeroing via DC ZVA or SVE vector clear
+class AArch64_RedjetClearCacheline_SVE2 : GCBarrier<"dc\tzva, $mem\t# redjet sve2 cacheline clear", "Redjet SVE2 / DC ZVA Cacheline Zero (AArch64)", 15, "ialu_mem_reg"> {
+  let BarrierType = 3;
+  let Predicates = [HasSVE2];
+  list<dag> Pattern = [(redjet_dead_ref_signal GPR64sp:$mem, GPR64:$mem)];
+}
+
+def AArch64_RedjetClearCacheline_SVE2_node : AArch64_RedjetClearCacheline_SVE2;
+
+// ============================================================================
 // End of AArch64_Redjet.td
 // ============================================================================
+
 

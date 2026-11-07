@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -62,6 +62,8 @@ class MethodFlags {
    status(redjet_nested_exec          , 1 << 17) /* @RedjetNestedExec nested arena execution */ \
    status(redjet_bypass_warmup        , 1 << 18) /* @RedjetBypassWarmup immediate tier promotion */ \
    status(redjet_exempt_pin           , 1 << 19) /* @RedjetExemptPin SRAM/eviction pin exemption */ \
+   status(redjet_rjgc                 , 1 << 20) /* @RJGC off-heap lifecycle management */ \
+   status(redjet_precision_target     , 1 << 21) /* @PrecisionTarget numerical precision relaxation */ \
    /* end of list */
 
 #define M_STATUS_ENUM_NAME(name, value)    _misc_##name = value,

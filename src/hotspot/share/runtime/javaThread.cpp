@@ -444,6 +444,8 @@ JavaThread::JavaThread(MemTag mem_tag) :
   _terminated(_not_terminated),
   _in_deopt_handler(0),
   _doing_unsafe_access(false),
+  _park_flag(0),
+  _dock_flag(0),
   _do_not_unlock_if_synchronized(false),
 #if INCLUDE_JVMTI
   _carrier_thread_suspended(false),

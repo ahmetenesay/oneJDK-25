@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -43,6 +43,7 @@
 #include "gc/redjet/runtime/redjetEmptyBox.hpp"
 #include "gc/redjet/engine/redjetFalline.hpp"
 #include "gc/redjet/allocator/redjetMotherline.hpp"
+#include "gc/redjet/allocator/redjetLandfill.hpp"
 #include "gc/redjet/allocator/redjetRunway.hpp"
 #include "gc/redjet/allocator/redjetPagefile.hpp"
 #include "gc/redjet/engine/redjetPitstop.hpp"

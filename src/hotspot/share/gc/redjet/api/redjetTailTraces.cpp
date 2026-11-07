@@ -25,6 +25,7 @@
 #include "gc/redjet/api/redjetTailTraces.hpp"
 #include "gc/redjet/runtime/redjetGearkit.hpp"
 #include "gc/redjet/runtime/redjetFlags.hpp"
+#include "gc/redjet/runtime/redjetBPUDirector.hpp"
 #include "gc/redjet/api/redjetNativeSDK.hpp"
 #include "gc/redjet/allocator/redjetMotherline.hpp"
 
@@ -44,6 +45,9 @@ RedjetTailTraces::RedjetTailTraces() {
   _total_signals_received.store(0, std::memory_order_relaxed);
   _total_signals_drained.store(0, std::memory_order_relaxed);
   _total_false_positives_cancelled.store(0, std::memory_order_relaxed);
+  _total_quarantined_in_morgue.store(0, std::memory_order_relaxed);
+  _total_rehabilitated_objects.store(0, std::memory_order_relaxed);
+  _total_contention_events.store(0, std::memory_order_relaxed);
   _current_tailtraces_epoch.store(1, std::memory_order_relaxed);
   _active_clasp_count.store(0, std::memory_order_relaxed);
 
@@ -138,6 +142,25 @@ void RedjetTailTraces::emit_dead_reference_signal(uint32_t thread_id, void* dead
     return;
   }
 
+  // Symbiotic BPU Liveness Prediction (4096 Bimodal + 4-Bank TAGE + Hashed Perceptron)
+  uint64_t site_hash = (static_cast<uint64_t>(region_id) << 32) ^
+                       ((reinterpret_cast<uint64_t>(dead_obj) >> 6) & 0xFFFFFFFFULL);
+  size_t est_bytes = 64;
+  auto* hdr = reinterpret_cast<HS_hotspot_live_header_t*>(dead_obj);
+  if (hdr->hsMN == HS_LIVE_MAGIC) {
+    est_bytes = hdr->memory_footprint.load(std::memory_order_relaxed);
+  }
+  RedjetBPULivenessDecision bpu =
+      RedjetBPUDirector::instance().evaluate_tailtrace_clasp(site_hash, thread_id, est_bytes);
+
+  if (!bpu.predicted_truly_dead && bpu.confidence_percent >= 65) {
+    // BPU predicts high probability of escape/revival at this site: filter false-positive clasp
+    size_t slot = thread_id % MAX_TRACKED_THREADS;
+    _clasps[slot].false_positives_filtered.fetch_add(1, std::memory_order_relaxed);
+    _total_false_positives_cancelled.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+
   uint64_t cur_epoch = _current_tailtraces_epoch.load(std::memory_order_relaxed);
   uint64_t slot_idx = _write_cursor.fetch_add(1, std::memory_order_acq_rel);
   RedjetClaspSignal& sig = _rpss_ring[slot_idx % RPSS_RING_CAPACITY];
@@ -146,6 +169,9 @@ void RedjetTailTraces::emit_dead_reference_signal(uint32_t thread_id, void* dead
   sig.region_id = region_id;
   sig.timestamp_ns = sacculus_now_ns();
   sig.probation_epoch = cur_epoch;
+  sig.bpu_site_hash = site_hash;
+  sig.bpu_confidence_pct = bpu.confidence_percent;
+  sig.bpu_fast_probation = bpu.bypass_long_probation;
   sig.escape_detected.store(false, std::memory_order_relaxed);
   sig.phase.store(static_cast<uint8_t>(RedjetSignalPhase::PHASE_1_PROBATION), std::memory_order_release);
   sig.dead_oop_address.store(reinterpret_cast<uint64_t>(dead_obj), std::memory_order_release);
@@ -167,12 +193,15 @@ size_t RedjetTailTraces::advance_epoch_and_process_probation(uint64_t new_epoch)
     uint8_t p = sig.phase.load(std::memory_order_relaxed);
 
     if (p == static_cast<uint8_t>(RedjetSignalPhase::PHASE_1_PROBATION)) {
+      uint64_t req_delay = sig.bpu_fast_probation ? 1ULL : DEFAULT_PROBATION_EPOCH_DELAY;
       if (sig.escape_detected.load(std::memory_order_acquire)) {
+        RedjetBPUDirector::instance().record_tailtrace_outcome(sig.bpu_site_hash, sig.thread_id, false);
         sig.phase.store(static_cast<uint8_t>(RedjetSignalPhase::PHASE_CANCELLED), std::memory_order_release);
         sig.dead_oop_address.store(0, std::memory_order_release);
         _total_false_positives_cancelled.fetch_add(1, std::memory_order_relaxed);
-      } else if (new_epoch >= sig.probation_epoch + DEFAULT_PROBATION_EPOCH_DELAY) {
-        // Two-phase epoch delay elapsed without escape: promote to Phase 2 Condemnation
+      } else if (new_epoch >= sig.probation_epoch + req_delay) {
+        // Epoch delay elapsed without escape: train BPU positive outcome & promote to Phase 2 Condemnation
+        RedjetBPUDirector::instance().record_tailtrace_outcome(sig.bpu_site_hash, sig.thread_id, true);
         sig.phase.store(static_cast<uint8_t>(RedjetSignalPhase::PHASE_2_CONDEMNATION), std::memory_order_release);
         promoted_to_condemned++;
       }
@@ -191,6 +220,7 @@ bool RedjetTailTraces::cancel_signal_on_escape(void* obj_ptr) {
   for (uint64_t i = read_idx; i < write_idx; ++i) {
     RedjetClaspSignal& sig = _rpss_ring[i % RPSS_RING_CAPACITY];
     if (sig.dead_oop_address.load(std::memory_order_relaxed) == target_addr) {
+      RedjetBPUDirector::instance().record_tailtrace_outcome(sig.bpu_site_hash, sig.thread_id, false);
       sig.escape_detected.store(true, std::memory_order_release);
       sig.phase.store(static_cast<uint8_t>(RedjetSignalPhase::PHASE_CANCELLED), std::memory_order_release);
       sig.dead_oop_address.store(0, std::memory_order_release);
@@ -239,3 +269,56 @@ uint64_t RedjetTailTraces::pending_signals() const {
   uint64_t r = _read_cursor.load(std::memory_order_relaxed);
   return w > r ? (w - r) : 0;
 }
+
+bool RedjetTailTraces::stage_morgue_quarantine_falline(void* dead_obj, size_t footprint_bytes, uint32_t thread_id) {
+  if (dead_obj == nullptr) return false;
+
+  // 1. Stage in RPSS probation queue
+  emit_dead_reference_signal(thread_id, dead_obj, 0);
+
+  // 2. Track in Falline 2-stage quarantine counter
+  _total_quarantined_in_morgue.fetch_add(1, std::memory_order_relaxed);
+
+  hs_hotlog_emit(HS_Ebin0_FALLINE_PRETRASH_ENTER, HS_Ebin1_INFO, thread_id,
+                 reinterpret_cast<uint64_t>(dead_obj), footprint_bytes,
+                 _current_tailtraces_epoch.load(std::memory_order_relaxed), 0, 0, 0,
+                 "TailTraces:MorgueQuarantineStaged");
+  return true;
+}
+
+bool RedjetTailTraces::detect_clasp_contention(uint32_t thread_id) noexcept {
+  uint64_t pending = pending_signals();
+  // Contention detected if pending signals exceed 85% of ring capacity
+  if (pending > (RPSS_RING_CAPACITY * 85 / 100)) {
+    _total_contention_events.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+
+  // Also check thread-local clasp state
+  size_t slot = thread_id % MAX_TRACKED_THREADS;
+  if (_clasps[slot].thread_id == thread_id) {
+    uint8_t st = _clasps[slot].state.load(std::memory_order_relaxed);
+    if (st == static_cast<uint8_t>(RedjetClaspState::CLASP_PROBATION) ||
+        st == static_cast<uint8_t>(RedjetClaspState::CLASP_DETACHING)) {
+      _total_contention_events.fetch_add(1, std::memory_order_relaxed);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool RedjetTailTraces::rehabilitate_quarantined_object(void* obj_ptr) {
+  if (obj_ptr == nullptr) return false;
+
+  // Cancel signal and rescue from morgue quarantine
+  bool rescued = cancel_signal_on_escape(obj_ptr);
+  if (rescued) {
+    _total_rehabilitated_objects.fetch_add(1, std::memory_order_relaxed);
+    hs_hotlog_emit(HS_Ebin0_FALLINE_PRETRASH_RESCUE, HS_Ebin1_INFO, 0,
+                   reinterpret_cast<uint64_t>(obj_ptr), 0, 0, 0, 0, 0,
+                   "TailTraces:ObjectRehabilitatedFromMorgue");
+  }
+  return rescued;
+}
+

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025-2026 Tungsten Labs, Final Technologies Company; WLFT. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -54,6 +54,13 @@ public:
   void emit_pausepoint_poll(MacroAssembler* masm, Register tmp1);
   void emit_safepoint_poll(MacroAssembler* masm, Register tmp1);
   void clear_cacheline_64(MacroAssembler* masm, Register aligned64_addr);
+
+  // PLAN.md Section 8.8: 2-Points L1 Polling, TailTraces Clasp, EmptyBox, SVE Dispatch
+  void emit_2points_l1_poll(MacroAssembler* masm, Register thread, Register scratch, Label& slowpath);
+  void emit_tailtraces_clasp(MacroAssembler* masm, Register obj, Register scratch);
+  void emit_emptybox_guard(MacroAssembler* masm, Register obj, Label& slowpath);
+  void emit_emptybox_claim(MacroAssembler* masm, Register obj, Register size, Register result, Label& slowpath);
+  void emit_simd_dispatch_with_sve_fence(MacroAssembler* masm);
 
 #ifdef COMPILER1
   void generate_c1_pre_barrier_runtime_stub(StubAssembler* sasm);
